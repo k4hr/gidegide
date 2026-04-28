@@ -206,147 +206,218 @@ export default function HomePage() {
     <main className="site-page">
       <div className="site-noise" />
 
-      <div className="browser-shell">
-        <div className="browser-top">
-          <div className="browser-dots">
-            <span className="browser-dot browser-dot--red" />
-            <span className="browser-dot browser-dot--yellow" />
-            <span className="browser-dot browser-dot--green" />
-          </div>
+      <section id="hero" className="art-hero">
+        <div className="art-hero-bg" />
 
-          <div className="browser-arrows">
-            <span>‹</span>
-            <span>›</span>
-          </div>
+        <header className="container header">
+          <a href="#" className="brand">
+            <div className="brand-icon">
+              <Crown size={30} />
+            </div>
 
-          <div className="browser-url">
-            <LockKeyhole size={14} />
-            <span>destroy-algoritm.ru</span>
-          </div>
+            <div>
+              <div className="brand-title">DESTROY</div>
+              <div className="brand-subtitle">ALGORITM</div>
+            </div>
+          </a>
 
-          <div className="browser-x">×</div>
+          <nav className="nav">
+            <a href="#hero">Главная</a>
+            <a href="#lessons">Уроки</a>
+            <a href="#inside">Что внутри</a>
+            <a href="#packages">Пакеты</a>
+            <a href="#faq">FAQ</a>
+          </nav>
+
+          <button
+            type="button"
+            className="gold-btn header-btn"
+            onClick={() => openCheckout(activeLesson)}
+          >
+            Купить урок
+          </button>
+        </header>
+
+        <div className="container hero-overlay">
+          <motion.div
+            className="hero-copy"
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7 }}
+          >
+            <div className="hero-pill">
+              <Sparkles size={16} />
+              Мини-уроки по алгоритмам соцсетей
+            </div>
+
+            <h1 className="hero-title">
+              ПРОДВИЖЕНИЕ
+              <span>В СОЦСЕТЯХ</span>
+            </h1>
+
+            <div className="hero-platforms">
+              Instagram • TikTok • YouTube Shorts
+            </div>
+
+            <p className="hero-text">
+              Показываем, как соцсети раздают охваты, вовлечение и просмотры.
+              Короткие уроки без регистрации и лишней воды.
+            </p>
+
+            <div className="hero-benefits">
+              <div className="hero-benefit">
+                <LockKeyhole size={18} />
+                Без регистрации
+              </div>
+
+              <div className="hero-benefit">
+                <Zap size={18} />
+                Доступ сразу
+              </div>
+
+              <div className="hero-benefit">
+                <BadgeCheck size={18} />
+                От 199 ₽
+              </div>
+            </div>
+
+            <div className="hero-buttons">
+              <a href="#lessons" className="gold-btn">
+                Выбрать урок
+                <ArrowRight size={18} />
+              </a>
+
+              <a href="#packages" className="dark-btn">
+                Смотреть пакеты
+                <Play size={18} />
+              </a>
+            </div>
+          </motion.div>
         </div>
+      </section>
 
-        <section id="hero" className="art-hero">
-          <div className="art-hero-bg" />
+      <section id="lessons" className="lessons-block">
+        <div className="container">
+          <div className="tabs-row">
+            {lessons.map((lesson) => {
+              const Icon = lesson.icon;
+              const ui = getThemeClass(lesson.theme);
 
-          <header className="container header">
-            <a href="#" className="brand">
-              <div className="brand-icon">
-                <Crown size={30} />
-              </div>
+              return (
+                <button
+                  key={lesson.slug}
+                  type="button"
+                  className={`${ui.tab} ${
+                    activeLesson.slug === lesson.slug ? "is-active" : ""
+                  }`}
+                  onClick={() => setActiveSlug(lesson.slug)}
+                >
+                  <div className="tab-icon">
+                    <Icon size={26} />
+                  </div>
 
-              <div>
-                <div className="brand-title">DESTROY</div>
-                <div className="brand-subtitle">ALGORITM</div>
-              </div>
-            </a>
-
-            <nav className="nav">
-              <a href="#hero">Главная</a>
-              <a href="#lessons">Уроки</a>
-              <a href="#inside">Что внутри</a>
-              <a href="#packages">Пакеты</a>
-              <a href="#faq">FAQ</a>
-            </nav>
-
-            <button
-              type="button"
-              className="gold-btn header-btn"
-              onClick={() => openCheckout(activeLesson)}
-            >
-              Купить урок
-            </button>
-          </header>
-
-          <div className="container hero-overlay">
-            <motion.div
-              className="hero-copy"
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7 }}
-            >
-              <div className="hero-pill">
-                <Sparkles size={16} />
-                Мини-уроки по алгоритмам соцсетей
-              </div>
-
-              <h1 className="hero-title">
-                ПРОДВИЖЕНИЕ
-                <span>В СОЦСЕТЯХ</span>
-              </h1>
-
-              <div className="hero-platforms">
-                Instagram • TikTok • YouTube Shorts
-              </div>
-
-              <p className="hero-text">
-                Показываем, как соцсети раздают охваты, вовлечение и просмотры.
-                Короткие уроки без регистрации и лишней воды.
-              </p>
-
-              <div className="hero-benefits">
-                <div className="hero-benefit">
-                  <LockKeyhole size={18} />
-                  Без регистрации
-                </div>
-
-                <div className="hero-benefit">
-                  <Zap size={18} />
-                  Доступ сразу
-                </div>
-
-                <div className="hero-benefit">
-                  <BadgeCheck size={18} />
-                  От 199 ₽
-                </div>
-              </div>
-
-              <div className="hero-buttons">
-                <a href="#lessons" className="gold-btn">
-                  Выбрать урок
-                  <ArrowRight size={18} />
-                </a>
-
-                <a href="#inside" className="dark-btn">
-                  Что внутри
-                  <Play size={18} />
-                </a>
-              </div>
-            </motion.div>
-
-            <motion.div
-              className="hero-click-cards"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.9, delay: 0.2 }}
-            >
-              {lessons.map((lesson) => {
-                const Icon = lesson.icon;
-
-                return (
-                  <button
-                    key={lesson.slug}
-                    type="button"
-                    className={`hero-hotspot hero-hotspot--${lesson.theme} ${
-                      activeLesson.slug === lesson.slug ? "is-active" : ""
-                    }`}
-                    onClick={() => setActiveSlug(lesson.slug)}
-                    aria-label={lesson.platformLabel}
-                  >
-                    <Icon size={22} />
-                    <span>{lesson.platformLabel}</span>
-                  </button>
-                );
-              })}
-            </motion.div>
+                  <div>
+                    <div className="tab-title">{lesson.platformLabel}</div>
+                    <div className="tab-price">
+                      {lesson.price} ₽ вместо {lesson.oldPrice} ₽
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        </section>
 
-        <section id="lessons" className="lessons-block">
-          <div className="container">
-            <div className="tabs-row">
-              {lessons.map((lesson) => {
+          <div className="lesson-grid">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeLesson.slug}
+                className={getThemeClass(activeLesson.theme).card}
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -14 }}
+                transition={{ duration: 0.24 }}
+              >
+                <div className="product-card-glow" />
+
+                <div className="product-card-content">
+                  <div>
+                    <div className={getThemeClass(activeLesson.theme).badge}>
+                      <activeLesson.icon size={18} />
+                      {activeLesson.platformLabel}
+                    </div>
+
+                    <h2 className="product-title">{activeLesson.subtitle}</h2>
+
+                    <p className="product-description">
+                      {activeLesson.description}
+                    </p>
+
+                    <div className="product-bullets">
+                      {activeLesson.bullets.map((bullet) => (
+                        <div key={bullet} className="product-bullet">
+                          <span>
+                            <Check size={14} />
+                          </span>
+                          {bullet}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="product-actions">
+                      <button
+                        type="button"
+                        className="gold-btn"
+                        onClick={() => openCheckout(activeLesson)}
+                      >
+                        Купить за {activeLesson.price} ₽
+                        <ArrowRight size={18} />
+                      </button>
+
+                      <a href="#inside" className="dark-btn">
+                        Подробнее
+                        <Play size={18} />
+                      </a>
+                    </div>
+                  </div>
+
+                  <div className="product-phone-wrap">
+                    <div
+                      className={`product-phone product-phone--${activeLesson.theme}`}
+                    >
+                      <div className="phone-topline">
+                        <span>{activeLesson.platformLabel}</span>
+                        <span>12.6K</span>
+                      </div>
+
+                      <div className="phone-stat">
+                        <div className="phone-stat-label">Рост метрик</div>
+                        <div className="phone-stat-value">
+                          {activeLesson.stat}
+                        </div>
+                        <div className="phone-stat-sub">
+                          {activeLesson.statLabel}
+                        </div>
+                      </div>
+
+                      <div className="phone-arrow" />
+
+                      <div className="phone-bars">
+                        {[52, 84, 70, 116, 156].map((height, index) => (
+                          <div
+                            key={index}
+                            className="phone-bar"
+                            style={{ height }}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </AnimatePresence>
+
+            <div className="side-products">
+              {sideLessons.map((lesson) => {
                 const Icon = lesson.icon;
                 const ui = getThemeClass(lesson.theme);
 
@@ -354,158 +425,43 @@ export default function HomePage() {
                   <button
                     key={lesson.slug}
                     type="button"
-                    className={`${ui.tab} ${
-                      activeLesson.slug === lesson.slug ? "is-active" : ""
-                    }`}
+                    className="side-product"
                     onClick={() => setActiveSlug(lesson.slug)}
                   >
-                    <div className="tab-icon">
-                      <Icon size={26} />
+                    <div
+                      className={`side-product-glow side-product-glow--${lesson.theme}`}
+                    />
+
+                    <div className="side-product-title">
+                      {lesson.platformLabel}
                     </div>
 
-                    <div>
-                      <div className="tab-title">{lesson.platformLabel}</div>
-                      <div className="tab-price">
-                        {lesson.price} ₽ вместо {lesson.oldPrice} ₽
+                    <p className="side-product-text">{lesson.description}</p>
+
+                    <div className={ui.mini}>
+                      <div className="mini-icon">
+                        <Icon size={42} />
                       </div>
+
+                      <div className="mini-bars">
+                        {[38, 60, 50, 84, 112].map((height, index) => (
+                          <div
+                            key={index}
+                            className="mini-bar"
+                            style={{ height }}
+                          />
+                        ))}
+                      </div>
+
+                      <TrendingUp className="mini-trend" />
                     </div>
                   </button>
                 );
               })}
             </div>
-
-            <div className="lesson-grid">
-              <AnimatePresence mode="wait">
-                <motion.div
-                  key={activeLesson.slug}
-                  className={getThemeClass(activeLesson.theme).card}
-                  initial={{ opacity: 0, y: 14 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -14 }}
-                  transition={{ duration: 0.24 }}
-                >
-                  <div className="product-card-glow" />
-
-                  <div className="product-card-content">
-                    <div>
-                      <div className={getThemeClass(activeLesson.theme).badge}>
-                        <activeLesson.icon size={18} />
-                        {activeLesson.platformLabel}
-                      </div>
-
-                      <h2 className="product-title">{activeLesson.subtitle}</h2>
-
-                      <p className="product-description">
-                        {activeLesson.description}
-                      </p>
-
-                      <div className="product-bullets">
-                        {activeLesson.bullets.map((bullet) => (
-                          <div key={bullet} className="product-bullet">
-                            <span>
-                              <Check size={14} />
-                            </span>
-                            {bullet}
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="product-actions">
-                        <button
-                          type="button"
-                          className="gold-btn"
-                          onClick={() => openCheckout(activeLesson)}
-                        >
-                          Купить за {activeLesson.price} ₽
-                          <ArrowRight size={18} />
-                        </button>
-
-                        <a href="#inside" className="dark-btn">
-                          Подробнее
-                          <Play size={18} />
-                        </a>
-                      </div>
-                    </div>
-
-                    <div className="product-phone-wrap">
-                      <div className={`product-phone product-phone--${activeLesson.theme}`}>
-                        <div className="phone-topline">
-                          <span>{activeLesson.platformLabel}</span>
-                          <span>12.6K</span>
-                        </div>
-
-                        <div className="phone-stat">
-                          <div className="phone-stat-label">Рост метрик</div>
-                          <div className="phone-stat-value">
-                            {activeLesson.stat}
-                          </div>
-                          <div className="phone-stat-sub">
-                            {activeLesson.statLabel}
-                          </div>
-                        </div>
-
-                        <div className="phone-arrow" />
-
-                        <div className="phone-bars">
-                          {[52, 84, 70, 116, 156].map((height, index) => (
-                            <div
-                              key={index}
-                              className="phone-bar"
-                              style={{ height }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              </AnimatePresence>
-
-              <div className="side-products">
-                {sideLessons.map((lesson) => {
-                  const Icon = lesson.icon;
-                  const ui = getThemeClass(lesson.theme);
-
-                  return (
-                    <button
-                      key={lesson.slug}
-                      type="button"
-                      className="side-product"
-                      onClick={() => setActiveSlug(lesson.slug)}
-                    >
-                      <div className={`side-product-glow side-product-glow--${lesson.theme}`} />
-
-                      <div className="side-product-title">
-                        {lesson.platformLabel}
-                      </div>
-
-                      <p className="side-product-text">{lesson.description}</p>
-
-                      <div className={ui.mini}>
-                        <div className="mini-icon">
-                          <Icon size={42} />
-                        </div>
-
-                        <div className="mini-bars">
-                          {[38, 60, 50, 84, 112].map((height, index) => (
-                            <div
-                              key={index}
-                              className="mini-bar"
-                              style={{ height }}
-                            />
-                          ))}
-                        </div>
-
-                        <TrendingUp className="mini-trend" />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
 
       <section id="inside" className="container content-section">
         <div className="content-panel">
@@ -707,7 +663,11 @@ export default function HomePage() {
 
                 {error ? <div className="modal-error">{error}</div> : null}
 
-                <button disabled={isBuying} type="submit" className="gold-btn modal-submit">
+                <button
+                  disabled={isBuying}
+                  type="submit"
+                  className="gold-btn modal-submit"
+                >
                   {isBuying ? "Открываем доступ..." : "Получить доступ"}
                   <ArrowRight size={18} />
                 </button>
