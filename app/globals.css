@@ -562,7 +562,7 @@ button {
 
 .growth-card {
   position: relative;
-  min-height: 620px;
+  min-height: 560px;
   overflow: hidden;
   border: 1px solid rgba(255, 221, 130, 0.28);
   border-radius: 34px;
@@ -592,17 +592,6 @@ button {
   transition: transform 0.45s ease;
 }
 
-.growth-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    radial-gradient(circle at 50% 50%, rgba(255, 213, 98, 0.14), transparent 26%),
-    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.24));
-}
-
 .growth-card:hover {
   transform: translateY(-6px);
   border-color: rgba(255, 226, 150, 0.52);
@@ -616,14 +605,165 @@ button {
   transform: scale(1.07);
 }
 
-.growth-card-center {
+.growth-card-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(4, 3, 2, 0.96) 0%,
+      rgba(4, 3, 2, 0.88) 28%,
+      rgba(4, 3, 2, 0.5) 52%,
+      rgba(4, 3, 2, 0.08) 100%
+    ),
+    radial-gradient(circle at 18% 50%, rgba(255, 211, 104, 0.14), transparent 34%),
+    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+}
+
+.growth-card--instagram .growth-card-overlay {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(4, 3, 2, 0.96) 0%,
+      rgba(4, 3, 2, 0.88) 28%,
+      rgba(4, 3, 2, 0.5) 52%,
+      rgba(4, 3, 2, 0.08) 100%
+    ),
+    radial-gradient(circle at 18% 50%, rgba(255, 76, 196, 0.22), transparent 34%),
+    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+}
+
+.growth-card--tiktok .growth-card-overlay {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(4, 3, 2, 0.96) 0%,
+      rgba(4, 3, 2, 0.88) 28%,
+      rgba(4, 3, 2, 0.5) 52%,
+      rgba(4, 3, 2, 0.08) 100%
+    ),
+    radial-gradient(circle at 18% 50%, rgba(37, 244, 255, 0.18), transparent 34%),
+    radial-gradient(circle at 32% 40%, rgba(255, 56, 129, 0.15), transparent 28%),
+    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+}
+
+.growth-card--youtube .growth-card-overlay {
+  background:
+    linear-gradient(
+      90deg,
+      rgba(4, 3, 2, 0.96) 0%,
+      rgba(4, 3, 2, 0.88) 28%,
+      rgba(4, 3, 2, 0.5) 52%,
+      rgba(4, 3, 2, 0.08) 100%
+    ),
+    radial-gradient(circle at 18% 50%, rgba(255, 67, 41, 0.24), transparent 34%),
+    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+}
+
+.growth-card-content {
   position: relative;
   z-index: 3;
-  min-height: 620px;
+  width: min(100%, 600px);
+  min-height: 560px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   justify-content: center;
-  padding: 34px;
+  align-items: flex-start;
+  padding: 46px;
+}
+
+.growth-card-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 227, 145, 0.24);
+  background:
+    linear-gradient(135deg, rgba(255, 224, 140, 0.1), rgba(255, 186, 57, 0.03)),
+    rgba(0, 0, 0, 0.42);
+  color: #ffe7aa;
+  font-size: 12px;
+  font-weight: 950;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 0 28px rgba(255, 198, 72, 0.1);
+}
+
+.growth-card-title {
+  margin: 18px 0 0;
+  max-width: 580px;
+  color: #ffffff;
+  font-size: clamp(42px, 4.4vw, 76px);
+  line-height: 0.9;
+  letter-spacing: -0.075em;
+  font-weight: 950;
+  text-transform: uppercase;
+  text-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.2),
+    0 16px 42px rgba(0, 0, 0, 0.55),
+    0 0 44px rgba(255, 212, 105, 0.14);
+}
+
+.growth-card-text {
+  margin: 20px 0 0;
+  max-width: 520px;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 18px;
+  line-height: 1.48;
+  font-weight: 800;
+  text-shadow: 0 12px 28px rgba(0, 0, 0, 0.48);
+}
+
+.growth-card-accent {
+  margin-top: 20px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 225, 139, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 237, 169, 0.12), rgba(255, 183, 49, 0.04)),
+    rgba(0, 0, 0, 0.46);
+  color: #ffe08a;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  backdrop-filter: blur(12px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 14px 30px rgba(0,0,0,0.22);
+}
+
+.growth-card-bullets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.growth-card-bullet {
+  min-height: 40px;
+  padding: 0 15px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 229, 151, 0.18);
+  background:
+    linear-gradient(135deg, rgba(255, 224, 140, 0.11), rgba(255, 186, 57, 0.04)),
+    rgba(0, 0, 0, 0.42);
+  color: #fff1c7;
+  font-size: 13px;
+  font-weight: 950;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
 }
 
 .content-section {
@@ -1023,8 +1163,8 @@ button {
   }
 
   .growth-card,
-  .growth-card-center {
-    min-height: 560px;
+  .growth-card-content {
+    min-height: 520px;
   }
 }
 
@@ -1129,17 +1269,54 @@ button {
   }
 
   .growth-card {
-    border-radius: 28px;
-  }
-
-  .growth-card,
-  .growth-card-center {
     min-height: 520px;
+    border-radius: 28px;
   }
 
   .growth-card::before {
     background-position: center center;
     background-size: cover;
+  }
+
+  .growth-card-overlay,
+  .growth-card--instagram .growth-card-overlay,
+  .growth-card--tiktok .growth-card-overlay,
+  .growth-card--youtube .growth-card-overlay {
+    background:
+      linear-gradient(
+        180deg,
+        rgba(4, 3, 2, 0.94) 0%,
+        rgba(4, 3, 2, 0.68) 45%,
+        rgba(4, 3, 2, 0.24) 100%
+      ),
+      radial-gradient(circle at 50% 22%, rgba(255, 213, 98, 0.14), transparent 34%);
+  }
+
+  .growth-card-content {
+    width: 100%;
+    min-height: 520px;
+    justify-content: flex-end;
+    padding: 26px;
+  }
+
+  .growth-card-title {
+    max-width: 100%;
+    font-size: clamp(34px, 9vw, 48px);
+  }
+
+  .growth-card-text {
+    max-width: 100%;
+    font-size: 15px;
+  }
+
+  .growth-card-accent {
+    min-height: 38px;
+    font-size: 12px;
+  }
+
+  .growth-card-bullet {
+    min-height: 36px;
+    font-size: 12px;
   }
 
   .info-grid,
@@ -1191,8 +1368,12 @@ button {
   }
 
   .growth-card,
-  .growth-card-center {
-    min-height: 460px;
+  .growth-card-content {
+    min-height: 500px;
+  }
+
+  .growth-card-content {
+    padding: 22px;
   }
 
   .modal-card {
