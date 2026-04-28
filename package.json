@@ -12,18 +12,18 @@
     "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
     "db:setup": "prisma migrate dev && prisma generate && tsx prisma/seed.ts",
-    "db:deploy": "prisma migrate deploy && prisma generate"
+    "db:push": "prisma db push && prisma generate && tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@prisma/client": "latest",
-    "clsx": "latest",
-    "framer-motion": "latest",
-    "lucide-react": "latest",
+    "@prisma/client": "6.19.3",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.24",
+    "lucide-react": "^0.468.0",
     "next": "latest",
-    "prisma": "latest",
+    "prisma": "6.19.3",
     "react": "latest",
     "react-dom": "latest",
-    "zod": "latest"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "latest",
@@ -33,7 +33,7 @@
     "eslint": "latest",
     "eslint-config-next": "latest",
     "tailwindcss": "latest",
-    "tsx": "latest",
+    "tsx": "^4.20.6",
     "typescript": "latest"
   },
   "prisma": {
