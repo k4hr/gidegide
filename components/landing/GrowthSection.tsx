@@ -1,14 +1,24 @@
 "use client";
 
 import type { CSSProperties } from "react";
-import { ArrowRight, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
-import { getThemeClass, lessons } from "@/components/landing/landing-data";
+import { lessons } from "@/components/landing/landing-data";
 import type { Lesson } from "@/components/landing/types";
 
 type GrowthSectionProps = {
-  onBuy: (lesson: Lesson) => void;
+  onBuy?: (lesson: Lesson) => void;
 };
+
+const growthImages: Record<Lesson["slug"], string> = {
+  instagram: "/lesson-images/instagram-growth-bg.png",
+  tiktok: "/lesson-images/tiktok-growth-bg.png",
+  "youtube-shorts": "/lesson-images/youtube-shorts-growth-bg.png",
+};
+
+function getGrowthClass(theme: Lesson["theme"]) {
+  return `growth-card growth-card--${theme}`;
+}
 
 export default function GrowthSection({ onBuy }: GrowthSectionProps) {
   return (
@@ -22,31 +32,35 @@ export default function GrowthSection({ onBuy }: GrowthSectionProps) {
         <h2 className="section-title">Выбери направление роста</h2>
 
         <p className="section-text">
-          Ниже три больших визуальных блока. Меняешь картинки в папке
-          lesson-images — и фон сразу обновляется на сайте.
+          Эти блоки можно использовать под отдельные продающие изображения:
+          охваты, просмотры, вовлечение, комментарии, лайки и подписчики.
         </p>
       </div>
 
       <div className="growth-showcase-grid">
         {lessons.map((lesson) => (
-          <button
+          <div
             key={lesson.slug}
-            type="button"
-            className={getThemeClass(lesson.theme).growth}
+            className={getGrowthClass(lesson.theme)}
             style={
               {
-                "--growth-bg": `url("${lesson.image}")`,
+                "--growth-bg": `url("${growthImages[lesson.slug]}")`,
               } as CSSProperties
             }
-            onClick={() => onBuy(lesson)}
+            onClick={() => onBuy?.(lesson)}
+            role={onBuy ? "button" : undefined}
+            tabIndex={onBuy ? 0 : undefined}
+            onKeyDown={(event) => {
+              if (!onBuy) return;
+
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onBuy(lesson);
+              }
+            }}
           >
-            <div className="growth-card-center">
-              <span className="gold-btn buy-center-btn">
-                Купить урок за {lesson.price} ₽
-                <ArrowRight size={20} />
-              </span>
-            </div>
-          </button>
+            <div className="growth-card-center" />
+          </div>
         ))}
       </div>
     </section>
