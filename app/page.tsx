@@ -139,7 +139,6 @@ function getThemeClass(theme: Theme) {
   return {
     tab: `product-tab product-tab--${theme}`,
     card: `product-card product-card--${theme}`,
-    mini: `mini-preview mini-preview--${theme}`,
     badge: `platform-badge platform-badge--${theme}`,
   };
 }
@@ -154,15 +153,11 @@ export default function HomePage() {
   const activeLesson = useMemo(() => getLesson(activeSlug), [activeSlug]);
   const ActiveIcon = activeLesson.icon;
 
-  const sideLessons = useMemo(
-    () => lessons.filter((lesson) => lesson.slug !== activeLesson.slug),
-    [activeLesson.slug],
-  );
-
   function openCheckout(lesson: Lesson) {
     setCheckoutLesson(lesson);
     setEmail("");
     setError("");
+    setIsBuying(false);
   }
 
   async function handleBuy(event: FormEvent<HTMLFormElement>) {
@@ -331,107 +326,82 @@ export default function HomePage() {
             })}
           </div>
 
-          <div className="lesson-grid">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={activeLesson.slug}
-                className={getThemeClass(activeLesson.theme).card}
-                style={
-                  {
-                    "--lesson-bg": `url("${activeLesson.image}")`,
-                  } as CSSProperties
-                }
-                initial={{ opacity: 0, y: 14 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -14 }}
-                transition={{ duration: 0.24 }}
-              >
-                <div className="product-card-glow" />
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={activeLesson.slug}
+              className={`${getThemeClass(activeLesson.theme).card} product-card--single`}
+              style={
+                {
+                  "--lesson-bg": `url("${activeLesson.image}")`,
+                } as CSSProperties
+              }
+              initial={{ opacity: 0, y: 14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.24 }}
+            >
+              <div className="product-card-glow" />
 
-                <div className="product-card-content">
-                  <div className="product-copy">
-                    <div className={getThemeClass(activeLesson.theme).badge}>
-                      <ActiveIcon size={18} />
-                      {activeLesson.platformLabel}
+              <div className="product-card-content product-card-content--single">
+                <div className="product-copy">
+                  <div className={getThemeClass(activeLesson.theme).badge}>
+                    <ActiveIcon size={18} />
+                    {activeLesson.platformLabel}
+                  </div>
+
+                  <h2 className="product-title">{activeLesson.subtitle}</h2>
+
+                  <p className="product-description">
+                    {activeLesson.description}
+                  </p>
+
+                  <div className="product-stats-row">
+                    <div className="product-stat-box">
+                      <div className="product-stat-value">
+                        {activeLesson.stat}
+                      </div>
+                      <div className="product-stat-label">
+                        {activeLesson.statLabel}
+                      </div>
                     </div>
 
-                    <h2 className="product-title">{activeLesson.subtitle}</h2>
-
-                    <p className="product-description">
-                      {activeLesson.description}
-                    </p>
-
-                    <div className="product-bullets">
-                      {activeLesson.bullets.map((bullet) => (
-                        <div key={bullet} className="product-bullet">
-                          <span>
-                            <Check size={14} />
-                          </span>
-                          {bullet}
-                        </div>
-                      ))}
-                    </div>
-
-                    <div className="product-actions">
-                      <button
-                        type="button"
-                        className="gold-btn"
-                        onClick={() => openCheckout(activeLesson)}
-                      >
-                        Купить за {activeLesson.price} ₽
-                        <ArrowRight size={18} />
-                      </button>
-
-                      <a href="#inside" className="dark-btn">
-                        Подробнее
-                        <Play size={18} />
-                      </a>
+                    <div className="product-price-box">
+                      <div className="product-price-current">
+                        {activeLesson.price} ₽
+                      </div>
+                      <div className="product-price-old">
+                        {activeLesson.oldPrice} ₽
+                      </div>
                     </div>
                   </div>
 
-                  <div className="product-bg-space" aria-hidden="true" />
+                  <div className="product-bullets">
+                    {activeLesson.bullets.map((bullet) => (
+                      <div key={bullet} className="product-bullet">
+                        <span>
+                          <Check size={14} />
+                        </span>
+                        {bullet}
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </motion.div>
-            </AnimatePresence>
 
-            <div className="side-products">
-              {sideLessons.map((lesson) => {
-                const Icon = lesson.icon;
-                const ui = getThemeClass(lesson.theme);
+                <div className="product-bg-space" aria-hidden="true" />
 
-                return (
+                <div className="product-bottom-action">
                   <button
-                    key={lesson.slug}
                     type="button"
-                    className="side-product"
-                    style={
-                      {
-                        "--side-bg": `url("${lesson.image}")`,
-                      } as CSSProperties
-                    }
-                    onClick={() => setActiveSlug(lesson.slug)}
+                    className="gold-btn gold-btn--large"
+                    onClick={() => openCheckout(activeLesson)}
                   >
-                    <div
-                      className={`side-product-glow side-product-glow--${lesson.theme}`}
-                    />
-
-                    <div className="side-product-content">
-                      <div className={ui.badge}>
-                        <Icon size={16} />
-                        {lesson.platformLabel}
-                      </div>
-
-                      <div className="side-product-title">
-                        {lesson.platformLabel}
-                      </div>
-
-                      <p className="side-product-text">{lesson.description}</p>
-                    </div>
+                    Купить урок за {activeLesson.price} ₽
+                    <ArrowRight size={18} />
                   </button>
-                );
-              })}
-            </div>
-          </div>
+                </div>
+              </div>
+            </motion.div>
+          </AnimatePresence>
         </div>
       </section>
 
@@ -641,6 +611,7 @@ export default function HomePage() {
             onMouseDown={(event) => {
               if (event.target === event.currentTarget) {
                 setCheckoutLesson(null);
+                setIsBuying(false);
               }
             }}
           >
@@ -654,7 +625,10 @@ export default function HomePage() {
               <button
                 type="button"
                 className="modal-close"
-                onClick={() => setCheckoutLesson(null)}
+                onClick={() => {
+                  setCheckoutLesson(null);
+                  setIsBuying(false);
+                }}
               >
                 <X size={18} />
               </button>
