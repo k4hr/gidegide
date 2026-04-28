@@ -1415,3 +1415,101 @@ button {
     border-radius: 28px;
   }
 }
+
+/* Premium generated lesson images */
+.product-image-wrap {
+  position: relative;
+  min-height: 430px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.product-image-wrap::before {
+  content: "";
+  position: absolute;
+  width: 92%;
+  height: 82%;
+  border-radius: 34px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 209, 99, 0.18), transparent 64%),
+    linear-gradient(135deg, rgba(255, 224, 140, 0.08), rgba(255, 186, 57, 0.02));
+  filter: blur(18px);
+  opacity: 0.9;
+}
+
+.product-image {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 540px);
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 30px;
+  border: 1px solid rgba(255, 224, 145, 0.24);
+  box-shadow:
+    0 26px 74px rgba(0, 0, 0, 0.46),
+    0 0 54px rgba(255, 198, 76, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.product-card--instagram .product-image {
+  box-shadow:
+    0 26px 74px rgba(0, 0, 0, 0.46),
+    0 0 58px rgba(255, 90, 196, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.product-card--tiktok .product-image {
+  box-shadow:
+    0 26px 74px rgba(0, 0, 0, 0.46),
+    0 0 58px rgba(37, 244, 255, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.product-card--youtube .product-image {
+  box-shadow:
+    0 26px 74px rgba(0, 0, 0, 0.46),
+    0 0 58px rgba(255, 78, 48, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14);
+}
+
+.side-image-wrap {
+  position: relative;
+  z-index: 2;
+  margin-top: 20px;
+  overflow: hidden;
+  height: 168px;
+  border-radius: 24px;
+  border: 1px solid rgba(255, 224, 145, 0.16);
+  background: rgba(0, 0, 0, 0.24);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 18px 42px rgba(0, 0, 0, 0.26);
+}
+
+.side-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.02);
+  transition: transform 0.32s ease;
+}
+
+.side-product:hover .side-image {
+  transform: scale(1.07);
+}
+
+@media (max-width: 920px) {
+  .product-image-wrap {
+    min-height: auto;
+  }
+
+  .product-image {
+    width: 100%;
+    border-radius: 22px;
+  }
+
+  .side-image-wrap {
+    height: 210px;
+  }
+}

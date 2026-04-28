@@ -7,7 +7,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   BadgeCheck,
-  BarChart3,
   Check,
   Crown,
   Instagram,
@@ -18,7 +17,6 @@ import {
   PlaySquare,
   ShieldCheck,
   Sparkles,
-  TrendingUp,
   X,
   Zap,
 } from "lucide-react";
@@ -37,6 +35,7 @@ type Lesson = {
   oldPrice: number;
   stat: string;
   statLabel: string;
+  image: string;
   icon: LucideIcon;
   bullets: string[];
 };
@@ -54,6 +53,7 @@ const lessons: Lesson[] = [
     oldPrice: 990,
     stat: "+128%",
     statLabel: "к охватам",
+    image: "/lesson-images/instagram-growth.png",
     icon: Instagram,
     bullets: [
       "Рост охватов",
@@ -76,6 +76,7 @@ const lessons: Lesson[] = [
     oldPrice: 790,
     stat: "+215%",
     statLabel: "к вовлечению",
+    image: "/lesson-images/tiktok-growth.png",
     icon: Music2,
     bullets: [
       "Первые 1–3 секунды",
@@ -98,6 +99,7 @@ const lessons: Lesson[] = [
     oldPrice: 790,
     stat: "+184%",
     statLabel: "к просмотрам",
+    image: "/lesson-images/youtube-shorts-growth.png",
     icon: PlaySquare,
     bullets: [
       "CTR и свайпы",
@@ -380,37 +382,12 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="product-phone-wrap">
-                    <div
-                      className={`product-phone product-phone--${activeLesson.theme}`}
-                    >
-                      <div className="phone-topline">
-                        <span>{activeLesson.platformLabel}</span>
-                        <span>12.6K</span>
-                      </div>
-
-                      <div className="phone-stat">
-                        <div className="phone-stat-label">Рост метрик</div>
-                        <div className="phone-stat-value">
-                          {activeLesson.stat}
-                        </div>
-                        <div className="phone-stat-sub">
-                          {activeLesson.statLabel}
-                        </div>
-                      </div>
-
-                      <div className="phone-arrow" />
-
-                      <div className="phone-bars">
-                        {[52, 84, 70, 116, 156].map((height, index) => (
-                          <div
-                            key={index}
-                            className="phone-bar"
-                            style={{ height }}
-                          />
-                        ))}
-                      </div>
-                    </div>
+                  <div className="product-image-wrap">
+                    <img
+                      src={activeLesson.image}
+                      alt=""
+                      className="product-image"
+                    />
                   </div>
                 </div>
               </motion.div>
@@ -438,22 +415,12 @@ export default function HomePage() {
 
                     <p className="side-product-text">{lesson.description}</p>
 
-                    <div className={ui.mini}>
-                      <div className="mini-icon">
-                        <Icon size={42} />
-                      </div>
-
-                      <div className="mini-bars">
-                        {[38, 60, 50, 84, 112].map((height, index) => (
-                          <div
-                            key={index}
-                            className="mini-bar"
-                            style={{ height }}
-                          />
-                        ))}
-                      </div>
-
-                      <TrendingUp className="mini-trend" />
+                    <div className="side-image-wrap">
+                      <img
+                        src={lesson.image}
+                        alt=""
+                        className="side-image"
+                      />
                     </div>
                   </button>
                 );
