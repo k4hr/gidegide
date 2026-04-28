@@ -8,9 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
     "prisma:seed": "tsx prisma/seed.ts",
-    "db:setup": "prisma db push && prisma generate && tsx prisma/seed.ts"
+    "db:setup": "prisma migrate dev && prisma generate && tsx prisma/seed.ts",
+    "db:deploy": "prisma migrate deploy && prisma generate"
   },
   "dependencies": {
     "@prisma/client": "latest",
