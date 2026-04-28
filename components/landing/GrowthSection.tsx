@@ -23,37 +23,44 @@ const growthCopy: Record<
     title: string;
     text: string;
     bullets: string[];
+    accent: string;
   }
 > = {
   instagram: {
-    eyebrow: "Instagram growth",
-    title: "ОХВАТЫ, ЛАЙКИ И КОММЕНТАРИИ",
-    text: "Пойми, как Instagram двигает Reels в рекомендации, какие сигналы реально поднимают охваты и как выжимать максимум из каждого ролика.",
+    eyebrow: "Instagram Algorithm",
+    title: "ЗАБЕРИ ОХВАТЫ, КОТОРЫЕ УПУСКАЮТ ДРУГИЕ",
+    text: "Разбери, какие сигналы Instagram реально считывает в Reels: удержание, реакции, сохранения, комментарии и упаковку профиля. Не гадай — делай контент, который алгоритм хочет показывать.",
     bullets: [
-      "Рост охватов",
-      "Больше лайков",
-      "Больше комментариев",
+      "Больше охватов",
+      "Больше реакций",
+      "Больше заявок",
+      "Сильная упаковка",
     ],
+    accent: "Reels / охваты / заявки",
   },
   tiktok: {
-    eyebrow: "TikTok growth",
-    title: "ВЫХОД В РЕКОМЕНДАЦИИ",
-    text: "Разберись, как TikTok оценивает удержание, досмотры и первые секунды ролика, чтобы чаще залетать в рекомендации и набирать просмотры.",
+    eyebrow: "TikTok Algorithm",
+    title: "ЗАЛЕТАЙ В РЕКОМЕНДАЦИИ, А НЕ В ПУСТОТУ",
+    text: "TikTok не продвигает случайно. Он смотрит на первые секунды, досмотры, повторы, вовлечение и сериальность. Пойми механику — и перестань сливать ролики без результата.",
     bullets: [
-      "Вирусные просмотры",
+      "Выход в рекомендации",
+      "Досмотры роликов",
+      "Вирусные форматы",
       "Рост вовлечения",
-      "Сильное удержание",
     ],
+    accent: "For You / удержание / вирусность",
   },
   "youtube-shorts": {
-    eyebrow: "YouTube Shorts growth",
-    title: "ПРОСМОТРЫ И РОСТ SHORTS",
-    text: "Узнай, как повышать CTR, удержание и повторные просмотры, чтобы Shorts чаще пушились алгоритмом и приносили стабильный рост канала.",
+    eyebrow: "YouTube Shorts Algorithm",
+    title: "ПРЕВРАТИ SHORTS В МАШИНУ ПРОСМОТРОВ",
+    text: "YouTube Shorts продвигает то, что удерживает внимание. Разбери CTR, свайпы, повторные просмотры, тематику канала и структуру короткого видео, чтобы ролики получали больше показов.",
     bullets: [
       "Больше просмотров",
-      "Выше CTR",
+      "Выше удержание",
+      "Сильнее CTR",
       "Рост канала",
     ],
+    accent: "Shorts / просмотры / рост",
   },
 };
 
@@ -73,8 +80,9 @@ export default function GrowthSection({ onBuy }: GrowthSectionProps) {
         <h2 className="section-title">ВЫБЕРИ НАПРАВЛЕНИЕ РОСТА</h2>
 
         <p className="section-text">
-          Эти блоки можно использовать под отдельные продающие изображения:
-          охваты, просмотры, вовлечение, комментарии, лайки и подписчики.
+          Три отдельных разбора под разные алгоритмы: Instagram, TikTok и
+          YouTube Shorts. Каждый блок — про рост охватов, просмотров,
+          вовлечения и заявок через контент.
         </p>
       </div>
 
@@ -111,6 +119,8 @@ export default function GrowthSection({ onBuy }: GrowthSectionProps) {
                 <h3 className="growth-card-title">{copy.title}</h3>
 
                 <p className="growth-card-text">{copy.text}</p>
+
+                <div className="growth-card-accent">{copy.accent}</div>
 
                 <div className="growth-card-bullets">
                   {copy.bullets.map((item) => (
