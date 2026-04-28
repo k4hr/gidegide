@@ -1,6 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, BadgeCheck, Crown, LockKeyhole, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  Crown,
+  LockKeyhole,
+  Sparkles,
+} from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
 
