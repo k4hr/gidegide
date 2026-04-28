@@ -451,16 +451,10 @@ button {
   font-weight: 800;
 }
 
-.lesson-grid {
-  display: grid;
-  grid-template-columns: 1.28fr 0.72fr;
-  gap: 16px;
-}
-
 .product-card {
   position: relative;
   overflow: hidden;
-  min-height: 720px;
+  min-height: 760px;
   border-radius: 0 30px 30px 30px;
   border: 1px solid var(--border);
   background:
@@ -478,9 +472,9 @@ button {
   z-index: 0;
   background-image: var(--lesson-bg);
   background-repeat: no-repeat;
-  background-position: right center;
-  background-size: auto 100%;
-  opacity: 0.98;
+  background-position: center center;
+  background-size: cover;
+  opacity: 1;
   transform: scale(1.015);
   filter: saturate(1.08) contrast(1.06);
 }
@@ -492,9 +486,8 @@ button {
   z-index: 1;
   pointer-events: none;
   background:
-    linear-gradient(90deg, rgba(6, 5, 3, 0.98) 0%, rgba(6, 5, 3, 0.92) 35%, rgba(6, 5, 3, 0.48) 58%, rgba(6, 5, 3, 0.16) 100%),
-    radial-gradient(circle at 74% 48%, rgba(255, 211, 96, 0.14), transparent 35%),
-    linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.18));
+    radial-gradient(circle at 50% 50%, rgba(255, 213, 98, 0.14), transparent 26%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.24));
 }
 
 .product-card-glow {
@@ -521,221 +514,26 @@ button {
   background: rgba(255, 78, 48, 0.28);
 }
 
-.product-card-content {
+.product-card-center {
   position: relative;
   z-index: 3;
-  display: grid;
-  grid-template-columns: minmax(420px, 0.76fr) minmax(360px, 1fr);
-  gap: 24px;
-  min-height: 720px;
-  align-items: center;
-  padding: 34px;
-}
-
-.product-copy {
-  max-width: 560px;
-}
-
-.product-bg-space {
-  min-height: 520px;
-}
-
-.platform-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 38px;
-  padding: 0 14px;
-  border-radius: 999px;
-  color: white;
-  font-size: 13px;
-  font-weight: 900;
-  border: 1px solid rgba(255,255,255,0.14);
-  backdrop-filter: blur(10px);
-}
-
-.platform-badge--instagram {
-  background: linear-gradient(135deg, rgba(255,94,204,0.42), rgba(255,133,81,0.3));
-}
-
-.platform-badge--tiktok {
-  background: linear-gradient(135deg, rgba(37,244,255,0.18), rgba(255,56,129,0.14));
-}
-
-.platform-badge--youtube {
-  background: linear-gradient(135deg, rgba(255,70,45,0.35), rgba(255,154,65,0.2));
-}
-
-.product-title {
-  margin: 18px 0 0;
-  max-width: 560px;
-  color: white;
-  font-size: clamp(42px, 4.4vw, 72px);
-  line-height: 0.94;
-  letter-spacing: -0.065em;
-  font-weight: 950;
-  text-shadow: 0 18px 42px rgba(0,0,0,0.42);
-}
-
-.product-description {
-  margin: 18px 0 0;
-  max-width: 560px;
-  color: rgba(255,255,255,0.76);
-  font-size: 18px;
-  line-height: 1.56;
-  font-weight: 750;
-}
-
-.product-bullets {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.product-bullet {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 64px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(255,255,255,0.09);
-  background: rgba(0,0,0,0.40);
-  color: rgba(255,255,255,0.92);
-  font-size: 15px;
-  line-height: 1.2;
-  font-weight: 850;
-  backdrop-filter: blur(10px);
-}
-
-.product-bullet span {
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  border-radius: 999px;
+  min-height: 760px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--gold-2);
-  color: #170c02;
+  padding: 34px;
 }
 
-.product-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 28px;
-}
-
-.side-products {
-  display: grid;
-  gap: 16px;
-}
-
-.side-product {
-  position: relative;
-  overflow: hidden;
-  min-height: 352px;
-  padding: 26px;
-  border-radius: 30px;
-  border: 1px solid var(--border);
-  background:
-    linear-gradient(135deg, rgba(255,224,140,0.06), rgba(255,186,57,0.02)),
-    rgba(8, 7, 5, 0.9);
-  text-align: left;
-  color: inherit;
+.buy-center-btn {
+  min-height: 76px;
+  padding: 0 38px;
+  border-radius: 26px;
+  font-size: 17px;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.07),
-    0 24px 64px rgba(0,0,0,0.34);
-  transition: 0.2s ease;
-}
-
-.side-product::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  background-image: var(--side-bg);
-  background-repeat: no-repeat;
-  background-position: center center;
-  background-size: cover;
-  opacity: 0.92;
-  transform: scale(1.02);
-  filter: saturate(1.08) contrast(1.05);
-  transition: transform 0.35s ease;
-}
-
-.side-product::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(6,5,3,0.94) 0%, rgba(6,5,3,0.75) 45%, rgba(6,5,3,0.18) 100%),
-    linear-gradient(180deg, rgba(6,5,3,0.18) 0%, rgba(6,5,3,0.84) 100%);
-}
-
-.side-product:hover {
-  transform: translateY(-4px);
-  border-color: rgba(255, 224, 145, 0.38);
-}
-
-.side-product:hover::before {
-  transform: scale(1.08);
-}
-
-.side-product-glow {
-  position: absolute;
-  right: -90px;
-  top: -90px;
-  z-index: 2;
-  width: 220px;
-  height: 220px;
-  border-radius: 999px;
-  filter: blur(56px);
-  opacity: 0.55;
-}
-
-.side-product-glow--instagram {
-  background: rgba(255, 90, 196, 0.26);
-}
-
-.side-product-glow--tiktok {
-  background: rgba(37, 244, 255, 0.22);
-}
-
-.side-product-glow--youtube {
-  background: rgba(255, 78, 48, 0.22);
-}
-
-.side-product-content {
-  position: relative;
-  z-index: 3;
-  max-width: 410px;
-}
-
-.side-product-title {
-  margin-top: 16px;
-  color: white;
-  font-size: 34px;
-  line-height: 1;
-  font-weight: 950;
-  letter-spacing: -0.05em;
-  text-shadow: 0 14px 34px rgba(0,0,0,0.38);
-}
-
-.side-product-text {
-  margin: 14px 0 0;
-  color: rgba(255,255,255,0.78);
-  font-size: 16px;
-  line-height: 1.48;
-  font-weight: 750;
-}
-
-.mini-preview {
-  display: none;
+    inset 0 1px 0 rgba(255,255,255,0.78),
+    0 24px 48px rgba(255, 186, 50, 0.38),
+    0 0 0 1px rgba(255, 231, 155, 0.42),
+    0 0 60px rgba(255, 202, 76, 0.2);
 }
 
 .growth-showcase-section {
@@ -762,15 +560,14 @@ button {
   gap: 22px;
 }
 
-.growth-showcase-card {
+.growth-card {
   position: relative;
-  min-height: 560px;
+  min-height: 620px;
   overflow: hidden;
   border: 1px solid rgba(255, 221, 130, 0.28);
   border-radius: 34px;
   background: rgba(8, 7, 5, 0.9);
   color: inherit;
-  text-align: left;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.08),
     0 28px 90px rgba(0, 0, 0, 0.46),
@@ -781,7 +578,7 @@ button {
     box-shadow 0.25s ease;
 }
 
-.growth-showcase-card::before {
+.growth-card::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -795,7 +592,18 @@ button {
   transition: transform 0.45s ease;
 }
 
-.growth-showcase-card:hover {
+.growth-card::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 213, 98, 0.14), transparent 26%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.24));
+}
+
+.growth-card:hover {
   transform: translateY(-6px);
   border-color: rgba(255, 226, 150, 0.52);
   box-shadow:
@@ -804,149 +612,18 @@ button {
     0 0 90px rgba(255, 199, 82, 0.14);
 }
 
-.growth-showcase-card:hover::before {
+.growth-card:hover::before {
   transform: scale(1.07);
 }
 
-.growth-showcase-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
-    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
-}
-
-.growth-showcase-card--instagram .growth-showcase-overlay {
-  background:
-    radial-gradient(circle at 72% 44%, rgba(255, 83, 190, 0.14), transparent 35%),
-    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
-    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
-}
-
-.growth-showcase-card--tiktok .growth-showcase-overlay {
-  background:
-    radial-gradient(circle at 72% 44%, rgba(37, 244, 255, 0.14), transparent 35%),
-    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
-    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
-}
-
-.growth-showcase-card--youtube .growth-showcase-overlay {
-  background:
-    radial-gradient(circle at 72% 44%, rgba(255, 72, 42, 0.15), transparent 35%),
-    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
-    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
-}
-
-.growth-showcase-content {
+.growth-card-center {
   position: relative;
   z-index: 3;
-  width: min(100%, 560px);
-  min-height: 560px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 48px;
-}
-
-.growth-showcase-badge {
-  width: fit-content;
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-height: 40px;
-  padding: 0 15px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.38);
-  color: #fff2c8;
-  font-size: 13px;
-  font-weight: 950;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  backdrop-filter: blur(12px);
-}
-
-.growth-showcase-card--instagram .growth-showcase-badge {
-  background: linear-gradient(135deg, rgba(255, 94, 204, 0.42), rgba(255, 133, 81, 0.3));
-}
-
-.growth-showcase-card--tiktok .growth-showcase-badge {
-  background: linear-gradient(135deg, rgba(37, 244, 255, 0.2), rgba(255, 56, 129, 0.14));
-}
-
-.growth-showcase-card--youtube .growth-showcase-badge {
-  background: linear-gradient(135deg, rgba(255, 70, 45, 0.36), rgba(255, 154, 65, 0.22));
-}
-
-.growth-showcase-content h3 {
-  margin: 20px 0 0;
-  color: white;
-  font-size: clamp(44px, 4.2vw, 74px);
-  line-height: 0.92;
-  letter-spacing: -0.07em;
-  font-weight: 950;
-  text-shadow:
-    0 14px 40px rgba(0, 0, 0, 0.5),
-    0 0 38px rgba(255, 204, 87, 0.12);
-}
-
-.growth-showcase-content p {
-  margin: 20px 0 0;
-  max-width: 520px;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 18px;
-  line-height: 1.55;
-  font-weight: 750;
-  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
-}
-
-.growth-showcase-bottom {
+  min-height: 620px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  margin-top: 34px;
-}
-
-.growth-showcase-price {
-  color: #ffe08a;
-  font-size: 44px;
-  line-height: 1;
-  font-weight: 950;
-  letter-spacing: -0.05em;
-  text-shadow: 0 0 28px rgba(255, 206, 89, 0.2);
-}
-
-.growth-showcase-old {
-  margin-top: 7px;
-  color: rgba(255, 255, 255, 0.46);
-  font-size: 15px;
-  font-weight: 850;
-  text-decoration: line-through;
-}
-
-.growth-showcase-action {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: 10px;
-  min-height: 54px;
-  padding: 0 22px;
-  border-radius: 18px;
-  color: #201103;
-  background:
-    linear-gradient(180deg, rgba(255, 247, 207, 0.98), rgba(255, 203, 77, 0.98) 42%, rgba(157, 91, 12, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.72),
-    0 12px 30px rgba(255, 186, 50, 0.28),
-    0 0 0 1px rgba(255, 231, 155, 0.38);
-  font-size: 14px;
-  font-weight: 950;
-  text-transform: uppercase;
-  letter-spacing: 0.045em;
-  white-space: nowrap;
+  padding: 34px;
 }
 
 .content-section {
@@ -1005,15 +682,8 @@ button {
   background: rgba(0,0,0,0.24);
 }
 
-.info-number {
-  color: rgba(255, 221, 132, 0.17);
-  font-size: 58px;
-  line-height: 1;
-  font-weight: 950;
-}
-
 .info-card h3 {
-  margin: 12px 0 0;
+  margin: 0;
   color: white;
   font-size: 24px;
   line-height: 1.08;
@@ -1347,21 +1017,14 @@ button {
     margin-top: -70px;
   }
 
-  .lesson-grid {
-    grid-template-columns: 1fr;
+  .product-card,
+  .product-card-center {
+    min-height: 680px;
   }
 
-  .product-card {
-    min-height: 640px;
-  }
-
-  .product-card-content {
-    min-height: 640px;
-    grid-template-columns: minmax(340px, 0.7fr) minmax(260px, 1fr);
-  }
-
-  .product-bg-space {
-    min-height: 460px;
+  .growth-card,
+  .growth-card-center {
+    min-height: 560px;
   }
 }
 
@@ -1436,43 +1099,24 @@ button {
   }
 
   .product-card {
-    min-height: auto;
     border-radius: 28px;
   }
 
+  .product-card,
+  .product-card-center {
+    min-height: 560px;
+  }
+
   .product-card::before {
-    background-position: center bottom;
+    background-position: center center;
     background-size: cover;
-    opacity: 0.72;
   }
 
-  .product-card::after {
-    background:
-      linear-gradient(180deg, rgba(6, 5, 3, 0.98) 0%, rgba(6, 5, 3, 0.80) 48%, rgba(6, 5, 3, 0.24) 100%),
-      linear-gradient(90deg, rgba(6,5,3,0.86), rgba(6,5,3,0.24));
-  }
-
-  .product-card-content {
-    min-height: 720px;
-    grid-template-columns: 1fr;
-    align-items: start;
-    padding: 22px;
-  }
-
-  .product-copy {
-    max-width: 100%;
-  }
-
-  .product-bg-space {
-    min-height: 260px;
-  }
-
-  .product-bullets {
-    grid-template-columns: 1fr;
-  }
-
-  .side-product {
-    min-height: 300px;
+  .buy-center-btn {
+    width: 100%;
+    min-height: 70px;
+    padding: 0 22px;
+    font-size: 15px;
   }
 
   .growth-showcase-section {
@@ -1484,44 +1128,18 @@ button {
     border-radius: 28px;
   }
 
-  .growth-showcase-card {
-    min-height: 640px;
+  .growth-card {
     border-radius: 28px;
   }
 
-  .growth-showcase-card::before {
-    background-position: center bottom;
+  .growth-card,
+  .growth-card-center {
+    min-height: 520px;
+  }
+
+  .growth-card::before {
+    background-position: center center;
     background-size: cover;
-    opacity: 0.78;
-  }
-
-  .growth-showcase-overlay,
-  .growth-showcase-card--instagram .growth-showcase-overlay,
-  .growth-showcase-card--tiktok .growth-showcase-overlay,
-  .growth-showcase-card--youtube .growth-showcase-overlay {
-    background:
-      linear-gradient(180deg, rgba(5, 4, 2, 0.98) 0%, rgba(5, 4, 2, 0.82) 46%, rgba(5, 4, 2, 0.22) 100%),
-      linear-gradient(90deg, rgba(5, 4, 2, 0.88), rgba(5, 4, 2, 0.24));
-  }
-
-  .growth-showcase-content {
-    min-height: 640px;
-    width: 100%;
-    justify-content: flex-start;
-    padding: 26px;
-  }
-
-  .growth-showcase-content h3 {
-    font-size: 46px;
-  }
-
-  .growth-showcase-bottom {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .growth-showcase-action {
-    width: 100%;
   }
 
   .info-grid,
@@ -1539,8 +1157,7 @@ button {
     padding-top: 18px;
   }
 
-  .hero-buttons,
-  .product-actions {
+  .hero-buttons {
     flex-direction: column;
   }
 
@@ -1568,12 +1185,14 @@ button {
     width: 100%;
   }
 
-  .product-title {
-    font-size: 46px;
+  .product-card,
+  .product-card-center {
+    min-height: 460px;
   }
 
-  .side-product {
-    min-height: 320px;
+  .growth-card,
+  .growth-card-center {
+    min-height: 460px;
   }
 
   .modal-card {
