@@ -197,7 +197,7 @@ button {
 .nav {
   display: flex;
   align-items: center;
-  gap: 38px;
+  gap: 30px;
   color: rgba(255, 240, 204, 0.86);
   font-size: 14px;
   font-weight: 900;
@@ -738,6 +738,217 @@ button {
   display: none;
 }
 
+.growth-showcase-section {
+  position: relative;
+  z-index: 2;
+  padding-top: 34px;
+}
+
+.growth-showcase-head {
+  margin-bottom: 26px;
+  padding: 34px;
+  border-radius: 32px;
+  border: 1px solid var(--border);
+  background:
+    linear-gradient(135deg, rgba(255, 224, 140, 0.06), rgba(255, 186, 57, 0.02)),
+    rgba(8, 7, 5, 0.84);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 70px rgba(0, 0, 0, 0.3);
+}
+
+.growth-showcase-grid {
+  display: grid;
+  gap: 22px;
+}
+
+.growth-showcase-card {
+  position: relative;
+  min-height: 560px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 221, 130, 0.28);
+  border-radius: 34px;
+  background: rgba(8, 7, 5, 0.9);
+  color: inherit;
+  text-align: left;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 28px 90px rgba(0, 0, 0, 0.46),
+    0 0 70px rgba(255, 199, 82, 0.08);
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.growth-showcase-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-image: var(--growth-bg);
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: cover;
+  transform: scale(1.02);
+  filter: saturate(1.08) contrast(1.08);
+  transition: transform 0.45s ease;
+}
+
+.growth-showcase-card:hover {
+  transform: translateY(-6px);
+  border-color: rgba(255, 226, 150, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 34px 110px rgba(0, 0, 0, 0.54),
+    0 0 90px rgba(255, 199, 82, 0.14);
+}
+
+.growth-showcase-card:hover::before {
+  transform: scale(1.07);
+}
+
+.growth-showcase-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
+    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
+}
+
+.growth-showcase-card--instagram .growth-showcase-overlay {
+  background:
+    radial-gradient(circle at 72% 44%, rgba(255, 83, 190, 0.14), transparent 35%),
+    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
+    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
+}
+
+.growth-showcase-card--tiktok .growth-showcase-overlay {
+  background:
+    radial-gradient(circle at 72% 44%, rgba(37, 244, 255, 0.14), transparent 35%),
+    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
+    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
+}
+
+.growth-showcase-card--youtube .growth-showcase-overlay {
+  background:
+    radial-gradient(circle at 72% 44%, rgba(255, 72, 42, 0.15), transparent 35%),
+    linear-gradient(90deg, rgba(5, 4, 2, 0.96) 0%, rgba(5, 4, 2, 0.82) 31%, rgba(5, 4, 2, 0.32) 58%, rgba(5, 4, 2, 0.08) 100%),
+    linear-gradient(180deg, rgba(5, 4, 2, 0.06) 0%, rgba(5, 4, 2, 0.1) 54%, rgba(5, 4, 2, 0.62) 100%);
+}
+
+.growth-showcase-content {
+  position: relative;
+  z-index: 3;
+  width: min(100%, 560px);
+  min-height: 560px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 48px;
+}
+
+.growth-showcase-badge {
+  width: fit-content;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.38);
+  color: #fff2c8;
+  font-size: 13px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  backdrop-filter: blur(12px);
+}
+
+.growth-showcase-card--instagram .growth-showcase-badge {
+  background: linear-gradient(135deg, rgba(255, 94, 204, 0.42), rgba(255, 133, 81, 0.3));
+}
+
+.growth-showcase-card--tiktok .growth-showcase-badge {
+  background: linear-gradient(135deg, rgba(37, 244, 255, 0.2), rgba(255, 56, 129, 0.14));
+}
+
+.growth-showcase-card--youtube .growth-showcase-badge {
+  background: linear-gradient(135deg, rgba(255, 70, 45, 0.36), rgba(255, 154, 65, 0.22));
+}
+
+.growth-showcase-content h3 {
+  margin: 20px 0 0;
+  color: white;
+  font-size: clamp(44px, 4.2vw, 74px);
+  line-height: 0.92;
+  letter-spacing: -0.07em;
+  font-weight: 950;
+  text-shadow:
+    0 14px 40px rgba(0, 0, 0, 0.5),
+    0 0 38px rgba(255, 204, 87, 0.12);
+}
+
+.growth-showcase-content p {
+  margin: 20px 0 0;
+  max-width: 520px;
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 18px;
+  line-height: 1.55;
+  font-weight: 750;
+  text-shadow: 0 10px 28px rgba(0, 0, 0, 0.38);
+}
+
+.growth-showcase-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 34px;
+}
+
+.growth-showcase-price {
+  color: #ffe08a;
+  font-size: 44px;
+  line-height: 1;
+  font-weight: 950;
+  letter-spacing: -0.05em;
+  text-shadow: 0 0 28px rgba(255, 206, 89, 0.2);
+}
+
+.growth-showcase-old {
+  margin-top: 7px;
+  color: rgba(255, 255, 255, 0.46);
+  font-size: 15px;
+  font-weight: 850;
+  text-decoration: line-through;
+}
+
+.growth-showcase-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 22px;
+  border-radius: 18px;
+  color: #201103;
+  background:
+    linear-gradient(180deg, rgba(255, 247, 207, 0.98), rgba(255, 203, 77, 0.98) 42%, rgba(157, 91, 12, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
+    0 12px 30px rgba(255, 186, 50, 0.28),
+    0 0 0 1px rgba(255, 231, 155, 0.38);
+  font-size: 14px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+}
+
 .content-section {
   position: relative;
   z-index: 2;
@@ -1262,6 +1473,55 @@ button {
 
   .side-product {
     min-height: 300px;
+  }
+
+  .growth-showcase-section {
+    padding-top: 18px;
+  }
+
+  .growth-showcase-head {
+    padding: 22px;
+    border-radius: 28px;
+  }
+
+  .growth-showcase-card {
+    min-height: 640px;
+    border-radius: 28px;
+  }
+
+  .growth-showcase-card::before {
+    background-position: center bottom;
+    background-size: cover;
+    opacity: 0.78;
+  }
+
+  .growth-showcase-overlay,
+  .growth-showcase-card--instagram .growth-showcase-overlay,
+  .growth-showcase-card--tiktok .growth-showcase-overlay,
+  .growth-showcase-card--youtube .growth-showcase-overlay {
+    background:
+      linear-gradient(180deg, rgba(5, 4, 2, 0.98) 0%, rgba(5, 4, 2, 0.82) 46%, rgba(5, 4, 2, 0.22) 100%),
+      linear-gradient(90deg, rgba(5, 4, 2, 0.88), rgba(5, 4, 2, 0.24));
+  }
+
+  .growth-showcase-content {
+    min-height: 640px;
+    width: 100%;
+    justify-content: flex-start;
+    padding: 26px;
+  }
+
+  .growth-showcase-content h3 {
+    font-size: 46px;
+  }
+
+  .growth-showcase-bottom {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .growth-showcase-action {
+    width: 100%;
   }
 
   .info-grid,
