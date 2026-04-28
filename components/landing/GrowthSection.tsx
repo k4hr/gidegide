@@ -11,9 +11,9 @@ type GrowthSectionProps = {
 };
 
 const growthImages: Record<Lesson["slug"], string> = {
-  instagram: "/lesson-images/instagram-growth-bg.png",
-  tiktok: "/lesson-images/tiktok-growth-bg.png",
-  "youtube-shorts": "/lesson-images/youtube-shorts-growth-bg.png",
+  instagram: "/lesson-images/instagram-growth.png",
+  tiktok: "/lesson-images/tiktok-growth.png",
+  "youtube-shorts": "/lesson-images/youtube-shorts-growth.png",
 };
 
 function getGrowthClass(theme: Lesson["theme"]) {
