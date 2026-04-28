@@ -1,6 +1,6 @@
 "use client";
 
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type { LucideIcon } from "lucide-react";
@@ -227,6 +227,7 @@ export default function HomePage() {
           <nav className="nav">
             <a href="#hero">Главная</a>
             <a href="#lessons">Уроки</a>
+            <a href="#growth">Рост</a>
             <a href="#inside">Что внутри</a>
             <a href="#packages">Пакеты</a>
             <a href="#faq">FAQ</a>
@@ -290,8 +291,8 @@ export default function HomePage() {
                 <ArrowRight size={18} />
               </a>
 
-              <a href="#packages" className="dark-btn">
-                Смотреть пакеты
+              <a href="#growth" className="dark-btn">
+                Смотреть рост
                 <Play size={18} />
               </a>
             </div>
@@ -338,7 +339,7 @@ export default function HomePage() {
                 style={
                   {
                     "--lesson-bg": `url("${activeLesson.image}")`,
-                  } as React.CSSProperties
+                  } as CSSProperties
                 }
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -406,7 +407,7 @@ export default function HomePage() {
                     style={
                       {
                         "--side-bg": `url("${lesson.image}")`,
-                      } as React.CSSProperties
+                      } as CSSProperties
                     }
                     onClick={() => setActiveSlug(lesson.slug)}
                   >
@@ -431,6 +432,72 @@ export default function HomePage() {
               })}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section id="growth" className="container growth-showcase-section">
+        <div className="growth-showcase-head">
+          <div className="section-label">
+            <Sparkles size={16} />
+            Рост по платформам
+          </div>
+
+          <h2 className="section-title">Выбери направление роста</h2>
+
+          <p className="section-text">
+            Каждый урок — это отдельный закрытый материал по конкретной
+            платформе: охваты, просмотры, вовлечение, удержание и рост через
+            алгоритмы.
+          </p>
+        </div>
+
+        <div className="growth-showcase-grid">
+          {lessons.map((lesson) => {
+            const Icon = lesson.icon;
+
+            return (
+              <button
+                key={lesson.slug}
+                type="button"
+                className={`growth-showcase-card growth-showcase-card--${lesson.theme}`}
+                style={
+                  {
+                    "--growth-bg": `url("${lesson.image}")`,
+                  } as CSSProperties
+                }
+                onClick={() => openCheckout(lesson)}
+              >
+                <div className="growth-showcase-overlay" />
+
+                <div className="growth-showcase-content">
+                  <div className="growth-showcase-badge">
+                    <Icon size={18} />
+                    {lesson.platformLabel}
+                  </div>
+
+                  <h3>{lesson.subtitle}</h3>
+
+                  <p>{lesson.description}</p>
+
+                  <div className="growth-showcase-bottom">
+                    <div>
+                      <div className="growth-showcase-price">
+                        {lesson.price} ₽
+                      </div>
+                      <div className="growth-showcase-old">
+                        {lesson.oldPrice} ₽
+                      </div>
+                    </div>
+
+                    <div className="growth-showcase-action">
+                      Купить урок
+                      <ArrowRight size={18} />
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </section>
 
