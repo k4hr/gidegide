@@ -69,7 +69,7 @@ const lessons: Lesson[] = [
     theme: "tiktok",
     title: "TikTok Algorithm",
     platformLabel: "TikTok",
-    subtitle: "Как попадать в рекомендации",
+    subtitle: "Как попасть в рекомендации",
     description:
       "Разбор удержания, первых секунд, досмотров, серийности роликов и механики попадания в рекомендации.",
     price: 199,
@@ -152,6 +152,7 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   const activeLesson = useMemo(() => getLesson(activeSlug), [activeSlug]);
+  const ActiveIcon = activeLesson.icon;
 
   const sideLessons = useMemo(
     () => lessons.filter((lesson) => lesson.slug !== activeLesson.slug),
@@ -334,6 +335,11 @@ export default function HomePage() {
               <motion.div
                 key={activeLesson.slug}
                 className={getThemeClass(activeLesson.theme).card}
+                style={
+                  {
+                    "--lesson-bg": `url("${activeLesson.image}")`,
+                  } as React.CSSProperties
+                }
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -14 }}
@@ -342,9 +348,9 @@ export default function HomePage() {
                 <div className="product-card-glow" />
 
                 <div className="product-card-content">
-                  <div>
+                  <div className="product-copy">
                     <div className={getThemeClass(activeLesson.theme).badge}>
-                      <activeLesson.icon size={18} />
+                      <ActiveIcon size={18} />
                       {activeLesson.platformLabel}
                     </div>
 
@@ -382,13 +388,7 @@ export default function HomePage() {
                     </div>
                   </div>
 
-                  <div className="product-image-wrap">
-                    <img
-                      src={activeLesson.image}
-                      alt=""
-                      className="product-image"
-                    />
-                  </div>
+                  <div className="product-bg-space" aria-hidden="true" />
                 </div>
               </motion.div>
             </AnimatePresence>
@@ -403,24 +403,28 @@ export default function HomePage() {
                     key={lesson.slug}
                     type="button"
                     className="side-product"
+                    style={
+                      {
+                        "--side-bg": `url("${lesson.image}")`,
+                      } as React.CSSProperties
+                    }
                     onClick={() => setActiveSlug(lesson.slug)}
                   >
                     <div
                       className={`side-product-glow side-product-glow--${lesson.theme}`}
                     />
 
-                    <div className="side-product-title">
-                      {lesson.platformLabel}
-                    </div>
+                    <div className="side-product-content">
+                      <div className={ui.badge}>
+                        <Icon size={16} />
+                        {lesson.platformLabel}
+                      </div>
 
-                    <p className="side-product-text">{lesson.description}</p>
+                      <div className="side-product-title">
+                        {lesson.platformLabel}
+                      </div>
 
-                    <div className="side-image-wrap">
-                      <img
-                        src={lesson.image}
-                        alt=""
-                        className="side-image"
-                      />
+                      <p className="side-product-text">{lesson.description}</p>
                     </div>
                   </button>
                 );
