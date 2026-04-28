@@ -24,37 +24,37 @@ import {
 } from "lucide-react";
 
 type Platform = "instagram" | "tiktok" | "youtube-shorts";
-type Theme = "instagram" | "tiktok" | "shorts";
+type Theme = "instagram" | "tiktok" | "youtube";
 
 type Lesson = {
   slug: Platform;
   theme: Theme;
-  platformLabel: string;
   title: string;
-  heroTitle: string;
+  platformLabel: string;
+  subtitle: string;
   description: string;
-  stat: string;
-  statLabel: string;
   price: number;
   oldPrice: number;
-  bullets: string[];
+  stat: string;
+  statLabel: string;
   icon: LucideIcon;
-  accentText: string;
+  bullets: string[];
 };
 
 const lessons: Lesson[] = [
   {
     slug: "instagram",
     theme: "instagram",
-    platformLabel: "Instagram",
     title: "Instagram Algorithm",
-    heroTitle: "Продвижение в Instagram для роста охватов и заявок",
+    platformLabel: "Instagram",
+    subtitle: "Как Reels получают охваты",
     description:
-      "Разбор того, как Reels получают рекомендации, какие сигналы влияют на показы и как упаковать профиль под рост.",
-    stat: "+128%",
-    statLabel: "к охватам",
+      "Разбор того, как Instagram оценивает Reels, какие сигналы влияют на рекомендации и как упаковать профиль под рост.",
     price: 249,
     oldPrice: 990,
+    stat: "+128%",
+    statLabel: "к охватам",
+    icon: Instagram,
     bullets: [
       "Рост охватов",
       "Контент-стратегия",
@@ -63,98 +63,82 @@ const lessons: Lesson[] = [
       "Упаковка профиля",
       "Воронка заявок",
     ],
-    icon: Instagram,
-    accentText: "Instagram • Reels • охваты",
   },
   {
     slug: "tiktok",
     theme: "tiktok",
-    platformLabel: "TikTok",
     title: "TikTok Algorithm",
-    heroTitle: "TikTok: вирусный контент и рост вовлечения",
+    platformLabel: "TikTok",
+    subtitle: "Как попадать в рекомендации",
     description:
       "Разбор удержания, первых секунд, досмотров, серийности роликов и механики попадания в рекомендации.",
-    stat: "+215%",
-    statLabel: "к вовлечению",
     price: 199,
     oldPrice: 790,
+    stat: "+215%",
+    statLabel: "к вовлечению",
+    icon: Music2,
     bullets: [
-      "Вирусный контент",
       "Первые 1–3 секунды",
       "Досмотры",
-      "Серийный контент",
+      "Повторные просмотры",
+      "Серийность",
       "Тест гипотез",
-      "Быстрый рост",
+      "Вирусные форматы",
     ],
-    icon: Music2,
-    accentText: "TikTok • вирусность • вовлечение",
   },
   {
     slug: "youtube-shorts",
-    theme: "shorts",
-    platformLabel: "YouTube Shorts",
+    theme: "youtube",
     title: "YouTube Shorts Algorithm",
-    heroTitle: "YouTube Shorts: короткие видео с максимальным просмотром",
+    platformLabel: "YouTube Shorts",
+    subtitle: "Как Shorts получают просмотры",
     description:
       "Разбор CTR, удержания, повторных просмотров, тематики канала и роста через короткие видео.",
-    stat: "+184%",
-    statLabel: "к просмотрам",
     price: 199,
     oldPrice: 790,
+    stat: "+184%",
+    statLabel: "к просмотрам",
+    icon: PlaySquare,
     bullets: [
-      "Рост просмотров",
-      "CTR и удержание",
+      "CTR и свайпы",
+      "Удержание",
       "Повторные просмотры",
       "Тематика канала",
       "Структура ролика",
       "Рост канала",
     ],
-    icon: PlaySquare,
-    accentText: "YouTube Shorts • показы • просмотры",
   },
 ];
 
 const stats = [
-  { value: "3", label: "платформы" },
-  { value: "199 ₽", label: "старт урока" },
-  { value: "0", label: "регистраций" },
-  { value: "сразу", label: "доступ после покупки" },
-];
-
-const packages = [
   {
-    title: "Instagram",
-    price: "249 ₽",
-    oldPrice: "990 ₽",
-    desc: "Урок по Reels, охватам, упаковке профиля и заявкам.",
+    value: "3",
+    label: "платформы",
   },
   {
-    title: "TikTok",
-    price: "199 ₽",
-    oldPrice: "790 ₽",
-    desc: "Урок по вирусным роликам, удержанию и алгоритму рекомендаций.",
-    hot: true,
+    value: "199 ₽",
+    label: "старт урока",
   },
   {
-    title: "YouTube Shorts",
-    price: "199 ₽",
-    oldPrice: "790 ₽",
-    desc: "Урок по Shorts, CTR, удержанию и росту канала.",
+    value: "0",
+    label: "регистраций",
+  },
+  {
+    value: "сразу",
+    label: "доступ после покупки",
   },
 ];
 
 function getLesson(slug: Platform) {
-  return lessons.find((item) => item.slug === slug) ?? lessons[0];
+  return lessons.find((lesson) => lesson.slug === slug) ?? lessons[0];
 }
 
-function themeClass(theme: Theme) {
+function getThemeClass(theme: Theme) {
   return {
-    heroCard: `hero-card hero-card--${theme}`,
-    tab: `tab tab--${theme}`,
-    lessonPanel: `lesson-panel lesson-panel--${theme}`,
-    lessonPhone: `lesson-phone lesson-phone--${theme}`,
-    promoCard: `promo-card promo-card--${theme}`,
-    miniVisual: `mini-visual mini-visual--${theme}`,
+    tab: `product-tab product-tab--${theme}`,
+    card: `product-card product-card--${theme}`,
+    mini: `mini-preview mini-preview--${theme}`,
+    badge: `platform-badge platform-badge--${theme}`,
   };
 }
 
@@ -166,8 +150,9 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   const activeLesson = useMemo(() => getLesson(activeSlug), [activeSlug]);
+
   const sideLessons = useMemo(
-    () => lessons.filter((item) => item.slug !== activeLesson.slug),
+    () => lessons.filter((lesson) => lesson.slug !== activeLesson.slug),
     [activeLesson.slug],
   );
 
@@ -218,44 +203,46 @@ export default function HomePage() {
   }
 
   return (
-    <main className="site-shell">
-      <div className="page-glow" />
+    <main className="site-page">
+      <div className="site-noise" />
 
-      <div className="browser-frame">
-        <div className="browser-topbar">
+      <div className="browser-shell">
+        <div className="browser-top">
           <div className="browser-dots">
-            <span className="dot dot-red" />
-            <span className="dot dot-yellow" />
-            <span className="dot dot-green" />
+            <span className="browser-dot browser-dot--red" />
+            <span className="browser-dot browser-dot--yellow" />
+            <span className="browser-dot browser-dot--green" />
           </div>
 
-          <div className="browser-nav-arrows">
+          <div className="browser-arrows">
             <span>‹</span>
             <span>›</span>
           </div>
 
-          <div className="browser-address">
+          <div className="browser-url">
             <LockKeyhole size={14} />
             <span>destroy-algoritm.ru</span>
           </div>
 
-          <div className="browser-close">×</div>
+          <div className="browser-x">×</div>
         </div>
 
-        <div className="hero-surface">
-          <header className="page-container header-row">
+        <section id="hero" className="art-hero">
+          <div className="art-hero-bg" />
+
+          <header className="container header">
             <a href="#" className="brand">
-              <div className="brand-mark">
-                <Crown size={28} />
+              <div className="brand-icon">
+                <Crown size={30} />
               </div>
 
-              <div className="brand-copy">
+              <div>
                 <div className="brand-title">DESTROY</div>
                 <div className="brand-subtitle">ALGORITM</div>
               </div>
             </a>
 
-            <nav className="main-nav">
+            <nav className="nav">
               <a href="#hero">Главная</a>
               <a href="#lessons">Уроки</a>
               <a href="#inside">Что внутри</a>
@@ -265,62 +252,63 @@ export default function HomePage() {
 
             <button
               type="button"
-              className="gold-button compact"
+              className="gold-btn header-btn"
               onClick={() => openCheckout(activeLesson)}
             >
               Купить урок
             </button>
           </header>
 
-          <section id="hero" className="page-container hero-grid">
+          <div className="container hero-overlay">
             <motion.div
-              className="hero-left"
-              initial={{ opacity: 0, y: 26 }}
+              className="hero-copy"
+              initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7 }}
             >
-              <div className="hero-chip">
+              <div className="hero-pill">
                 <Sparkles size={16} />
-                <span>Мини-уроки по алгоритмам соцсетей</span>
+                Мини-уроки по алгоритмам соцсетей
               </div>
 
               <h1 className="hero-title">
-                АЛГОРИТМЫ
-                <br />
-                СОЦСЕТЕЙ
+                ПРОДВИЖЕНИЕ
+                <span>В СОЦСЕТЯХ</span>
               </h1>
 
               <div className="hero-platforms">
                 Instagram • TikTok • YouTube Shorts
               </div>
 
-              <p className="hero-description">
-                Показываем, как соцсети раздают охваты, вовлечение и просмотры —
-                без воды, коротко и по делу.
+              <p className="hero-text">
+                Показываем, как соцсети раздают охваты, вовлечение и просмотры.
+                Короткие уроки без регистрации и лишней воды.
               </p>
 
-              <div className="hero-badges">
-                <div className="hero-badge">
+              <div className="hero-benefits">
+                <div className="hero-benefit">
                   <LockKeyhole size={18} />
                   Без регистрации
                 </div>
-                <div className="hero-badge">
+
+                <div className="hero-benefit">
                   <Zap size={18} />
                   Доступ сразу
                 </div>
-                <div className="hero-badge">
+
+                <div className="hero-benefit">
                   <BadgeCheck size={18} />
                   От 199 ₽
                 </div>
               </div>
 
-              <div className="hero-actions">
-                <a href="#lessons" className="gold-button">
+              <div className="hero-buttons">
+                <a href="#lessons" className="gold-btn">
                   Выбрать урок
                   <ArrowRight size={18} />
                 </a>
 
-                <a href="#inside" className="dark-button">
+                <a href="#inside" className="dark-btn">
                   Что внутри
                   <Play size={18} />
                 </a>
@@ -328,72 +316,39 @@ export default function HomePage() {
             </motion.div>
 
             <motion.div
-              className="hero-right"
-              initial={{ opacity: 0, scale: 0.95, y: 18 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              transition={{ duration: 0.8, delay: 0.1 }}
+              className="hero-click-cards"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.9, delay: 0.2 }}
             >
-              <div className="hero-orbit" />
+              {lessons.map((lesson) => {
+                const Icon = lesson.icon;
 
-              <div className="hero-cards">
-                {lessons.map((lesson, index) => {
-                  const ui = themeClass(lesson.theme);
-                  const Icon = lesson.icon;
-
-                  return (
-                    <button
-                      key={lesson.slug}
-                      type="button"
-                      className={`hero-card-wrap ${
-                        index === 0
-                          ? "hero-card-wrap--left"
-                          : index === 1
-                            ? "hero-card-wrap--center"
-                            : "hero-card-wrap--right"
-                      }`}
-                      onClick={() => setActiveSlug(lesson.slug)}
-                    >
-                      <div className="hero-card-wings" />
-
-                      <div className={ui.heroCard}>
-                        <div className="hero-card-float-badge" />
-                        <div className="hero-card-float-badge hero-card-float-badge--second" />
-
-                        <div className="hero-card-icon-shell">
-                          <Icon className="hero-card-icon" />
-                        </div>
-
-                        <div className="hero-card-title">
-                          {lesson.platformLabel}
-                        </div>
-
-                        <div className="hero-card-metric">
-                          <div>
-                            <div className="hero-card-metric-value">
-                              {lesson.stat}
-                            </div>
-                            <div className="hero-card-metric-label">
-                              {lesson.statLabel}
-                            </div>
-                          </div>
-
-                          <BarChart3 className="hero-card-chart" />
-                        </div>
-                      </div>
-
-                      <div className="hero-card-pedestal" />
-                    </button>
-                  );
-                })}
-              </div>
+                return (
+                  <button
+                    key={lesson.slug}
+                    type="button"
+                    className={`hero-hotspot hero-hotspot--${lesson.theme} ${
+                      activeLesson.slug === lesson.slug ? "is-active" : ""
+                    }`}
+                    onClick={() => setActiveSlug(lesson.slug)}
+                    aria-label={lesson.platformLabel}
+                  >
+                    <Icon size={22} />
+                    <span>{lesson.platformLabel}</span>
+                  </button>
+                );
+              })}
             </motion.div>
-          </section>
+          </div>
+        </section>
 
-          <section id="lessons" className="page-container lessons-section">
+        <section id="lessons" className="lessons-block">
+          <div className="container">
             <div className="tabs-row">
               {lessons.map((lesson) => {
-                const ui = themeClass(lesson.theme);
                 const Icon = lesson.icon;
+                const ui = getThemeClass(lesson.theme);
 
                 return (
                   <button
@@ -404,16 +359,14 @@ export default function HomePage() {
                     }`}
                     onClick={() => setActiveSlug(lesson.slug)}
                   >
-                    <div className="tab-inner">
-                      <div className="tab-icon-shell">
-                        <Icon className="tab-icon" />
-                      </div>
+                    <div className="tab-icon">
+                      <Icon size={26} />
+                    </div>
 
-                      <div>
-                        <div className="tab-title">{lesson.platformLabel}</div>
-                        <div className="tab-subtitle">
-                          {lesson.price} ₽ вместо {lesson.oldPrice} ₽
-                        </div>
+                    <div>
+                      <div className="tab-title">{lesson.platformLabel}</div>
+                      <div className="tab-price">
+                        {lesson.price} ₽ вместо {lesson.oldPrice} ₽
                       </div>
                     </div>
                   </button>
@@ -421,85 +374,83 @@ export default function HomePage() {
               })}
             </div>
 
-            <div className="lessons-grid">
+            <div className="lesson-grid">
               <AnimatePresence mode="wait">
                 <motion.div
                   key={activeLesson.slug}
-                  className={themeClass(activeLesson.theme).lessonPanel}
+                  className={getThemeClass(activeLesson.theme).card}
                   initial={{ opacity: 0, y: 14 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -14 }}
-                  transition={{ duration: 0.25 }}
+                  transition={{ duration: 0.24 }}
                 >
-                  <div className="lesson-panel-glow" />
+                  <div className="product-card-glow" />
 
-                  <div className="lesson-panel-content">
+                  <div className="product-card-content">
                     <div>
-                      <div className="section-chip">
-                        <Sparkles size={15} />
-                        <span>Закрытый урок</span>
+                      <div className={getThemeClass(activeLesson.theme).badge}>
+                        <activeLesson.icon size={18} />
+                        {activeLesson.platformLabel}
                       </div>
 
-                      <h2 className="lesson-title">{activeLesson.heroTitle}</h2>
+                      <h2 className="product-title">{activeLesson.subtitle}</h2>
 
-                      <p className="lesson-description">
+                      <p className="product-description">
                         {activeLesson.description}
                       </p>
 
-                      <div className="lesson-bullets">
+                      <div className="product-bullets">
                         {activeLesson.bullets.map((bullet) => (
-                          <div key={bullet} className="lesson-bullet">
-                            <span className="lesson-bullet-icon">
+                          <div key={bullet} className="product-bullet">
+                            <span>
                               <Check size={14} />
                             </span>
-                            <span>{bullet}</span>
+                            {bullet}
                           </div>
                         ))}
                       </div>
 
-                      <div className="lesson-actions">
+                      <div className="product-actions">
                         <button
                           type="button"
-                          className="gold-button"
+                          className="gold-btn"
                           onClick={() => openCheckout(activeLesson)}
                         >
                           Купить за {activeLesson.price} ₽
                           <ArrowRight size={18} />
                         </button>
 
-                        <a href="#inside" className="dark-button">
-                          Что внутри
+                        <a href="#inside" className="dark-btn">
+                          Подробнее
                           <Play size={18} />
                         </a>
                       </div>
                     </div>
 
-                    <div className="lesson-preview-area">
-                      <div className={themeClass(activeLesson.theme).lessonPhone}>
-                        <div className="lesson-phone-top">
+                    <div className="product-phone-wrap">
+                      <div className={`product-phone product-phone--${activeLesson.theme}`}>
+                        <div className="phone-topline">
                           <span>{activeLesson.platformLabel}</span>
                           <span>12.6K</span>
                         </div>
 
-                        <div className="lesson-phone-stat">
-                          <div className="lesson-phone-stat-label">
-                            Рост метрик
-                          </div>
-                          <div className="lesson-phone-stat-value">
+                        <div className="phone-stat">
+                          <div className="phone-stat-label">Рост метрик</div>
+                          <div className="phone-stat-value">
                             {activeLesson.stat}
                           </div>
-                          <div className="lesson-phone-stat-sub">
+                          <div className="phone-stat-sub">
                             {activeLesson.statLabel}
                           </div>
                         </div>
 
-                        <div className="lesson-phone-line" />
+                        <div className="phone-arrow" />
 
-                        <div className="lesson-phone-bars">
-                          {[56, 84, 72, 118, 156].map((height, index) => (
+                        <div className="phone-bars">
+                          {[52, 84, 70, 116, 156].map((height, index) => (
                             <div
                               key={index}
-                              className="lesson-phone-bar"
+                              className="phone-bar"
                               style={{ height }}
                             />
                           ))}
@@ -510,135 +461,132 @@ export default function HomePage() {
                 </motion.div>
               </AnimatePresence>
 
-              <div className="promo-cards-column">
+              <div className="side-products">
                 {sideLessons.map((lesson) => {
-                  const ui = themeClass(lesson.theme);
                   const Icon = lesson.icon;
+                  const ui = getThemeClass(lesson.theme);
 
                   return (
                     <button
                       key={lesson.slug}
                       type="button"
-                      className={ui.promoCard}
+                      className="side-product"
                       onClick={() => setActiveSlug(lesson.slug)}
                     >
-                      <div className="promo-card-glow" />
+                      <div className={`side-product-glow side-product-glow--${lesson.theme}`} />
 
-                      <div className="promo-card-title">
+                      <div className="side-product-title">
                         {lesson.platformLabel}
                       </div>
 
-                      <div className="promo-card-text">{lesson.accentText}</div>
+                      <p className="side-product-text">{lesson.description}</p>
 
-                      <div className={ui.miniVisual}>
-                        <div className="mini-visual-icon-shell">
-                          <Icon className="mini-visual-icon" />
+                      <div className={ui.mini}>
+                        <div className="mini-icon">
+                          <Icon size={42} />
                         </div>
 
-                        <div className="mini-visual-bars">
-                          {[36, 62, 50, 82, 112].map((height, index) => (
+                        <div className="mini-bars">
+                          {[38, 60, 50, 84, 112].map((height, index) => (
                             <div
                               key={index}
-                              className="mini-visual-bar"
+                              className="mini-bar"
                               style={{ height }}
                             />
                           ))}
                         </div>
 
-                        <TrendingUp className="mini-visual-trend" />
+                        <TrendingUp className="mini-trend" />
                       </div>
                     </button>
                   );
                 })}
               </div>
             </div>
-          </section>
-        </div>
+          </div>
+        </section>
       </div>
 
-      <section id="inside" className="page-container content-section">
+      <section id="inside" className="container content-section">
         <div className="content-panel">
-          <div className="section-chip">
-            <ShieldCheck size={15} />
-            <span>Что получает покупатель</span>
+          <div className="section-label">
+            <ShieldCheck size={16} />
+            Что получает покупатель
           </div>
 
           <h2 className="section-title">Закрытая статья без воды</h2>
 
-          <p className="section-description">
-            После покупки открывается уникальная ссылка на материал. Пользователю
-            не нужен аккаунт, пароль или личный кабинет — только email и сразу
-            доступ.
+          <p className="section-text">
+            После покупки открывается уникальная ссылка на материал. Пользователь
+            не регистрируется, не создаёт личный кабинет и не помнит пароль.
+            Только email и доступ к закрытой статье.
           </p>
 
           <div className="info-grid">
             <div className="info-card">
-              <div className="info-card-num">01</div>
-              <div className="info-card-title">
-                Как платформа тестирует контент
-              </div>
-              <p className="info-card-text">
-                Поймёшь, почему один ролик получает показы, а другой умирает на
-                старте.
+              <div className="info-number">01</div>
+              <h3>Как платформа тестирует контент</h3>
+              <p>
+                Почему один ролик получает показы, а другой умирает на старте.
               </p>
             </div>
 
             <div className="info-card">
-              <div className="info-card-num">02</div>
-              <div className="info-card-title">
-                Какие метрики реально важны
-              </div>
-              <p className="info-card-text">
-                Удержание, досмотры, реакции, CTR, свайпы, повторные просмотры и
-                другие сигналы.
+              <div className="info-number">02</div>
+              <h3>Какие метрики важны</h3>
+              <p>
+                Удержание, досмотры, реакции, CTR, свайпы, сохранения и повторы.
               </p>
             </div>
 
             <div className="info-card">
-              <div className="info-card-num">03</div>
-              <div className="info-card-title">Как делать контент системно</div>
-              <p className="info-card-text">
-                Получишь понятную схему: форматы, серии, темы, ошибки и логика
-                масштабирования.
+              <div className="info-number">03</div>
+              <h3>Как делать контент системно</h3>
+              <p>
+                Форматы, серии, темы, упаковка и ошибки, которые режут охваты.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      <section id="packages" className="page-container content-section">
+      <section id="packages" className="container content-section">
         <div className="content-panel">
-          <div className="section-chip">
-            <Sparkles size={15} />
-            <span>Пакеты уроков</span>
+          <div className="section-label">
+            <Sparkles size={16} />
+            Пакеты уроков
           </div>
 
           <h2 className="section-title">Выбери свой разбор</h2>
 
-          <p className="section-description">
-            Сейчас продаём отдельные мини-уроки по каждой платформе. Потом
-            можно добавить общий комплект.
+          <p className="section-text">
+            Отдельные мини-уроки по каждой платформе. Позже можно добавить общий
+            комплект из всех трёх.
           </p>
 
           <div className="package-grid">
-            {packages.map((pack) => (
-              <div
-                key={pack.title}
-                className={`package-card ${pack.hot ? "package-card--hot" : ""}`}
+            {lessons.map((lesson) => (
+              <button
+                key={lesson.slug}
+                type="button"
+                className={`package-card package-card--${lesson.theme}`}
+                onClick={() => openCheckout(lesson)}
               >
-                {pack.hot ? <div className="package-hot">Хит</div> : null}
+                {lesson.slug === "tiktok" ? (
+                  <div className="package-hit">Хит</div>
+                ) : null}
 
-                <div className="package-title">{pack.title}</div>
-                <div className="package-price">{pack.price}</div>
-                <div className="package-old-price">{pack.oldPrice}</div>
-                <p className="package-description">{pack.desc}</p>
-              </div>
+                <div className="package-title">{lesson.platformLabel}</div>
+                <div className="package-price">{lesson.price} ₽</div>
+                <div className="package-old">{lesson.oldPrice} ₽</div>
+                <p>{lesson.description}</p>
+              </button>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="page-container content-section">
+      <section className="container content-section">
         <div className="content-panel">
           <div className="stats-grid">
             {stats.map((item) => (
@@ -651,36 +599,34 @@ export default function HomePage() {
         </div>
       </section>
 
-      <section id="faq" className="page-container content-section content-section--last">
+      <section id="faq" className="container content-section last-section">
         <div className="content-panel">
-          <div className="section-chip">
-            <BadgeCheck size={15} />
-            <span>FAQ</span>
+          <div className="section-label">
+            <BadgeCheck size={16} />
+            FAQ
           </div>
 
           <h2 className="section-title">Частые вопросы</h2>
 
           <div className="info-grid">
             <div className="info-card">
-              <div className="info-card-title">Нужна регистрация?</div>
-              <p className="info-card-text">
-                Нет. Покупатель просто выбирает урок, вводит email и получает
-                ссылку доступа.
+              <h3>Нужна регистрация?</h3>
+              <p>
+                Нет. Покупатель выбирает урок, вводит email и получает ссылку.
               </p>
             </div>
 
             <div className="info-card">
-              <div className="info-card-title">Это про накрутку?</div>
-              <p className="info-card-text">
-                Нет. Это обучающие материалы про механику рекомендаций, контент,
-                удержание и аналитику.
+              <h3>Это про накрутку?</h3>
+              <p>
+                Нет. Это обучающие материалы про алгоритмы, контент и аналитику.
               </p>
             </div>
 
             <div className="info-card">
-              <div className="info-card-title">Что открывается после оплаты?</div>
-              <p className="info-card-text">
-                Закрытая статья по уникальной ссылке в формате /access/токен.
+              <h3>Что открывается после оплаты?</h3>
+              <p>
+                Закрытая статья по уникальной ссылке вида /access/secret-token.
               </p>
             </div>
           </div>
@@ -706,31 +652,32 @@ export default function HomePage() {
           >
             <motion.div
               className="modal-card"
-              initial={{ opacity: 0, scale: 0.96, y: 16 }}
+              initial={{ opacity: 0, scale: 0.96, y: 18 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.96, y: 16 }}
+              exit={{ opacity: 0, scale: 0.96, y: 18 }}
               transition={{ duration: 0.2 }}
             >
               <button
                 type="button"
-                className="modal-close-button"
+                className="modal-close"
                 onClick={() => setCheckoutLesson(null)}
               >
                 <X size={18} />
               </button>
 
-              <div className="modal-icon-shell">
-                <checkoutLesson.icon className="modal-icon" />
+              <div className={`modal-icon modal-icon--${checkoutLesson.theme}`}>
+                <checkoutLesson.icon size={34} />
               </div>
 
               <h3 className="modal-title">{checkoutLesson.title}</h3>
 
               <p className="modal-text">
-                Введи email. Сейчас в MVP доступ откроется сразу. Потом сюда
-                подключим оплату и автоматическую выдачу доступа.
+                Введи email. Сейчас в MVP доступ откроется сразу. После
+                подключения платёжки здесь будет оплата и автоматическая выдача
+                ссылки.
               </p>
 
-              <div className="modal-price-box">
+              <div className="modal-price">
                 <div>
                   <div className="modal-price-label">Стоимость урока</div>
                   <div className="modal-price-value">
@@ -744,7 +691,7 @@ export default function HomePage() {
               </div>
 
               <form onSubmit={handleBuy}>
-                <label className="modal-input-label">Email для доступа</label>
+                <label className="modal-label">Email для доступа</label>
 
                 <div className="modal-input-wrap">
                   <Mail className="modal-input-icon" />
@@ -760,7 +707,7 @@ export default function HomePage() {
 
                 {error ? <div className="modal-error">{error}</div> : null}
 
-                <button disabled={isBuying} type="submit" className="gold-button modal-submit">
+                <button disabled={isBuying} type="submit" className="gold-btn modal-submit">
                   {isBuying ? "Открываем доступ..." : "Получить доступ"}
                   <ArrowRight size={18} />
                 </button>
