@@ -7,7 +7,6 @@ import type { LucideIcon } from "lucide-react";
 import {
   ArrowRight,
   BadgeCheck,
-  Check,
   Crown,
   Instagram,
   LockKeyhole,
@@ -33,11 +32,8 @@ type Lesson = {
   description: string;
   price: number;
   oldPrice: number;
-  stat: string;
-  statLabel: string;
   image: string;
   icon: LucideIcon;
-  bullets: string[];
 };
 
 const lessons: Lesson[] = [
@@ -51,18 +47,8 @@ const lessons: Lesson[] = [
       "Разбор того, как Instagram оценивает Reels, какие сигналы влияют на рекомендации и как упаковать профиль под рост.",
     price: 249,
     oldPrice: 990,
-    stat: "+128%",
-    statLabel: "к охватам",
-    image: "/lesson-images/instagram-growth.png",
+    image: "/lesson-images/instagram-promo.png",
     icon: Instagram,
-    bullets: [
-      "Рост охватов",
-      "Контент-стратегия",
-      "Сценарии Reels",
-      "Аналитика",
-      "Упаковка профиля",
-      "Воронка заявок",
-    ],
   },
   {
     slug: "tiktok",
@@ -74,18 +60,8 @@ const lessons: Lesson[] = [
       "Разбор удержания, первых секунд, досмотров, серийности роликов и механики попадания в рекомендации.",
     price: 199,
     oldPrice: 790,
-    stat: "+215%",
-    statLabel: "к вовлечению",
-    image: "/lesson-images/tiktok-growth.png",
+    image: "/lesson-images/tiktok-promo.png",
     icon: Music2,
-    bullets: [
-      "Первые 1–3 секунды",
-      "Досмотры",
-      "Повторные просмотры",
-      "Серийность",
-      "Тест гипотез",
-      "Вирусные форматы",
-    ],
   },
   {
     slug: "youtube-shorts",
@@ -97,18 +73,8 @@ const lessons: Lesson[] = [
       "Разбор CTR, удержания, повторных просмотров, тематики канала и роста через короткие видео.",
     price: 199,
     oldPrice: 790,
-    stat: "+184%",
-    statLabel: "к просмотрам",
-    image: "/lesson-images/youtube-shorts-growth.png",
+    image: "/lesson-images/youtube-shorts-promo.png",
     icon: PlaySquare,
-    bullets: [
-      "CTR и свайпы",
-      "Удержание",
-      "Повторные просмотры",
-      "Тематика канала",
-      "Структура ролика",
-      "Рост канала",
-    ],
   },
 ];
 
@@ -139,7 +105,8 @@ function getThemeClass(theme: Theme) {
   return {
     tab: `product-tab product-tab--${theme}`,
     card: `product-card product-card--${theme}`,
-    badge: `platform-badge platform-badge--${theme}`,
+    package: `package-card package-card--${theme}`,
+    growth: `growth-card growth-card--${theme}`,
   };
 }
 
@@ -151,7 +118,6 @@ export default function HomePage() {
   const [error, setError] = useState("");
 
   const activeLesson = useMemo(() => getLesson(activeSlug), [activeSlug]);
-  const ActiveIcon = activeLesson.icon;
 
   function openCheckout(lesson: Lesson) {
     setCheckoutLesson(lesson);
@@ -342,63 +308,15 @@ export default function HomePage() {
             >
               <div className="product-card-glow" />
 
-              <div className="product-card-content product-card-content--single">
-                <div className="product-copy">
-                  <div className={getThemeClass(activeLesson.theme).badge}>
-                    <ActiveIcon size={18} />
-                    {activeLesson.platformLabel}
-                  </div>
-
-                  <h2 className="product-title">{activeLesson.subtitle}</h2>
-
-                  <p className="product-description">
-                    {activeLesson.description}
-                  </p>
-
-                  <div className="product-stats-row">
-                    <div className="product-stat-box">
-                      <div className="product-stat-value">
-                        {activeLesson.stat}
-                      </div>
-                      <div className="product-stat-label">
-                        {activeLesson.statLabel}
-                      </div>
-                    </div>
-
-                    <div className="product-price-box">
-                      <div className="product-price-current">
-                        {activeLesson.price} ₽
-                      </div>
-                      <div className="product-price-old">
-                        {activeLesson.oldPrice} ₽
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="product-bullets">
-                    {activeLesson.bullets.map((bullet) => (
-                      <div key={bullet} className="product-bullet">
-                        <span>
-                          <Check size={14} />
-                        </span>
-                        {bullet}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="product-bg-space" aria-hidden="true" />
-
-                <div className="product-bottom-action">
-                  <button
-                    type="button"
-                    className="gold-btn gold-btn--large"
-                    onClick={() => openCheckout(activeLesson)}
-                  >
-                    Купить урок за {activeLesson.price} ₽
-                    <ArrowRight size={18} />
-                  </button>
-                </div>
+              <div className="product-card-center">
+                <button
+                  type="button"
+                  className="gold-btn buy-center-btn"
+                  onClick={() => openCheckout(activeLesson)}
+                >
+                  Купить урок за {activeLesson.price} ₽
+                  <ArrowRight size={20} />
+                </button>
               </div>
             </motion.div>
           </AnimatePresence>
@@ -415,59 +333,32 @@ export default function HomePage() {
           <h2 className="section-title">Выбери направление роста</h2>
 
           <p className="section-text">
-            Каждый урок — это отдельный закрытый материал по конкретной
-            платформе: охваты, просмотры, вовлечение, удержание и рост через
-            алгоритмы.
+            Ниже три больших визуальных блока. Меняешь картинки в папке
+            lesson-images — и фон сразу обновляется на сайте.
           </p>
         </div>
 
         <div className="growth-showcase-grid">
-          {lessons.map((lesson) => {
-            const Icon = lesson.icon;
-
-            return (
-              <button
-                key={lesson.slug}
-                type="button"
-                className={`growth-showcase-card growth-showcase-card--${lesson.theme}`}
-                style={
-                  {
-                    "--growth-bg": `url("${lesson.image}")`,
-                  } as CSSProperties
-                }
-                onClick={() => openCheckout(lesson)}
-              >
-                <div className="growth-showcase-overlay" />
-
-                <div className="growth-showcase-content">
-                  <div className="growth-showcase-badge">
-                    <Icon size={18} />
-                    {lesson.platformLabel}
-                  </div>
-
-                  <h3>{lesson.subtitle}</h3>
-
-                  <p>{lesson.description}</p>
-
-                  <div className="growth-showcase-bottom">
-                    <div>
-                      <div className="growth-showcase-price">
-                        {lesson.price} ₽
-                      </div>
-                      <div className="growth-showcase-old">
-                        {lesson.oldPrice} ₽
-                      </div>
-                    </div>
-
-                    <div className="growth-showcase-action">
-                      Купить урок
-                      <ArrowRight size={18} />
-                    </div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
+          {lessons.map((lesson) => (
+            <button
+              key={lesson.slug}
+              type="button"
+              className={`${getThemeClass(lesson.theme).growth}`}
+              style={
+                {
+                  "--growth-bg": `url("${lesson.image}")`,
+                } as CSSProperties
+              }
+              onClick={() => openCheckout(lesson)}
+            >
+              <div className="growth-card-center">
+                <span className="gold-btn buy-center-btn">
+                  Купить урок за {lesson.price} ₽
+                  <ArrowRight size={20} />
+                </span>
+              </div>
+            </button>
+          ))}
         </div>
       </section>
 
@@ -485,32 +376,6 @@ export default function HomePage() {
             не регистрируется, не создаёт личный кабинет и не помнит пароль.
             Только email и доступ к закрытой статье.
           </p>
-
-          <div className="info-grid">
-            <div className="info-card">
-              <div className="info-number">01</div>
-              <h3>Как платформа тестирует контент</h3>
-              <p>
-                Почему один ролик получает показы, а другой умирает на старте.
-              </p>
-            </div>
-
-            <div className="info-card">
-              <div className="info-number">02</div>
-              <h3>Какие метрики важны</h3>
-              <p>
-                Удержание, досмотры, реакции, CTR, свайпы, сохранения и повторы.
-              </p>
-            </div>
-
-            <div className="info-card">
-              <div className="info-number">03</div>
-              <h3>Как делать контент системно</h3>
-              <p>
-                Форматы, серии, темы, упаковка и ошибки, которые режут охваты.
-              </p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -533,7 +398,7 @@ export default function HomePage() {
               <button
                 key={lesson.slug}
                 type="button"
-                className={`package-card package-card--${lesson.theme}`}
+                className={getThemeClass(lesson.theme).package}
                 onClick={() => openCheckout(lesson)}
               >
                 {lesson.slug === "tiktok" ? (
