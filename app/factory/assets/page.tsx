@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 
 type FactoryAsset = {
   id: string;
-  type: "HOOK" | "LANA";
   title: string;
   originalName: string | null;
   sizeBytes: number | null;
@@ -15,7 +14,6 @@ type FactoryAsset = {
 export default function FactoryAssetsPage() {
   const [assets, setAssets] = useState<FactoryAsset[]>([]);
   const [title, setTitle] = useState("");
-  const [type, setType] = useState<"HOOK" | "LANA">("HOOK");
   const [file, setFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState("");
@@ -49,7 +47,6 @@ export default function FactoryAssetsPage() {
 
     try {
       const formData = new FormData();
-      formData.set("type", type);
       formData.set("title", title);
       formData.set("file", file);
 
@@ -85,40 +82,27 @@ export default function FactoryAssetsPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Хуки и Лана</Link>
+          <Link href="/factory/assets">Видео Ланы</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
-          <h1>Хуки и видео Ланы</h1>
+          <h1>Видео Ланы</h1>
           <p>
-            Сюда загружаешь короткие хуки и видео, где Лана просто сидит и
-            смотрит телефон. Worker будет рандомно брать их для каждого клипа.
+            Сюда загружаешь только видео, где Лана просто сидит и смотрит. Worker
+            случайно берет один из этих файлов и вставляет его в каждый ролик.
           </p>
 
           <form className="grid" onSubmit={uploadAsset}>
-            <div className="grid grid-2">
-              <label>
-                Тип
-                <select
-                  value={type}
-                  onChange={(event) => setType(event.target.value as "HOOK" | "LANA")}
-                >
-                  <option value="HOOK">HOOK — хук в начале</option>
-                  <option value="LANA">LANA — Лана смотрит телефон</option>
-                </select>
-              </label>
-
-              <label>
-                Название
-                <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="hook 001 / lana watch 001"
-                  required
-                />
-              </label>
-            </div>
+            <label>
+              Название
+              <input
+                value={title}
+                onChange={(event) => setTitle(event.target.value)}
+                placeholder="lana watch 001"
+                required
+              />
+            </label>
 
             <label>
               MP4 файл
@@ -141,12 +125,11 @@ export default function FactoryAssetsPage() {
         <section style={{ height: 24 }} />
 
         <section className="card">
-          <h2>Загруженные ассеты</h2>
+          <h2>Загруженные видео</h2>
 
           <table className="table">
             <thead>
               <tr>
-                <th>Тип</th>
                 <th>Название</th>
                 <th>Файл</th>
                 <th>Размер</th>
@@ -156,7 +139,6 @@ export default function FactoryAssetsPage() {
             <tbody>
               {assets.map((asset) => (
                 <tr key={asset.id}>
-                  <td><span className="badge">{asset.type}</span></td>
                   <td>{asset.title}</td>
                   <td>{asset.originalName}</td>
                   <td>
@@ -169,7 +151,7 @@ export default function FactoryAssetsPage() {
 
               {assets.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={3} className="muted">
                     Пока ничего не загружено.
                   </td>
                 </tr>
