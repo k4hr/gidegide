@@ -5,7 +5,6 @@ export const FACTORY_STORAGE_DIR =
   process.env.FACTORY_STORAGE_DIR ?? path.join(process.cwd(), ".factory");
 
 export const FACTORY_ASSETS_DIR = path.join(FACTORY_STORAGE_DIR, "assets");
-export const FACTORY_HOOKS_DIR = path.join(FACTORY_ASSETS_DIR, "hooks");
 export const FACTORY_LANA_DIR = path.join(FACTORY_ASSETS_DIR, "lana");
 export const FACTORY_SOURCE_DIR = path.join(FACTORY_STORAGE_DIR, "source");
 export const FACTORY_OUTPUT_DIR = path.join(FACTORY_STORAGE_DIR, "output");
@@ -15,7 +14,6 @@ export async function ensureFactoryDirs() {
   await Promise.all([
     mkdir(FACTORY_STORAGE_DIR, { recursive: true }),
     mkdir(FACTORY_ASSETS_DIR, { recursive: true }),
-    mkdir(FACTORY_HOOKS_DIR, { recursive: true }),
     mkdir(FACTORY_LANA_DIR, { recursive: true }),
     mkdir(FACTORY_SOURCE_DIR, { recursive: true }),
     mkdir(FACTORY_OUTPUT_DIR, { recursive: true }),
