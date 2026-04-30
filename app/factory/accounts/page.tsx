@@ -16,7 +16,7 @@ export default async function FactoryAccountsPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Хуки и Лана</Link>
+          <Link href="/factory/assets">Видео Ланы</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
@@ -49,7 +49,9 @@ export default async function FactoryAccountsPage() {
             <tbody>
               {accounts.map((account) => (
                 <tr key={account.id}>
-                  <td><span className="badge">{account.platform}</span></td>
+                  <td>
+                    <span className="badge">{account.platform}</span>
+                  </td>
                   <td>{account.name}</td>
                   <td>{account.createdAt.toLocaleString("ru-RU")}</td>
                 </tr>
