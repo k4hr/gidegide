@@ -4,16 +4,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-import {
-  FACTORY_HOOKS_DIR,
-  FACTORY_LANA_DIR,
-  ensureFactoryDirs,
-} from "@/lib/factory/paths";
+import { FACTORY_LANA_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { extFromName, safeFileName } from "@/lib/factory/video";
 
 export const runtime = "nodejs";
-
-const assetTypeSchema = z.enum(["HOOK", "LANA"]);
 
 export async function GET() {
   const assets = await prisma.factoryAsset.findMany({
@@ -33,7 +27,6 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
 
-    const type = assetTypeSchema.parse(formData.get("type"));
     const title = z.string().min(1).parse(formData.get("title"));
     const file = formData.get("file");
 
@@ -51,15 +44,12 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(await file.arrayBuffer());
     const ext = extFromName(file.name);
     const fileName = `${Date.now()}-${safeFileName(title)}${ext}`;
-
-    const targetDir = type === "HOOK" ? FACTORY_HOOKS_DIR : FACTORY_LANA_DIR;
-    const filePath = path.join(targetDir, fileName);
+    const filePath = path.join(FACTORY_LANA_DIR, fileName);
 
     await writeFile(filePath, buffer);
 
     const asset = await prisma.factoryAsset.create({
       data: {
-        type,
         title,
         filePath,
         originalName: file.name,
@@ -87,7 +77,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Не получилось загрузить файл",
+        error:
+          error instanceof Error ? error.message : "Не получилось загрузить файл",
       },
       {
         status: 500,
