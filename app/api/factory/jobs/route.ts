@@ -71,7 +71,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json(
       {
-        error: error instanceof Error ? error.message : "Не получилось создать задачу",
+        error:
+          error instanceof Error ? error.message : "Не получилось создать задачу",
       },
       {
         status: 500,
