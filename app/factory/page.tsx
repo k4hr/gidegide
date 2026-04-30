@@ -111,15 +111,16 @@ export default function FactoryPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Хуки и Лана</Link>
+          <Link href="/factory/assets">Видео Ланы</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Вставляешь YouTube-ссылку. Worker сам скачивает исходник во временную
-            папку, режет на Shorts, вставляет хук и Лану, потом грузит на YouTube.
+            Вставляешь YouTube-ссылку. Worker сам качает исходник во временную
+            папку, режет его на короткие клипы, накладывает видео Ланы и
+            публикует.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -162,7 +163,9 @@ export default function FactoryPage() {
                 <span>YouTube</span>
                 <select
                   value={publishYoutube ? "yes" : "no"}
-                  onChange={(event) => setPublishYoutube(event.target.value === "yes")}
+                  onChange={(event) =>
+                    setPublishYoutube(event.target.value === "yes")
+                  }
                 >
                   <option value="yes">Заливать</option>
                   <option value="no">Не заливать</option>
@@ -173,7 +176,9 @@ export default function FactoryPage() {
                 <span>TikTok</span>
                 <select
                   value={publishTikTok ? "yes" : "no"}
-                  onChange={(event) => setPublishTikTok(event.target.value === "yes")}
+                  onChange={(event) =>
+                    setPublishTikTok(event.target.value === "yes")
+                  }
                 >
                   <option value="no">Пока выключено</option>
                   <option value="yes">Создать publish-задачи</option>
@@ -221,18 +226,27 @@ export default function FactoryPage() {
                     </p>
                   </td>
 
-                  <td>{job.clips.length} / {job.totalClips}</td>
+                  <td>
+                    {job.clips.length} / {job.totalClips}
+                  </td>
 
                   <td>
                     {job.clips.flatMap((clip) =>
                       clip.publishes.map((publish) => (
                         <div key={publish.id}>
-                          <b>{clip.index}. {publish.platform}</b>{" "}
+                          <b>
+                            {clip.index}. {publish.platform}
+                          </b>{" "}
                           <span className="badge">{publish.status}</span>
                           {publish.platformUrl ? (
                             <>
                               {" "}
-                              <a className="success" href={publish.platformUrl} target="_blank">
+                              <a
+                                className="success"
+                                href={publish.platformUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
                                 открыть
                               </a>
                             </>
