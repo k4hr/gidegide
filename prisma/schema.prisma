@@ -7,11 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum FactoryAssetType {
-  HOOK
-  LANA
-}
-
 enum FactoryPlatform {
   YOUTUBE
   TIKTOK
@@ -35,18 +30,16 @@ enum FactoryPublishStatus {
 }
 
 model FactoryAsset {
-  id           String           @id @default(cuid())
-  type         FactoryAssetType
+  id           String   @id @default(cuid())
   title        String
   filePath     String
   originalName String?
   mimeType     String?
   sizeBytes    Int?
 
-  createdAt    DateTime         @default(now())
-  updatedAt    DateTime         @updatedAt
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  @@index([type])
   @@index([createdAt])
 }
 
@@ -85,9 +78,9 @@ model FactoryJob {
 }
 
 model FactoryClip {
-  id        String   @id @default(cuid())
+  id        String      @id @default(cuid())
   jobId     String
-  job       FactoryJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job       FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
   index     Int
   startSec  Int
@@ -97,8 +90,8 @@ model FactoryClip {
 
   publishes FactoryPublish[]
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([jobId])
   @@index([createdAt])
@@ -107,10 +100,10 @@ model FactoryClip {
 model FactoryPublish {
   id             String               @id @default(cuid())
   clipId         String
-  clip           FactoryClip           @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clip           FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
 
   platform       FactoryPlatform
-  status         FactoryPublishStatus  @default(QUEUED)
+  status         FactoryPublishStatus @default(QUEUED)
   platformPostId String?
   platformUrl    String?
   error          String?
