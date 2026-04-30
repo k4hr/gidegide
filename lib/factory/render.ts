@@ -1,5 +1,5 @@
 import path from "node:path";
-import { rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { nanoid } from "nanoid";
 
 import {
@@ -36,7 +36,6 @@ type RenderFactoryClipInput = {
   jobId: string;
   clipIndex: number;
   sourcePath: string;
-  hookPath: string;
   lanaPath: string;
   startSec: number;
   clipSeconds: number;
@@ -48,115 +47,66 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
   const tempId = `${input.jobId}-${input.clipIndex}-${nanoid(8)}`;
   const tempDir = path.join(FACTORY_TEMP_DIR, tempId);
 
-  const bodyPath = path.join(tempDir, "body.mp4");
-  const hookPath = path.join(tempDir, "hook.mp4");
-  const concatListPath = path.join(tempDir, "concat.txt");
   const outputPath = path.join(
     FACTORY_OUTPUT_DIR,
     `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
   );
 
-  await runCommand("mkdir", ["-p", tempDir]);
+  await mkdir(tempDir, { recursive: true });
 
-  await runCommand("ffmpeg", [
-    "-y",
+  try {
+    await runCommand("ffmpeg", [
+      "-y",
 
-    "-ss",
-    String(input.startSec),
-    "-t",
-    String(input.clipSeconds),
-    "-i",
-    input.sourcePath,
+      "-ss",
+      String(input.startSec),
+      "-t",
+      String(input.clipSeconds),
+      "-i",
+      input.sourcePath,
 
-    "-stream_loop",
-    "-1",
-    "-t",
-    String(input.clipSeconds),
-    "-i",
-    input.lanaPath,
+      "-stream_loop",
+      "-1",
+      "-t",
+      String(input.clipSeconds),
+      "-i",
+      input.lanaPath,
 
-    "-filter_complex",
-    [
-      "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=18:1[bg]",
-      "[0:v]scale=1080:1080:force_original_aspect_ratio=decrease[game]",
-      "[bg][game]overlay=(W-w)/2:260[base]",
-      "[1:v]scale=330:586:force_original_aspect_ratio=increase,crop=330:586[lana]",
-      "[base][lana]overlay=W-w-32:H-h-32[v]",
-    ].join(";"),
+      "-filter_complex",
+      [
+        "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=18:1[bg]",
+        "[0:v]scale=1080:1080:force_original_aspect_ratio=decrease[game]",
+        "[bg][game]overlay=(W-w)/2:260[base]",
+        "[1:v]scale=330:586:force_original_aspect_ratio=increase,crop=330:586[lana]",
+        "[base][lana]overlay=W-w-32:H-h-32[v]",
+      ].join(";"),
 
-    "-map",
-    "[v]",
-    "-map",
-    "0:a?",
-    "-r",
-    "30",
-    "-pix_fmt",
-    "yuv420p",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "23",
-    "-c:a",
-    "aac",
-    "-ar",
-    "44100",
-    "-ac",
-    "2",
-    "-shortest",
-    bodyPath,
-  ]);
+      "-map",
+      "[v]",
+      "-map",
+      "0:a?",
+      "-r",
+      "30",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-ar",
+      "44100",
+      "-ac",
+      "2",
+      "-shortest",
+      outputPath,
+    ]);
 
-  await runCommand("ffmpeg", [
-    "-y",
-    "-t",
-    "3",
-    "-i",
-    input.hookPath,
-    "-vf",
-    "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920",
-    "-r",
-    "30",
-    "-pix_fmt",
-    "yuv420p",
-    "-c:v",
-    "libx264",
-    "-preset",
-    "veryfast",
-    "-crf",
-    "23",
-    "-c:a",
-    "aac",
-    "-ar",
-    "44100",
-    "-ac",
-    "2",
-    hookPath,
-  ]);
-
-  await import("node:fs/promises").then(({ writeFile }) =>
-    writeFile(
-      concatListPath,
-      `file '${hookPath.replaceAll("'", "'\\''")}'\nfile '${bodyPath.replaceAll("'", "'\\''")}'\n`,
-      "utf8",
-    ),
-  );
-
-  await runCommand("ffmpeg", [
-    "-y",
-    "-f",
-    "concat",
-    "-safe",
-    "0",
-    "-i",
-    concatListPath,
-    "-c",
-    "copy",
-    outputPath,
-  ]);
-
-  await rm(tempDir, { recursive: true, force: true });
-
-  return outputPath;
+    return outputPath;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
