@@ -35,27 +35,11 @@ async function processOneJob() {
   let sourcePath: string | null = null;
 
   try {
-    const hooks = await prisma.factoryAsset.findMany({
-      where: {
-        type: "HOOK",
-      },
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
-
     const lanaVideos = await prisma.factoryAsset.findMany({
-      where: {
-        type: "LANA",
-      },
       orderBy: {
         createdAt: "desc",
       },
     });
-
-    if (hooks.length === 0) {
-      throw new Error("Нет загруженных хуков");
-    }
 
     if (lanaVideos.length === 0) {
       throw new Error("Нет загруженных видео Ланы");
@@ -115,7 +99,6 @@ async function processOneJob() {
         jobId: job.id,
         clipIndex,
         sourcePath,
-        hookPath: randomItem(hooks).filePath,
         lanaPath: randomItem(lanaVideos).filePath,
         startSec,
         clipSeconds: job.clipSeconds,
@@ -153,8 +136,7 @@ async function processOneJob() {
             const result = await uploadYoutubeShort({
               filePath: outputPath,
               title,
-              description:
-                "Lana watches gaming clips. #shorts #gaming #gamingreaction",
+              description: "Lana watches gaming clips. #shorts #gaming #games",
             });
 
             await prisma.factoryPublish.update({
@@ -190,7 +172,7 @@ async function processOneJob() {
             },
             data: {
               status: "SKIPPED",
-              error: "TikTok uploader будет добавлен следующим шагом",
+              error: "TikTok uploader добавим следующим шагом",
             },
           });
         }
