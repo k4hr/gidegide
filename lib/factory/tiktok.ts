@@ -50,6 +50,7 @@ type TikTokAuthTokens = {
 };
 
 type UploadTikTokDraftInput = {
+  accountId: string;
   filePath: string;
   title: string;
   description?: string;
@@ -203,18 +204,15 @@ export async function getTikTokDisplayName(accessToken: string) {
   return data.data?.user?.display_name ?? null;
 }
 
-async function getTikTokAccount() {
-  const account = await prisma.factoryAccount.findFirst({
+async function getTikTokAccount(accountId: string) {
+  const account = await prisma.factoryAccount.findUnique({
     where: {
-      platform: "TIKTOK",
-    },
-    orderBy: {
-      createdAt: "desc",
+      id: accountId,
     },
   });
 
-  if (!account) {
-    throw new Error("TikTok аккаунт не подключен");
+  if (!account || account.platform !== "TIKTOK") {
+    throw new Error("TikTok аккаунт не найден");
   }
 
   const isTokenExpiredOrClose =
@@ -316,7 +314,7 @@ async function uploadFileToTikTok(input: {
 }
 
 export async function uploadTikTokDraft(input: UploadTikTokDraftInput) {
-  const account = await getTikTokAccount();
+  const account = await getTikTokAccount(input.accountId);
   const stat = await fs.stat(input.filePath);
 
   if (stat.size <= 0) {
@@ -338,6 +336,6 @@ export async function uploadTikTokDraft(input: UploadTikTokDraftInput) {
     id: init.publishId,
     url: null,
     message:
-      "Видео загружено в TikTok как draft. Открой TikTok inbox, чтобы завершить публикацию.",
+      "Видео отправлено в TikTok inbox/draft flow. Открой TikTok на телефоне, чтобы завершить публикацию.",
   };
 }
