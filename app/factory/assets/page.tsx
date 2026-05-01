@@ -8,6 +8,7 @@ type FactoryAsset = {
   title: string;
   originalName: string | null;
   sizeBytes: number | null;
+  storageKey: string | null;
   createdAt: string;
 };
 
@@ -89,8 +90,8 @@ export default function FactoryAssetsPage() {
         <section className="card">
           <h1>Видео Ланы</h1>
           <p>
-            Сюда загружаешь только видео, где Лана просто сидит и смотрит. Worker
-            случайно берет один из этих файлов и вставляет его в каждый ролик.
+            Сюда загружаешь видео, где Лана сидит и смотрит. Файл сохраняется
+            локально и в Cloudflare R2.
           </p>
 
           <form className="grid" onSubmit={uploadAsset}>
@@ -133,6 +134,7 @@ export default function FactoryAssetsPage() {
                 <th>Название</th>
                 <th>Файл</th>
                 <th>Размер</th>
+                <th>R2</th>
               </tr>
             </thead>
 
@@ -146,12 +148,19 @@ export default function FactoryAssetsPage() {
                       ? `${(asset.sizeBytes / 1024 / 1024).toFixed(1)} MB`
                       : "—"}
                   </td>
+                  <td>
+                    {asset.storageKey ? (
+                      <span className="success">загружено</span>
+                    ) : (
+                      <span className="muted">локально</span>
+                    )}
+                  </td>
                 </tr>
               ))}
 
               {assets.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="muted">
+                  <td colSpan={4} className="muted">
                     Пока ничего не загружено.
                   </td>
                 </tr>
