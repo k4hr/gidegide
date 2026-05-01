@@ -15,21 +15,96 @@ export function extFromName(fileName: string) {
   return ext || ".mp4";
 }
 
-export function runCommand(command: string, args: string[]) {
+type RunCommandOptions = {
+  logPrefix?: string;
+  onOutput?: (text: string) => void | Promise<void>;
+  isCanceled?: () => Promise<boolean>;
+};
+
+export function runCommand(
+  command: string,
+  args: string[],
+  options: RunCommandOptions = {},
+) {
   return new Promise<void>((resolve, reject) => {
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
     });
 
     let stderr = "";
+    let finished = false;
 
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk.toString();
+    const cancelTimer = options.isCanceled
+      ? setInterval(async () => {
+          try {
+            if (finished) return;
+
+            const canceled = await options.isCanceled?.();
+
+            if (canceled) {
+              child.kill("SIGTERM");
+
+              setTimeout(() => {
+                if (!finished) {
+                  child.kill("SIGKILL");
+                }
+              }, 2500);
+            }
+          } catch {
+            // ignore cancel polling errors
+          }
+        }, 1200)
+      : null;
+
+    function writeLog(text: string, stream: "stdout" | "stderr") {
+      if (options.logPrefix) {
+        const output = `[${options.logPrefix}] ${text}`;
+
+        if (stream === "stdout") {
+          process.stdout.write(output);
+        } else {
+          process.stderr.write(output);
+        }
+      }
+
+      Promise.resolve(options.onOutput?.(text)).catch(() => {});
+    }
+
+    child.stdout.on("data", (chunk) => {
+      const text = chunk.toString();
+      writeLog(text, "stdout");
     });
 
-    child.on("error", reject);
+    child.stderr.on("data", (chunk) => {
+      const text = chunk.toString();
+      stderr += text;
+      writeLog(text, "stderr");
+    });
 
-    child.on("close", (code) => {
+    child.on("error", (error) => {
+      finished = true;
+
+      if (cancelTimer) {
+        clearInterval(cancelTimer);
+      }
+
+      reject(error);
+    });
+
+    child.on("close", async (code) => {
+      finished = true;
+
+      if (cancelTimer) {
+        clearInterval(cancelTimer);
+      }
+
+      const canceled = await options.isCanceled?.().catch(() => false);
+
+      if (canceled) {
+        reject(new Error("Задача отменена пользователем"));
+        return;
+      }
+
       if (code === 0) {
         resolve();
         return;
