@@ -1,11 +1,9 @@
+import fs from "node:fs";
 import path from "node:path";
 import { mkdir, rm } from "node:fs/promises";
 
 import { prisma } from "@/lib/prisma";
-import {
-  FACTORY_LANA_DIR,
-  FACTORY_SOURCE_DIR,
-} from "@/lib/factory/paths";
+import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "@/lib/factory/paths";
 import {
   downloadYoutubeSource,
   getSourceDuration,
@@ -94,6 +92,10 @@ async function ensureLocalLanaFile(input: {
   filePath: string;
   storageKey: string | null;
 }) {
+  if (fs.existsSync(input.filePath)) {
+    return input.filePath;
+  }
+
   if (!isR2Enabled() || !input.storageKey) {
     return input.filePath;
   }
@@ -102,12 +104,54 @@ async function ensureLocalLanaFile(input: {
 
   const localPath = path.join(FACTORY_LANA_DIR, `${input.assetId}.mp4`);
 
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
   await downloadR2ObjectToFile({
     key: input.storageKey,
     filePath: localPath,
   });
 
   return localPath;
+}
+
+async function ensureLocalSourceFile(job: {
+  id: string;
+  sourceUrl: string | null;
+  sourceFilePath: string | null;
+  sourceStorageKey: string | null;
+}) {
+  if (job.sourceFilePath && fs.existsSync(job.sourceFilePath)) {
+    await updateJobProgress(job.id, 5, "Использую загруженный MP4");
+    return job.sourceFilePath;
+  }
+
+  if (job.sourceStorageKey && isR2Enabled()) {
+    await updateJobProgress(job.id, 5, "Скачиваю исходный MP4 из R2");
+
+    const localPath = path.join(FACTORY_SOURCE_DIR, `${job.id}-source.mp4`);
+
+    await downloadR2ObjectToFile({
+      key: job.sourceStorageKey,
+      filePath: localPath,
+    });
+
+    await updateJobProgress(job.id, 30, "Исходный MP4 готов");
+
+    return localPath;
+  }
+
+  if (job.sourceUrl) {
+    return downloadYoutubeSource({
+      jobId: job.id,
+      sourceUrl: job.sourceUrl,
+      isCanceled: () => isJobCanceled(job.id),
+      onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+    });
+  }
+
+  throw new Error("У задачи нет исходного MP4 и нет YouTube-ссылки");
 }
 
 async function processOneJob() {
@@ -147,17 +191,11 @@ async function processOneJob() {
         status: "DOWNLOADING",
         error: null,
         progress: 1,
-        progressLabel: "Подготовка скачивания",
+        progressLabel: "Подготовка исходника",
       },
     });
 
-    sourcePath = await downloadYoutubeSource({
-      jobId: job.id,
-      sourceUrl: job.sourceUrl,
-      isCanceled: () => isJobCanceled(job.id),
-      onProgress: (progress, label) =>
-        updateJobProgress(job.id, progress, label),
-    });
+    sourcePath = await ensureLocalSourceFile(job);
 
     await assertNotCanceled(job.id);
 
@@ -172,6 +210,10 @@ async function processOneJob() {
       startSec += job.clipSeconds
     ) {
       clipStarts.push(startSec);
+    }
+
+    if (clipStarts.length === 0) {
+      throw new Error("Видео слишком короткое для выбранной длины клипа");
     }
 
     await prisma.factoryJob.update({
@@ -194,7 +236,8 @@ async function processOneJob() {
       const endSec = startSec + job.clipSeconds;
       const title = `${job.titlePrefix} #${clipIndex}`;
 
-      const renderProgress = 30 + Math.round((i / Math.max(1, clipStarts.length)) * 45);
+      const renderProgress =
+        30 + Math.round((i / Math.max(1, clipStarts.length)) * 45);
 
       await updateJobProgress(
         job.id,
@@ -354,8 +397,7 @@ async function processOneJob() {
     console.error(error);
 
     const isCanceledError =
-      error instanceof Error &&
-      error.message.toLowerCase().includes("отмен");
+      error instanceof Error && error.message.toLowerCase().includes("отмен");
 
     if (isCanceledError) {
       await markJobCanceled(job.id);
