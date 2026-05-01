@@ -1,19 +1,43 @@
+import path from "node:path";
+import { writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
+import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
+import { extFromName, safeFileName } from "@/lib/factory/video";
+import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 
 export const runtime = "nodejs";
 
-const createJobSchema = z.object({
+const platformSchema = z.enum(["YOUTUBE", "TIKTOK"]);
+
+const jsonCreateJobSchema = z.object({
   sourceUrl: z.string().url(),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]),
   titlePrefix: z.string().min(1).max(80).default("Lana watches games"),
-  platforms: z
-    .array(z.enum(["YOUTUBE", "TIKTOK"]))
-    .min(1)
-    .default(["YOUTUBE"]),
+  platforms: z.array(platformSchema).min(1).default(["YOUTUBE"]),
 });
+
+function parseClipSeconds(value: FormDataEntryValue | null) {
+  const numberValue = Number(value);
+
+  if (![30, 45, 60].includes(numberValue)) {
+    throw new Error("Некорректная длина клипа");
+  }
+
+  return numberValue;
+}
+
+function parsePlatforms(value: FormDataEntryValue | null) {
+  if (!value || typeof value !== "string") {
+    return ["YOUTUBE"] as Array<"YOUTUBE" | "TIKTOK">;
+  }
+
+  const parsed = JSON.parse(value) as string[];
+
+  return z.array(platformSchema).min(1).parse(parsed);
+}
 
 export async function GET() {
   const jobs = await prisma.factoryJob.findMany({
@@ -40,8 +64,82 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    await ensureFactoryDirs();
+
+    const contentType = request.headers.get("content-type") ?? "";
+
+    if (contentType.includes("multipart/form-data")) {
+      const formData = await request.formData();
+
+      const titlePrefix = z
+        .string()
+        .min(1)
+        .max(80)
+        .default("Lana watches games")
+        .parse(formData.get("titlePrefix"));
+
+      const clipSeconds = parseClipSeconds(formData.get("clipSeconds"));
+      const platforms = parsePlatforms(formData.get("platforms"));
+      const file = formData.get("sourceFile");
+
+      if (!(file instanceof File)) {
+        return NextResponse.json(
+          {
+            error: "Исходный MP4-файл не найден",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+
+      const job = await prisma.factoryJob.create({
+        data: {
+          sourceUrl: null,
+          clipSeconds,
+          titlePrefix,
+          platforms,
+          progress: 0,
+          progressLabel: "Загружаю исходный файл",
+          cancelRequested: false,
+        },
+      });
+
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const ext = extFromName(file.name);
+      const fileName = `${job.id}-${safeFileName(file.name)}${ext}`;
+      const filePath = path.join(FACTORY_SOURCE_DIR, fileName);
+      const storageKey = `${getR2Prefix()}/jobs/${job.id}/source/${fileName}`;
+
+      await writeFile(filePath, buffer);
+
+      const uploadedKey = await uploadBufferToR2({
+        key: storageKey,
+        buffer,
+        contentType: file.type || "video/mp4",
+      });
+
+      const updatedJob = await prisma.factoryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          sourceFilePath: filePath,
+          sourceStorageKey: uploadedKey,
+          sourceOriginalName: file.name,
+          sourceSizeBytes: buffer.byteLength,
+          progress: 0,
+          progressLabel: "Исходный файл загружен",
+        },
+      });
+
+      return NextResponse.json({
+        job: updatedJob,
+      });
+    }
+
     const body = await request.json();
-    const data = createJobSchema.parse(body);
+    const data = jsonCreateJobSchema.parse(body);
 
     const job = await prisma.factoryJob.create({
       data: {
