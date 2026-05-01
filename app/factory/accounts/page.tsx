@@ -75,7 +75,7 @@ export default function FactoryAccountsPage() {
       };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось сохранить название");
+        throw new Error(data.error ?? "Failed to save account name");
       }
 
       setEditingId("");
@@ -85,7 +85,7 @@ export default function FactoryAccountsPage() {
       setError(
         saveError instanceof Error
           ? saveError.message
-          : "Не получилось сохранить название",
+          : "Failed to save account name",
       );
     } finally {
       setSavingId("");
@@ -94,7 +94,7 @@ export default function FactoryAccountsPage() {
 
   async function deleteAccount(account: FactoryAccount) {
     const confirmed = window.confirm(
-      `Удалить аккаунт "${account.name}"?\n\nОн исчезнет из выбора публикации. Уже созданные публикации останутся в истории.`,
+      `Delete account "${account.name}"?\n\nThis account will be removed from publishing targets. Existing publishing history will remain.`,
     );
 
     if (!confirmed) {
@@ -114,7 +114,7 @@ export default function FactoryAccountsPage() {
       };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось удалить аккаунт");
+        throw new Error(data.error ?? "Failed to delete account");
       }
 
       await loadAccounts();
@@ -122,7 +122,7 @@ export default function FactoryAccountsPage() {
       setError(
         deleteError instanceof Error
           ? deleteError.message
-          : "Не получилось удалить аккаунт",
+          : "Failed to delete account",
       );
     } finally {
       setDeletingId("");
@@ -133,18 +133,20 @@ export default function FactoryAccountsPage() {
     <main className="page">
       <div className="shell">
         <nav className="nav">
-          <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Видео персонажей</Link>
-          <Link href="/factory/templates">Шаблоны</Link>
-          <Link href="/factory/accounts">Аккаунты</Link>
+          <Link href="/">Home</Link>
+          <Link href="/factory">Factory</Link>
+          <Link href="/factory/assets">Character Videos</Link>
+          <Link href="/factory/templates">Templates</Link>
+          <Link href="/factory/accounts">Accounts</Link>
         </nav>
 
         <section className="card">
-          <h1>Аккаунты</h1>
+          <h1>Accounts</h1>
+
           <p>
-            Подключи несколько YouTube и TikTok аккаунтов. Потом на странице
-            завода можно выбрать, на какой аккаунт какой шаблон отправлять:
-            Lana, Mia, Amelia или любой другой.
+            Connect one or more YouTube and TikTok accounts. After connecting
+            accounts, you can choose which account receives which reaction
+            template, such as Lana, Mia, or Amelia.
           </p>
 
           <div className="inline-actions">
@@ -158,27 +160,27 @@ export default function FactoryAccountsPage() {
           </div>
 
           <p className="muted">
-            TikTok сейчас работает в режиме draft upload: ролик отправляется в
-            TikTok inbox/draft flow, после чего его нужно подтвердить в
-            приложении TikTok.
+            TikTok currently uses draft upload flow. Generated videos are sent
+            to TikTok for user review, and the user may need to confirm
+            publishing inside the TikTok app.
           </p>
         </section>
 
         <section style={{ height: 24 }} />
 
         <section className="card">
-          <h2>Подключенные аккаунты</h2>
+          <h2>Connected accounts</h2>
 
           {error ? <p className="error">{error}</p> : null}
 
           <table className="table">
             <thead>
               <tr>
-                <th>Платформа</th>
-                <th>Название</th>
-                <th>Доступ до</th>
-                <th>Создан</th>
-                <th>Действия</th>
+                <th>Platform</th>
+                <th>Name</th>
+                <th>Access until</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
             </thead>
 
@@ -201,7 +203,7 @@ export default function FactoryAccountsPage() {
                           onChange={(event) =>
                             setEditingName(event.target.value)
                           }
-                          placeholder="Название аккаунта"
+                          placeholder="Account name"
                           autoFocus
                         />
                       ) : (
@@ -221,7 +223,7 @@ export default function FactoryAccountsPage() {
                             disabled={isSaving}
                             onClick={() => saveAccountName(account.id)}
                           >
-                            {isSaving ? "Сохраняю..." : "Сохранить"}
+                            {isSaving ? "Saving..." : "Save"}
                           </button>
 
                           <button
@@ -230,7 +232,7 @@ export default function FactoryAccountsPage() {
                             disabled={isSaving}
                             onClick={cancelEdit}
                           >
-                            Отмена
+                            Cancel
                           </button>
                         </div>
                       ) : (
@@ -239,7 +241,7 @@ export default function FactoryAccountsPage() {
                             type="button"
                             onClick={() => startEdit(account)}
                           >
-                            Переименовать
+                            Rename
                           </button>
 
                           <button
@@ -248,7 +250,7 @@ export default function FactoryAccountsPage() {
                             disabled={isDeleting}
                             onClick={() => deleteAccount(account)}
                           >
-                            {isDeleting ? "Удаляю..." : "Удалить"}
+                            {isDeleting ? "Deleting..." : "Delete"}
                           </button>
                         </div>
                       )}
@@ -260,12 +262,33 @@ export default function FactoryAccountsPage() {
               {accounts.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="muted">
-                    Пока аккаунтов нет.
+                    No connected accounts yet.
                   </td>
                 </tr>
               ) : null}
             </tbody>
           </table>
+        </section>
+
+        <section style={{ height: 24 }} />
+
+        <section className="card legal-links-card">
+          <h2>Legal documents</h2>
+
+          <p>
+            Please review the Terms of Service and Privacy Policy before using
+            Lana Content Factory or connecting third-party platform accounts.
+          </p>
+
+          <div className="inline-actions">
+            <Link className="button secondary-button" href="/terms">
+              Read Terms of Service
+            </Link>
+
+            <Link className="button secondary-button" href="/privacy">
+              Read Privacy Policy
+            </Link>
+          </div>
         </section>
       </div>
     </main>
