@@ -7,6 +7,7 @@ export const runtime = "nodejs";
 
 const templateSchema = z.object({
   name: z.string().min(1).max(80),
+  assetId: z.string().min(1).optional().nullable(),
   lanaX: z.number().int().min(0).max(100),
   lanaY: z.number().int().min(0).max(100),
   lanaWidth: z.number().int().min(120).max(760),
@@ -25,6 +26,9 @@ export async function GET() {
         createdAt: "desc",
       },
     ],
+    include: {
+      asset: true,
+    },
   });
 
   return NextResponse.json({
@@ -37,6 +41,25 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = templateSchema.parse(body);
 
+    if (data.assetId) {
+      const asset = await prisma.factoryAsset.findUnique({
+        where: {
+          id: data.assetId,
+        },
+      });
+
+      if (!asset) {
+        return NextResponse.json(
+          {
+            error: "Видео персонажа для шаблона не найдено",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+    }
+
     if (data.isDefault) {
       await prisma.factoryTemplate.updateMany({
         data: {
@@ -46,7 +69,19 @@ export async function POST(request: Request) {
     }
 
     const template = await prisma.factoryTemplate.create({
-      data,
+      data: {
+        name: data.name,
+        assetId: data.assetId || null,
+        lanaX: data.lanaX,
+        lanaY: data.lanaY,
+        lanaWidth: data.lanaWidth,
+        lanaHeight: data.lanaHeight,
+        mirrorLana: data.mirrorLana,
+        isDefault: data.isDefault,
+      },
+      include: {
+        asset: true,
+      },
     });
 
     return NextResponse.json({
