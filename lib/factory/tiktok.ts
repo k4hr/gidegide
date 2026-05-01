@@ -96,12 +96,16 @@ function assertTikTokOk<T extends { error?: unknown }>(
 
   if (error.code && error.code !== "ok") {
     throw new Error(
-      `${fallbackMessage}: ${error.code}${error.message ? ` — ${error.message}` : ""}`,
+      `${fallbackMessage}: ${error.code}${
+        error.message ? ` — ${error.message}` : ""
+      }`,
     );
   }
 }
 
-export async function exchangeTikTokCode(code: string): Promise<TikTokAuthTokens> {
+export async function exchangeTikTokCode(
+  code: string,
+): Promise<TikTokAuthTokens> {
   const body = new URLSearchParams();
 
   body.set("client_key", getRequiredEnv("TIKTOK_CLIENT_KEY"));
@@ -213,17 +217,18 @@ async function getTikTokAccount() {
     throw new Error("TikTok аккаунт не подключен");
   }
 
-  const shouldRefresh =
-    account.refreshToken &&
-    (!account.expiresAt ||
-      account.expiresAt.getTime() < Date.now() + 5 * 60 * 1000);
+  const isTokenExpiredOrClose =
+    !account.expiresAt ||
+    account.expiresAt.getTime() < Date.now() + 5 * 60 * 1000;
 
-  if (!shouldRefresh) {
+  if (!account.refreshToken || !isTokenExpiredOrClose) {
     return account;
   }
 
+  const refreshToken = account.refreshToken;
+
   const refreshedTokens = await refreshTikTokToken({
-    refreshToken: account.refreshToken,
+    refreshToken,
   });
 
   return prisma.factoryAccount.update({
@@ -232,7 +237,7 @@ async function getTikTokAccount() {
     },
     data: {
       accessToken: refreshedTokens.accessToken,
-      refreshToken: refreshedTokens.refreshToken ?? account.refreshToken,
+      refreshToken: refreshedTokens.refreshToken ?? refreshToken,
       expiresAt: refreshedTokens.expiresAt,
     },
   });
