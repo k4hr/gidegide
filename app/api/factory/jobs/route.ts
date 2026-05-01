@@ -49,6 +49,9 @@ export async function POST(request: Request) {
         clipSeconds: data.clipSeconds,
         titlePrefix: data.titlePrefix,
         platforms: data.platforms,
+        progress: 0,
+        progressLabel: "Задача создана",
+        cancelRequested: false,
       },
     });
 
