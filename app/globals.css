@@ -391,4 +391,14 @@ button:disabled {
   .corner-buttons {
     grid-template-columns: 1fr;
   }
+
+  .inline-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .inline-actions button,
+  .inline-actions .button {
+    width: 100%;
+  }
 }
