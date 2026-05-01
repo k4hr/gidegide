@@ -167,6 +167,28 @@ function getDefaultTemplate(): FactoryRenderTemplate {
   };
 }
 
+function getTargetTemplate(target: {
+  template: {
+    lanaX: number;
+    lanaY: number;
+    lanaWidth: number;
+    lanaHeight: number;
+    mirrorLana: boolean;
+  } | null;
+}): FactoryRenderTemplate {
+  if (!target.template) {
+    return getDefaultTemplate();
+  }
+
+  return {
+    lanaX: target.template.lanaX,
+    lanaY: target.template.lanaY,
+    lanaWidth: target.template.lanaWidth,
+    lanaHeight: target.template.lanaHeight,
+    mirrorLana: target.template.mirrorLana,
+  };
+}
+
 async function processOneJob() {
   const job = await prisma.factoryJob.findFirst({
     where: {
@@ -176,7 +198,12 @@ async function processOneJob() {
       createdAt: "asc",
     },
     include: {
-      template: true,
+      targets: {
+        include: {
+          account: true,
+          template: true,
+        },
+      },
     },
   });
 
@@ -189,6 +216,12 @@ async function processOneJob() {
   let sourcePath: string | null = null;
 
   try {
+    const targets = job.targets;
+
+    if (targets.length === 0) {
+      throw new Error("У задачи нет выбранных аккаунтов публикации");
+    }
+
     const lanaVideos = await prisma.factoryAsset.findMany({
       orderBy: {
         createdAt: "desc",
@@ -198,16 +231,6 @@ async function processOneJob() {
     if (lanaVideos.length === 0) {
       throw new Error("Нет загруженных видео Ланы");
     }
-
-    const template: FactoryRenderTemplate = job.template
-      ? {
-          lanaX: job.template.lanaX,
-          lanaY: job.template.lanaY,
-          lanaWidth: job.template.lanaWidth,
-          lanaHeight: job.template.lanaHeight,
-          mirrorLana: job.template.mirrorLana,
-        }
-      : getDefaultTemplate();
 
     await prisma.factoryJob.update({
       where: {
@@ -254,6 +277,9 @@ async function processOneJob() {
       },
     });
 
+    const totalRenders = clipStarts.length * targets.length;
+    let completedRenders = 0;
+
     for (let i = 0; i < clipStarts.length; i += 1) {
       await assertNotCanceled(job.id);
 
@@ -261,22 +287,11 @@ async function processOneJob() {
       const startSec = clipStarts[i];
       const endSec = startSec + job.clipSeconds;
 
-      const title = buildClipTitle({
+      const baseTitle = buildClipTitle({
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
       });
-
-      const description = buildClipDescription(job.game);
-
-      const renderProgress =
-        30 + Math.round((i / Math.max(1, clipStarts.length)) * 45);
-
-      await updateJobProgress(
-        job.id,
-        renderProgress,
-        `Рендер клипа ${clipIndex}/${clipStarts.length}`,
-      );
 
       const clip = await prisma.factoryClip.create({
         data: {
@@ -284,74 +299,86 @@ async function processOneJob() {
           index: clipIndex,
           startSec,
           endSec,
-          title,
+          title: baseTitle,
         },
       });
 
-      const lanaAsset = randomItem(lanaVideos);
-
-      const lanaPath = await ensureLocalLanaFile({
-        assetId: lanaAsset.id,
-        filePath: lanaAsset.filePath,
-        storageKey: lanaAsset.storageKey,
-      });
-
-      const outputPath = await renderFactoryClip({
-        jobId: job.id,
-        clipIndex,
-        sourcePath,
-        lanaPath,
-        startSec,
-        clipSeconds: job.clipSeconds,
-        template,
-        isCanceled: () => isJobCanceled(job.id),
-      });
-
-      await assertNotCanceled(job.id);
-
-      const storageKey = `${getR2Prefix()}/jobs/${job.id}/clips/${String(
-        clipIndex,
-      ).padStart(4, "0")}.mp4`;
-
-      const uploadedKey = await uploadFileToR2({
-        key: storageKey,
-        filePath: outputPath,
-        contentType: "video/mp4",
-      });
-
-      await prisma.factoryClip.update({
-        where: {
-          id: clip.id,
-        },
-        data: {
-          filePath: outputPath,
-          storageKey: uploadedKey,
-        },
-      });
-
-      await prisma.factoryJob.update({
-        where: {
-          id: job.id,
-        },
-        data: {
-          status: "PUBLISHING",
-          progress: 75 + Math.round((i / Math.max(1, clipStarts.length)) * 20),
-          progressLabel: `Публикация клипа ${clipIndex}/${clipStarts.length}`,
-        },
-      });
-
-      for (const platform of job.platforms) {
+      for (const target of targets) {
         await assertNotCanceled(job.id);
+
+        const title = buildClipTitle({
+          game: job.game,
+          clipIndex,
+          customPrefix: target.titlePrefix || job.titlePrefix,
+        });
+
+        const description = buildClipDescription(job.game);
+
+        const renderProgress =
+          30 + Math.round((completedRenders / Math.max(1, totalRenders)) * 45);
+
+        await updateJobProgress(
+          job.id,
+          renderProgress,
+          `Рендер ${clipIndex}/${clipStarts.length} для ${target.account.name}`,
+        );
+
+        const lanaAsset = randomItem(lanaVideos);
+
+        const lanaPath = await ensureLocalLanaFile({
+          assetId: lanaAsset.id,
+          filePath: lanaAsset.filePath,
+          storageKey: lanaAsset.storageKey,
+        });
+
+        const outputPath = await renderFactoryClip({
+          jobId: job.id,
+          clipIndex,
+          sourcePath,
+          lanaPath,
+          startSec,
+          clipSeconds: job.clipSeconds,
+          template: getTargetTemplate(target),
+          isCanceled: () => isJobCanceled(job.id),
+        });
+
+        await assertNotCanceled(job.id);
+
+        const storageKey = `${getR2Prefix()}/jobs/${job.id}/targets/${
+          target.accountId
+        }/clips/${String(clipIndex).padStart(4, "0")}.mp4`;
+
+        const uploadedKey = await uploadFileToR2({
+          key: storageKey,
+          filePath: outputPath,
+          contentType: "video/mp4",
+        });
+
+        await prisma.factoryJob.update({
+          where: {
+            id: job.id,
+          },
+          data: {
+            status: "PUBLISHING",
+            progress:
+              75 + Math.round((completedRenders / Math.max(1, totalRenders)) * 20),
+            progressLabel: `Публикация ${clipIndex}/${clipStarts.length} в ${target.account.name}`,
+          },
+        });
 
         const publish = await prisma.factoryPublish.create({
           data: {
             clipId: clip.id,
-            platform,
+            targetId: target.id,
+            accountId: target.accountId,
+            platform: target.platform,
             status: "QUEUED",
+            renderFilePath: outputPath,
+            renderStorageKey: uploadedKey,
           },
         });
 
-        if (platform === "YOUTUBE") {
+        if (target.platform === "YOUTUBE") {
           await prisma.factoryPublish.update({
             where: {
               id: publish.id,
@@ -363,6 +390,7 @@ async function processOneJob() {
 
           try {
             const result = await uploadYoutubeShort({
+              accountId: target.accountId,
               filePath: outputPath,
               title,
               description,
@@ -394,7 +422,7 @@ async function processOneJob() {
           }
         }
 
-        if (platform === "TIKTOK") {
+        if (target.platform === "TIKTOK") {
           await prisma.factoryPublish.update({
             where: {
               id: publish.id,
@@ -406,6 +434,7 @@ async function processOneJob() {
 
           try {
             const result = await uploadTikTokDraft({
+              accountId: target.accountId,
               filePath: outputPath,
               title,
               description,
@@ -437,9 +466,11 @@ async function processOneJob() {
             });
           }
         }
-      }
 
-      await rm(outputPath, { force: true });
+        completedRenders += 1;
+
+        await rm(outputPath, { force: true });
+      }
     }
 
     await prisma.factoryJob.update({
