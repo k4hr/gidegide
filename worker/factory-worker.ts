@@ -24,10 +24,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function randomItem<T>(items: T[]) {
-  return items[Math.floor(Math.random() * items.length)];
-}
-
 async function updateJobProgress(jobId: string, progress: number, label: string) {
   await prisma.factoryJob.update({
     where: {
@@ -88,35 +84,6 @@ async function markJobCanceled(jobId: string) {
       error: "Задача отменена пользователем",
     },
   });
-}
-
-async function ensureLocalLanaFile(input: {
-  assetId: string;
-  filePath: string;
-  storageKey: string | null;
-}) {
-  if (fs.existsSync(input.filePath)) {
-    return input.filePath;
-  }
-
-  if (!isR2Enabled() || !input.storageKey) {
-    return input.filePath;
-  }
-
-  await mkdir(FACTORY_LANA_DIR, { recursive: true });
-
-  const localPath = path.join(FACTORY_LANA_DIR, `${input.assetId}.mp4`);
-
-  if (fs.existsSync(localPath)) {
-    return localPath;
-  }
-
-  await downloadR2ObjectToFile({
-    key: input.storageKey,
-    filePath: localPath,
-  });
-
-  return localPath;
 }
 
 async function ensureLocalSourceFile(job: {
@@ -189,6 +156,59 @@ function getTargetTemplate(target: {
   };
 }
 
+async function ensureLocalTemplateAssetFile(target: {
+  template: {
+    name: string;
+    asset: {
+      id: string;
+      filePath: string;
+      storageKey: string | null;
+      title: string;
+    } | null;
+  } | null;
+}) {
+  const template = target.template;
+
+  if (!template) {
+    throw new Error(
+      "У выбранного аккаунта не выбран шаблон. Выбери шаблон на странице /factory.",
+    );
+  }
+
+  const asset = template.asset;
+
+  if (!asset) {
+    throw new Error(
+      `У шаблона "${template.name}" не выбрано видео персонажа. Открой /factory/templates и привяжи видео к шаблону.`,
+    );
+  }
+
+  if (fs.existsSync(asset.filePath)) {
+    return asset.filePath;
+  }
+
+  if (!isR2Enabled() || !asset.storageKey) {
+    throw new Error(
+      `Видео "${asset.title}" из шаблона "${template.name}" не найдено локально и не сохранено в R2.`,
+    );
+  }
+
+  await mkdir(FACTORY_LANA_DIR, { recursive: true });
+
+  const localPath = path.join(FACTORY_LANA_DIR, `${asset.id}.mp4`);
+
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
+  await downloadR2ObjectToFile({
+    key: asset.storageKey,
+    filePath: localPath,
+  });
+
+  return localPath;
+}
+
 async function processOneJob() {
   const job = await prisma.factoryJob.findFirst({
     where: {
@@ -201,7 +221,11 @@ async function processOneJob() {
       targets: {
         include: {
           account: true,
-          template: true,
+          template: {
+            include: {
+              asset: true,
+            },
+          },
         },
       },
     },
@@ -222,14 +246,18 @@ async function processOneJob() {
       throw new Error("У задачи нет выбранных аккаунтов публикации");
     }
 
-    const lanaVideos = await prisma.factoryAsset.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
-    });
+    for (const target of targets) {
+      if (!target.template) {
+        throw new Error(
+          `Для аккаунта "${target.account.name}" не выбран шаблон.`,
+        );
+      }
 
-    if (lanaVideos.length === 0) {
-      throw new Error("Нет загруженных видео Ланы");
+      if (!target.template.asset) {
+        throw new Error(
+          `Для шаблона "${target.template.name}" не выбрано видео персонажа.`,
+        );
+      }
     }
 
     await prisma.factoryJob.update({
@@ -323,19 +351,13 @@ async function processOneJob() {
           `Рендер ${clipIndex}/${clipStarts.length} для ${target.account.name}`,
         );
 
-        const lanaAsset = randomItem(lanaVideos);
-
-        const lanaPath = await ensureLocalLanaFile({
-          assetId: lanaAsset.id,
-          filePath: lanaAsset.filePath,
-          storageKey: lanaAsset.storageKey,
-        });
+        const characterVideoPath = await ensureLocalTemplateAssetFile(target);
 
         const outputPath = await renderFactoryClip({
           jobId: job.id,
           clipIndex,
           sourcePath,
-          lanaPath,
+          lanaPath: characterVideoPath,
           startSec,
           clipSeconds: job.clipSeconds,
           template: getTargetTemplate(target),
