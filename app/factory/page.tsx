@@ -47,7 +47,7 @@ function formatMb(bytes: number | null) {
 }
 
 export default function FactoryPage() {
-  const [sourceMode, setSourceMode] = useState<SourceMode>("UPLOAD");
+  const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
@@ -221,8 +221,9 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Надежный режим — загрузить MP4. YouTube URL оставлен как запасной
-            режим, но YouTube может блокировать скачивание на сервере.
+            Вставляешь обычную YouTube-ссылку. Система сама открывает RIP-сервис,
+            проходит скачивание, получает MP4, режет его, вставляет Лану и
+            публикует.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -232,8 +233,8 @@ export default function FactoryPage() {
                 value={sourceMode}
                 onChange={(event) => setSourceMode(event.target.value as SourceMode)}
               >
-                <option value="UPLOAD">Загрузить MP4 — стабильно</option>
-                <option value="YOUTUBE">YouTube URL — может блокироваться</option>
+                <option value="YOUTUBE">YouTube URL → RIP auto downloader</option>
+                <option value="UPLOAD">Загрузить MP4 вручную</option>
               </select>
             </label>
 
