@@ -109,6 +109,10 @@ select {
   outline: none;
 }
 
+input[type="file"] {
+  cursor: pointer;
+}
+
 button,
 .button {
   display: inline-flex;
@@ -162,6 +166,14 @@ button:disabled {
 
 .success {
   color: #86efac;
+}
+
+.upload-progress {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .progress-row {
@@ -227,6 +239,8 @@ button:disabled {
   }
 
   .table {
+    display: block;
+    overflow-x: auto;
     font-size: 13px;
   }
 
