@@ -5,7 +5,7 @@ import { mkdir, rm } from "node:fs/promises";
 import { prisma } from "@/lib/prisma";
 import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "@/lib/factory/paths";
 import {
-  downloadYoutubeSource,
+  downloadSourceFromUrl,
   getSourceDuration,
   renderFactoryClip,
 } from "@/lib/factory/render";
@@ -143,7 +143,7 @@ async function ensureLocalSourceFile(job: {
   }
 
   if (job.sourceUrl) {
-    return downloadYoutubeSource({
+    return downloadSourceFromUrl({
       jobId: job.id,
       sourceUrl: job.sourceUrl,
       isCanceled: () => isJobCanceled(job.id),
