@@ -63,28 +63,36 @@ model FactoryAccount {
 }
 
 model FactoryJob {
-  id              String            @id @default(cuid())
-  sourceUrl       String
-  clipSeconds     Int               @default(45)
-  titlePrefix     String            @default("Lana watches games")
-  platforms       FactoryPlatform[]
-  status          FactoryJobStatus  @default(QUEUED)
-  error           String?
-  totalClips      Int               @default(0)
+  id                 String            @id @default(cuid())
 
-  progress        Int               @default(0)
-  progressLabel   String?
-  cancelRequested Boolean           @default(false)
-  canceledAt      DateTime?
+  sourceUrl          String?
+  sourceFilePath     String?
+  sourceStorageKey   String?
+  sourceOriginalName String?
+  sourceSizeBytes    Int?
 
-  clips           FactoryClip[]
+  clipSeconds        Int               @default(45)
+  titlePrefix        String            @default("Lana watches games")
+  platforms          FactoryPlatform[]
 
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  status             FactoryJobStatus  @default(QUEUED)
+  error              String?
+  totalClips         Int               @default(0)
+
+  progress           Int               @default(0)
+  progressLabel      String?
+  cancelRequested    Boolean           @default(false)
+  canceledAt         DateTime?
+
+  clips              FactoryClip[]
+
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([status])
   @@index([createdAt])
   @@index([cancelRequested])
+  @@index([sourceStorageKey])
 }
 
 model FactoryClip {
