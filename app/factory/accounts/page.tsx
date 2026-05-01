@@ -17,19 +17,32 @@ export default async function FactoryAccountsPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/assets">Видео Ланы</Link>
+          <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
           <h1>Аккаунты</h1>
           <p>
-            Сначала подключаем YouTube. После этого worker сможет сам заливать
-            готовые Shorts на канал.
+            Подключи YouTube для автопубликации Shorts и TikTok для загрузки
+            готовых роликов в TikTok draft через официальный Content Posting API.
           </p>
 
-          <a className="button" href="/api/factory/youtube/connect">
-            Connect YouTube
-          </a>
+          <div className="inline-actions">
+            <a className="button" href="/api/factory/youtube/connect">
+              Connect YouTube
+            </a>
+
+            <a className="button" href="/api/factory/tiktok/connect">
+              Connect TikTok
+            </a>
+          </div>
+
+          <p className="muted">
+            Сейчас TikTok подключается в режиме draft upload. После генерации
+            ролик появится в TikTok inbox, и его нужно будет вручную подтвердить
+            в приложении TikTok.
+          </p>
         </section>
 
         <section style={{ height: 24 }} />
@@ -42,6 +55,7 @@ export default async function FactoryAccountsPage() {
               <tr>
                 <th>Платформа</th>
                 <th>Название</th>
+                <th>Токен до</th>
                 <th>Создан</th>
               </tr>
             </thead>
@@ -53,13 +67,18 @@ export default async function FactoryAccountsPage() {
                     <span className="badge">{account.platform}</span>
                   </td>
                   <td>{account.name}</td>
+                  <td>
+                    {account.expiresAt
+                      ? account.expiresAt.toLocaleString("ru-RU")
+                      : "—"}
+                  </td>
                   <td>{account.createdAt.toLocaleString("ru-RU")}</td>
                 </tr>
               ))}
 
               {accounts.length === 0 ? (
                 <tr>
-                  <td colSpan={3} className="muted">
+                  <td colSpan={4} className="muted">
                     Пока аккаунтов нет.
                   </td>
                 </tr>
