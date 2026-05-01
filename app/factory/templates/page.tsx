@@ -1,12 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+
+type FactoryAsset = {
+  id: string;
+  title: string;
+  originalName: string | null;
+  storageKey: string | null;
+};
 
 type FactoryTemplate = {
   id: string;
   name: string;
   isDefault: boolean;
+  assetId: string | null;
+  asset: FactoryAsset | null;
   lanaX: number;
   lanaY: number;
   lanaWidth: number;
@@ -26,7 +35,9 @@ function cornerToPosition(corner: Corner) {
 
 export default function FactoryTemplatesPage() {
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
-  const [name, setName] = useState("My Lana Template");
+  const [assets, setAssets] = useState<FactoryAsset[]>([]);
+  const [name, setName] = useState("Lana Template");
+  const [assetId, setAssetId] = useState("");
   const [lanaX, setLanaX] = useState(78);
   const [lanaY, setLanaY] = useState(68);
   const [lanaWidth, setLanaWidth] = useState(300);
@@ -34,6 +45,11 @@ export default function FactoryTemplatesPage() {
   const [mirrorLana, setMirrorLana] = useState(false);
   const [isDefault, setIsDefault] = useState(true);
   const [error, setError] = useState("");
+
+  const selectedAsset = useMemo(
+    () => assets.find((asset) => asset.id === assetId) ?? null,
+    [assets, assetId],
+  );
 
   async function loadTemplates() {
     const response = await fetch("/api/factory/templates", {
@@ -47,8 +63,25 @@ export default function FactoryTemplatesPage() {
     setTemplates(data.templates);
   }
 
+  async function loadAssets() {
+    const response = await fetch("/api/factory/assets", {
+      cache: "no-store",
+    });
+
+    const data = (await response.json()) as {
+      assets: FactoryAsset[];
+    };
+
+    setAssets(data.assets);
+
+    if (!assetId && data.assets[0]) {
+      setAssetId(data.assets[0].id);
+    }
+  }
+
   useEffect(() => {
     loadTemplates();
+    loadAssets();
   }, []);
 
   function setCorner(corner: Corner) {
@@ -64,6 +97,10 @@ export default function FactoryTemplatesPage() {
     setError("");
 
     try {
+      if (!assetId) {
+        throw new Error("Выбери видео персонажа для этого шаблона");
+      }
+
       const response = await fetch("/api/factory/templates", {
         method: "POST",
         headers: {
@@ -71,6 +108,7 @@ export default function FactoryTemplatesPage() {
         },
         body: JSON.stringify({
           name,
+          assetId,
           lanaX,
           lanaY,
           lanaWidth,
@@ -125,16 +163,17 @@ export default function FactoryTemplatesPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Видео Ланы</Link>
+          <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
-          <h1>Шаблоны Ланы</h1>
+          <h1>Шаблоны персонажей</h1>
           <p>
-            Настраиваешь положение, размер и зеркальность Ланы. Сохраняешь шаблон
-            и потом используешь его при создании роликов.
+            Шаблон теперь хранит не только позицию, размер и зеркальность, но и
+            конкретное видео персонажа. Например: Lana template = Lana video,
+            Mia template = Mia video, Amelia template = Amelia video.
           </p>
 
           <div className="template-editor">
@@ -144,22 +183,43 @@ export default function FactoryTemplatesPage() {
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
+                  placeholder="Lana / Mia / Amelia"
                   required
                 />
               </label>
 
+              <label>
+                Видео персонажа для этого шаблона
+                <select
+                  value={assetId}
+                  onChange={(event) => setAssetId(event.target.value)}
+                  required
+                >
+                  {assets.length === 0 ? (
+                    <option value="">Сначала загрузи видео персонажа</option>
+                  ) : null}
+
+                  {assets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.title}
+                      {asset.originalName ? ` — ${asset.originalName}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
               <div className="corner-buttons">
                 <button type="button" onClick={() => setCorner("top-left")}>
-                  Лана слева сверху
+                  Слева сверху
                 </button>
                 <button type="button" onClick={() => setCorner("top-right")}>
-                  Лана справа сверху
+                  Справа сверху
                 </button>
                 <button type="button" onClick={() => setCorner("bottom-left")}>
-                  Лана слева снизу
+                  Слева снизу
                 </button>
                 <button type="button" onClick={() => setCorner("bottom-right")}>
-                  Лана справа снизу
+                  Справа снизу
                 </button>
               </div>
 
@@ -187,7 +247,7 @@ export default function FactoryTemplatesPage() {
                 </label>
 
                 <label>
-                  Ширина Ланы: {lanaWidth}px
+                  Ширина: {lanaWidth}px
                   <input
                     type="range"
                     min="120"
@@ -198,7 +258,7 @@ export default function FactoryTemplatesPage() {
                 </label>
 
                 <label>
-                  Высота Ланы: {lanaHeight}px
+                  Высота: {lanaHeight}px
                   <input
                     type="range"
                     min="120"
@@ -213,7 +273,7 @@ export default function FactoryTemplatesPage() {
 
               <div className="grid grid-2">
                 <label>
-                  Отзеркалить Лану
+                  Отзеркалить персонажа
                   <select
                     value={mirrorLana ? "yes" : "no"}
                     onChange={(event) =>
@@ -253,7 +313,7 @@ export default function FactoryTemplatesPage() {
                   top: `${lanaY}%`,
                 }}
               >
-                LANA
+                {selectedAsset?.title ?? "PERSON"}
               </div>
             </div>
           </div>
@@ -268,6 +328,7 @@ export default function FactoryTemplatesPage() {
             <thead>
               <tr>
                 <th>Название</th>
+                <th>Видео персонажа</th>
                 <th>Позиция</th>
                 <th>Размер</th>
                 <th>Зеркало</th>
@@ -283,6 +344,18 @@ export default function FactoryTemplatesPage() {
                     {template.isDefault ? (
                       <span className="badge">default</span>
                     ) : null}
+                  </td>
+                  <td>
+                    {template.asset ? (
+                      <>
+                        <b>{template.asset.title}</b>
+                        {template.asset.originalName ? (
+                          <p className="muted">{template.asset.originalName}</p>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="error">Видео не выбрано</span>
+                    )}
                   </td>
                   <td>
                     X {template.lanaX}% / Y {template.lanaY}%
@@ -306,7 +379,7 @@ export default function FactoryTemplatesPage() {
 
               {templates.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="muted">
+                  <td colSpan={6} className="muted">
                     Пока шаблонов нет.
                   </td>
                 </tr>
