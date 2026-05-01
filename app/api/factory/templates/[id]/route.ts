@@ -13,6 +13,7 @@ type RouteContext = {
 
 const updateTemplateSchema = z.object({
   name: z.string().min(1).max(80).optional(),
+  assetId: z.string().min(1).optional().nullable(),
   lanaX: z.number().int().min(0).max(100).optional(),
   lanaY: z.number().int().min(0).max(100).optional(),
   lanaWidth: z.number().int().min(120).max(760).optional(),
@@ -26,6 +27,25 @@ export async function PATCH(request: Request, context: RouteContext) {
     const { id } = await context.params;
     const body = await request.json();
     const data = updateTemplateSchema.parse(body);
+
+    if (data.assetId) {
+      const asset = await prisma.factoryAsset.findUnique({
+        where: {
+          id: data.assetId,
+        },
+      });
+
+      if (!asset) {
+        return NextResponse.json(
+          {
+            error: "Видео персонажа для шаблона не найдено",
+          },
+          {
+            status: 400,
+          },
+        );
+      }
+    }
 
     if (data.isDefault) {
       await prisma.factoryTemplate.updateMany({
@@ -45,6 +65,9 @@ export async function PATCH(request: Request, context: RouteContext) {
         id,
       },
       data,
+      include: {
+        asset: true,
+      },
     });
 
     return NextResponse.json({
