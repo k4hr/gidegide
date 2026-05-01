@@ -3,9 +3,13 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+type SourceMode = "UPLOAD" | "YOUTUBE";
+
 type FactoryJob = {
   id: string;
-  sourceUrl: string;
+  sourceUrl: string | null;
+  sourceOriginalName: string | null;
+  sourceSizeBytes: number | null;
   clipSeconds: number;
   titlePrefix: string;
   platforms: string[];
@@ -36,14 +40,23 @@ function canCancel(job: FactoryJob) {
   return !["DONE", "FAILED", "CANCELED"].includes(job.status);
 }
 
+function formatMb(bytes: number | null) {
+  if (!bytes) return "";
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
 export default function FactoryPage() {
+  const [sourceMode, setSourceMode] = useState<SourceMode>("UPLOAD");
   const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
   const [titlePrefix, setTitlePrefix] = useState("Lana watches games");
   const [publishYoutube, setPublishYoutube] = useState(true);
   const [publishTikTok, setPublishTikTok] = useState(false);
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [cancelingJobId, setCancelingJobId] = useState("");
   const [error, setError] = useState("");
 
@@ -69,40 +82,107 @@ export default function FactoryPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  function getPlatforms() {
+    const platforms: string[] = [];
+
+    if (publishYoutube) platforms.push("YOUTUBE");
+    if (publishTikTok) platforms.push("TIKTOK");
+
+    return platforms;
+  }
+
+  async function createYoutubeUrlJob() {
+    const response = await fetch("/api/factory/jobs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceUrl,
+        clipSeconds: Number(clipSeconds),
+        titlePrefix,
+        platforms: getPlatforms(),
+      }),
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(data.error ?? "Не получилось создать задачу");
+    }
+  }
+
+  async function createUploadJob() {
+    if (!sourceFile) {
+      throw new Error("Выбери исходный MP4-файл");
+    }
+
+    const formData = new FormData();
+
+    formData.set("sourceFile", sourceFile);
+    formData.set("clipSeconds", clipSeconds);
+    formData.set("titlePrefix", titlePrefix);
+    formData.set("platforms", JSON.stringify(getPlatforms()));
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.open("POST", "/api/factory/jobs");
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+
+        setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+          return;
+        }
+
+        try {
+          const data = JSON.parse(xhr.responseText) as {
+            error?: string;
+          };
+
+          reject(new Error(data.error ?? "Не получилось создать задачу"));
+        } catch {
+          reject(new Error("Не получилось создать задачу"));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error("Ошибка загрузки файла"));
+      };
+
+      xhr.send(formData);
+    });
+  }
+
   async function createJob(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     setIsCreating(true);
     setError("");
+    setUploadProgress(0);
 
     try {
-      const platforms: string[] = [];
-
-      if (publishYoutube) platforms.push("YOUTUBE");
-      if (publishTikTok) platforms.push("TIKTOK");
-
-      const response = await fetch("/api/factory/jobs", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          sourceUrl,
-          clipSeconds: Number(clipSeconds),
-          titlePrefix,
-          platforms,
-        }),
-      });
-
-      const data = (await response.json()) as {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось создать задачу");
+      if (getPlatforms().length === 0) {
+        throw new Error("Выбери хотя бы одну платформу");
       }
 
-      setSourceUrl("");
+      if (sourceMode === "UPLOAD") {
+        await createUploadJob();
+        setSourceFile(null);
+      } else {
+        await createYoutubeUrlJob();
+        setSourceUrl("");
+      }
+
+      setUploadProgress(100);
       await loadJobs();
     } catch (createError) {
       setError(
@@ -141,21 +221,63 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Вставляешь YouTube-ссылку. Worker качает исходник, режет его на
-            короткие клипы, накладывает видео Ланы, отправляет файлы в R2 и
-            публикует.
+            Надежный режим — загрузить MP4. YouTube URL оставлен как запасной
+            режим, но YouTube может блокировать скачивание на сервере.
           </p>
 
           <form className="grid" onSubmit={createJob}>
             <label>
-              YouTube URL
-              <input
-                value={sourceUrl}
-                onChange={(event) => setSourceUrl(event.target.value)}
-                placeholder="https://www.youtube.com/watch?v=..."
-                required
-              />
+              Источник
+              <select
+                value={sourceMode}
+                onChange={(event) => setSourceMode(event.target.value as SourceMode)}
+              >
+                <option value="UPLOAD">Загрузить MP4 — стабильно</option>
+                <option value="YOUTUBE">YouTube URL — может блокироваться</option>
+              </select>
             </label>
+
+            {sourceMode === "UPLOAD" ? (
+              <label>
+                Исходный MP4
+                <input
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/*"
+                  onChange={(event) =>
+                    setSourceFile(event.target.files?.[0] ?? null)
+                  }
+                  required
+                />
+              </label>
+            ) : (
+              <label>
+                YouTube URL
+                <input
+                  value={sourceUrl}
+                  onChange={(event) => setSourceUrl(event.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  required
+                />
+              </label>
+            )}
+
+            {isCreating && sourceMode === "UPLOAD" ? (
+              <div className="upload-progress">
+                <div className="progress-head">
+                  <span>Загрузка исходника</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${uploadProgress}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
 
             <div className="grid grid-2">
               <label>
@@ -226,7 +348,7 @@ export default function FactoryPage() {
             <thead>
               <tr>
                 <th>Прогресс</th>
-                <th>URL</th>
+                <th>Источник</th>
                 <th>Клипы</th>
                 <th>Публикации</th>
               </tr>
@@ -266,9 +388,7 @@ export default function FactoryPage() {
                           />
                         </div>
 
-                        <p className="muted">
-                          {job.progressLabel ?? "Ожидание"}
-                        </p>
+                        <p className="muted">{job.progressLabel ?? "Ожидание"}</p>
 
                         {job.error ? <p className="error">{job.error}</p> : null}
                       </div>
@@ -277,9 +397,11 @@ export default function FactoryPage() {
 
                   <td>
                     <div style={{ maxWidth: 360, wordBreak: "break-all" }}>
-                      {job.sourceUrl}
+                      {job.sourceOriginalName ?? job.sourceUrl ?? "—"}
                     </div>
+
                     <p className="muted">
+                      {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
                       {job.clipSeconds} сек · {job.platforms.join(", ")}
                     </p>
                   </td>
