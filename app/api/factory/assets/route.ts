@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { FACTORY_LANA_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { extFromName, safeFileName } from "@/lib/factory/video";
+import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 
 export const runtime = "nodejs";
 
@@ -45,13 +46,21 @@ export async function POST(request: Request) {
     const ext = extFromName(file.name);
     const fileName = `${Date.now()}-${safeFileName(title)}${ext}`;
     const filePath = path.join(FACTORY_LANA_DIR, fileName);
+    const storageKey = `${getR2Prefix()}/assets/lana/${fileName}`;
 
     await writeFile(filePath, buffer);
+
+    const uploadedKey = await uploadBufferToR2({
+      key: storageKey,
+      buffer,
+      contentType: file.type || "video/mp4",
+    });
 
     const asset = await prisma.factoryAsset.create({
       data: {
         title,
         filePath,
+        storageKey: uploadedKey,
         originalName: file.name,
         mimeType: file.type,
         sizeBytes: buffer.byteLength,
