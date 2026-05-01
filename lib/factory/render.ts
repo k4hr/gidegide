@@ -12,8 +12,46 @@ import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloade
 import { getVideoDurationSeconds, runCommand } from "@/lib/factory/video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
-
 type CancelCheck = () => Promise<boolean>;
+
+export type FactoryRenderTemplate = {
+  lanaX: number;
+  lanaY: number;
+  lanaWidth: number;
+  lanaHeight: number;
+  mirrorLana: boolean;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function buildRenderFilter(template: FactoryRenderTemplate) {
+  const lanaWidth = clamp(template.lanaWidth, 120, 760);
+  const lanaHeight = clamp(template.lanaHeight, 120, 1200);
+
+  const maxX = 1080 - lanaWidth;
+  const maxY = 1920 - lanaHeight;
+
+  const lanaX = Math.round((clamp(template.lanaX, 0, 100) / 100) * maxX);
+  const lanaY = Math.round((clamp(template.lanaY, 0, 100) / 100) * maxY);
+
+  const lanaFilters = [
+    `scale=${lanaWidth}:${lanaHeight}:force_original_aspect_ratio=increase`,
+    `crop=${lanaWidth}:${lanaHeight}`,
+    template.mirrorLana ? "hflip" : null,
+  ]
+    .filter(Boolean)
+    .join(",");
+
+  return [
+    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=18:1[bg]",
+    "[0:v]scale=1080:1080:force_original_aspect_ratio=decrease[game]",
+    "[bg][game]overlay=(W-w)/2:260[base]",
+    `[1:v]${lanaFilters}[lana]`,
+    `[base][lana]overlay=${lanaX}:${lanaY}[v]`,
+  ].join(";");
+}
 
 export async function downloadDirectSource(input: {
   jobId: string;
@@ -156,6 +194,7 @@ type RenderFactoryClipInput = {
   lanaPath: string;
   startSec: number;
   clipSeconds: number;
+  template: FactoryRenderTemplate;
   isCanceled?: CancelCheck;
 };
 
@@ -193,13 +232,7 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
         input.lanaPath,
 
         "-filter_complex",
-        [
-          "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=18:1[bg]",
-          "[0:v]scale=1080:1080:force_original_aspect_ratio=decrease[game]",
-          "[bg][game]overlay=(W-w)/2:260[base]",
-          "[1:v]scale=330:586:force_original_aspect_ratio=increase,crop=330:586[lana]",
-          "[base][lana]overlay=W-w-32:H-h-32[v]",
-        ].join(";"),
+        buildRenderFilter(input.template),
 
         "-map",
         "[v]",
