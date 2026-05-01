@@ -4,23 +4,21 @@ import { google } from "googleapis";
 import { prisma } from "@/lib/prisma";
 
 type UploadYoutubeShortInput = {
+  accountId: string;
   filePath: string;
   title: string;
   description?: string;
 };
 
 export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
-  const account = await prisma.factoryAccount.findFirst({
+  const account = await prisma.factoryAccount.findUnique({
     where: {
-      platform: "YOUTUBE",
-    },
-    orderBy: {
-      createdAt: "desc",
+      id: input.accountId,
     },
   });
 
-  if (!account) {
-    throw new Error("YouTube аккаунт не подключен");
+  if (!account || account.platform !== "YOUTUBE") {
+    throw new Error("YouTube аккаунт не найден");
   }
 
   const oauth2Client = new google.auth.OAuth2(
@@ -43,7 +41,9 @@ export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
       data: {
         accessToken: tokens.access_token ?? account.accessToken,
         refreshToken: tokens.refresh_token ?? account.refreshToken,
-        expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : account.expiresAt,
+        expiresAt: tokens.expiry_date
+          ? new Date(tokens.expiry_date)
+          : account.expiresAt,
       },
     });
   });
