@@ -5,6 +5,16 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+function buildAccountName(input: {
+  channelTitle: string | null | undefined;
+  channelId: string | null | undefined;
+}) {
+  const baseName = input.channelTitle?.trim() || "YouTube Channel";
+  const suffix = input.channelId ? ` ${input.channelId.slice(-6)}` : "";
+
+  return `${baseName}${suffix}`;
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -55,11 +65,31 @@ export async function GET(request: Request) {
     );
   }
 
+  oauth2Client.setCredentials(tokens);
+
+  const youtube = google.youtube({
+    version: "v3",
+    auth: oauth2Client,
+  });
+
+  const channelsResponse = await youtube.channels.list({
+    part: ["snippet"],
+    mine: true,
+  });
+
+  const channel = channelsResponse.data.items?.[0];
+  const channelTitle = channel?.snippet?.title;
+  const channelId = channel?.id;
+  const accountName = buildAccountName({
+    channelTitle,
+    channelId,
+  });
+
   await prisma.factoryAccount.upsert({
     where: {
       platform_name: {
         platform: "YOUTUBE",
-        name: "Main YouTube",
+        name: accountName,
       },
     },
     update: {
@@ -69,7 +99,7 @@ export async function GET(request: Request) {
     },
     create: {
       platform: "YOUTUBE",
-      name: "Main YouTube",
+      name: accountName,
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token ?? undefined,
       expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
