@@ -1,9 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type SourceMode = "UPLOAD" | "YOUTUBE";
+type FactoryGame = "ROBLOX" | "FORTNITE" | "MINECRAFT" | "BRAWL_STARS" | "DOTA2" | "OTHER";
+
+type FactoryTemplate = {
+  id: string;
+  name: string;
+  isDefault: boolean;
+};
 
 type FactoryJob = {
   id: string;
@@ -12,6 +19,7 @@ type FactoryJob = {
   sourceSizeBytes: number | null;
   clipSeconds: number;
   titlePrefix: string;
+  game: FactoryGame;
   platforms: string[];
   status: string;
   error: string | null;
@@ -20,6 +28,7 @@ type FactoryJob = {
   progressLabel: string | null;
   cancelRequested: boolean;
   createdAt: string;
+  template: FactoryTemplate | null;
   clips: {
     id: string;
     index: number;
@@ -36,6 +45,19 @@ type FactoryJob = {
   }[];
 };
 
+const gameOptions: Array<{
+  value: FactoryGame;
+  label: string;
+  titlePrefix: string;
+}> = [
+  { value: "ROBLOX", label: "Roblox", titlePrefix: "Lana watches Roblox" },
+  { value: "FORTNITE", label: "Fortnite", titlePrefix: "Lana watches Fortnite" },
+  { value: "MINECRAFT", label: "Minecraft", titlePrefix: "Lana watches Minecraft" },
+  { value: "BRAWL_STARS", label: "Brawl Stars", titlePrefix: "Lana watches Brawl Stars" },
+  { value: "DOTA2", label: "Dota 2", titlePrefix: "Lana watches Dota 2" },
+  { value: "OTHER", label: "Other", titlePrefix: "Lana watches games" },
+];
+
 function canCancel(job: FactoryJob) {
   return !["DONE", "FAILED", "CANCELED"].includes(job.status);
 }
@@ -51,7 +73,10 @@ export default function FactoryPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
-  const [titlePrefix, setTitlePrefix] = useState("Lana watches games");
+  const [game, setGame] = useState<FactoryGame>("ROBLOX");
+  const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
+  const [templateId, setTemplateId] = useState("");
+  const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [publishYoutube, setPublishYoutube] = useState(true);
   const [publishTikTok, setPublishTikTok] = useState(false);
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
@@ -59,6 +84,11 @@ export default function FactoryPage() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [cancelingJobId, setCancelingJobId] = useState("");
   const [error, setError] = useState("");
+
+  const selectedGame = useMemo(
+    () => gameOptions.find((option) => option.value === game) ?? gameOptions[5],
+    [game],
+  );
 
   async function loadJobs() {
     const response = await fetch("/api/factory/jobs", {
@@ -72,8 +102,27 @@ export default function FactoryPage() {
     setJobs(data.jobs);
   }
 
+  async function loadTemplates() {
+    const response = await fetch("/api/factory/templates", {
+      cache: "no-store",
+    });
+
+    const data = (await response.json()) as {
+      templates: FactoryTemplate[];
+    };
+
+    setTemplates(data.templates);
+
+    const defaultTemplate = data.templates.find((template) => template.isDefault);
+
+    if (!templateId && defaultTemplate) {
+      setTemplateId(defaultTemplate.id);
+    }
+  }
+
   useEffect(() => {
     loadJobs();
+    loadTemplates();
 
     const timer = window.setInterval(() => {
       loadJobs();
@@ -91,6 +140,14 @@ export default function FactoryPage() {
     return platforms;
   }
 
+  function handleGameChange(nextGame: FactoryGame) {
+    const nextGameMeta =
+      gameOptions.find((option) => option.value === nextGame) ?? gameOptions[5];
+
+    setGame(nextGame);
+    setTitlePrefix(nextGameMeta.titlePrefix);
+  }
+
   async function createYoutubeUrlJob() {
     const response = await fetch("/api/factory/jobs", {
       method: "POST",
@@ -100,7 +157,9 @@ export default function FactoryPage() {
       body: JSON.stringify({
         sourceUrl,
         clipSeconds: Number(clipSeconds),
+        game,
         titlePrefix,
+        templateId: templateId || null,
         platforms: getPlatforms(),
       }),
     });
@@ -123,7 +182,9 @@ export default function FactoryPage() {
 
     formData.set("sourceFile", sourceFile);
     formData.set("clipSeconds", clipSeconds);
+    formData.set("game", game);
     formData.set("titlePrefix", titlePrefix);
+    formData.set("templateId", templateId);
     formData.set("platforms", JSON.stringify(getPlatforms()));
 
     await new Promise<void>((resolve, reject) => {
@@ -174,6 +235,10 @@ export default function FactoryPage() {
         throw new Error("Выбери хотя бы одну платформу");
       }
 
+      if (templates.length === 0) {
+        throw new Error("Сначала создай хотя бы один шаблон на странице /factory/templates");
+      }
+
       if (sourceMode === "UPLOAD") {
         await createUploadJob();
         setSourceFile(null);
@@ -215,15 +280,15 @@ export default function FactoryPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/assets">Видео Ланы</Link>
+          <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Вставляешь обычную YouTube-ссылку. Система сама открывает RIP-сервис,
-            проходит скачивание, получает MP4, режет его, вставляет Лану и
-            публикует.
+            Выбираешь игру, шаблон Ланы и источник. Название и 5 хэштегов
+            подставляются автоматически по выбранной игре.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -282,6 +347,43 @@ export default function FactoryPage() {
 
             <div className="grid grid-2">
               <label>
+                Игра
+                <select
+                  value={game}
+                  onChange={(event) =>
+                    handleGameChange(event.target.value as FactoryGame)
+                  }
+                >
+                  {gameOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label>
+                Шаблон Ланы
+                <select
+                  value={templateId}
+                  onChange={(event) => setTemplateId(event.target.value)}
+                >
+                  {templates.length === 0 ? (
+                    <option value="">Сначала создай шаблон</option>
+                  ) : null}
+
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                      {template.isDefault ? " — default" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-2">
+              <label>
                 Длина клипа
                 <select
                   value={clipSeconds}
@@ -294,12 +396,11 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Заголовок
+                Название ролика
                 <input
                   value={titlePrefix}
                   onChange={(event) => setTitlePrefix(event.target.value)}
-                  placeholder="Lana watches games"
-                  required
+                  placeholder={selectedGame.titlePrefix}
                 />
               </label>
             </div>
@@ -332,6 +433,10 @@ export default function FactoryPage() {
               </label>
             </div>
 
+            <p className="muted">
+              Для {selectedGame.label} описание будет с 5 хэштегами автоматически.
+            </p>
+
             {error ? <p className="error">{error}</p> : null}
 
             <button disabled={isCreating}>
@@ -350,6 +455,7 @@ export default function FactoryPage() {
               <tr>
                 <th>Прогресс</th>
                 <th>Источник</th>
+                <th>Игра / шаблон</th>
                 <th>Клипы</th>
                 <th>Публикации</th>
               </tr>
@@ -408,6 +514,11 @@ export default function FactoryPage() {
                   </td>
 
                   <td>
+                    <span className="badge">{job.game}</span>
+                    <p className="muted">{job.template?.name ?? "Default"}</p>
+                  </td>
+
+                  <td>
                     {job.clips.length} / {job.totalClips}
                   </td>
 
@@ -444,7 +555,7 @@ export default function FactoryPage() {
 
               {jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="muted">
+                  <td colSpan={5} className="muted">
                     Пока задач нет.
                   </td>
                 </tr>
