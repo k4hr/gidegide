@@ -8,13 +8,14 @@ import {
   FACTORY_TEMP_DIR,
   ensureFactoryDirs,
 } from "@/lib/factory/paths";
+import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloader";
 import { getVideoDurationSeconds, runCommand } from "@/lib/factory/video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 
 type CancelCheck = () => Promise<boolean>;
 
-export async function downloadYoutubeSource(input: {
+export async function downloadDirectSource(input: {
   jobId: string;
   sourceUrl: string;
   onProgress?: ProgressCallback;
@@ -24,7 +25,50 @@ export async function downloadYoutubeSource(input: {
 
   const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
 
-  await input.onProgress?.(2, "Начинаю скачивать YouTube-исходник");
+  await input.onProgress?.(2, "Начинаю скачивать прямую ссылку");
+
+  await runCommand(
+    "curl",
+    [
+      "-L",
+      "--fail",
+      "--show-error",
+      "--connect-timeout",
+      "30",
+      "--retry",
+      "3",
+      "--retry-delay",
+      "2",
+      "-A",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0 Safari/537.36",
+      "-H",
+      "Accept: video/mp4,video/*,*/*",
+      "-o",
+      outputPath,
+      input.sourceUrl,
+    ],
+    {
+      logPrefix: "direct-curl",
+      isCanceled: input.isCanceled,
+    },
+  );
+
+  await input.onProgress?.(30, "Исходный файл скачан");
+
+  return outputPath;
+}
+
+export async function downloadYoutubeSourceWithYtDlp(input: {
+  jobId: string;
+  sourceUrl: string;
+  onProgress?: ProgressCallback;
+  isCanceled?: CancelCheck;
+}) {
+  await ensureFactoryDirs();
+
+  const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
+
+  await input.onProgress?.(2, "Пробую скачать через yt-dlp");
 
   await runCommand(
     "yt-dlp",
@@ -37,13 +81,10 @@ export async function downloadYoutubeSource(input: {
       "3",
       "--fragment-retries",
       "3",
-
       "--js-runtimes",
       "node:/usr/local/bin/node",
-
       "-f",
       "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]/best",
-
       "--merge-output-format",
       "mp4",
       "-o",
@@ -69,7 +110,7 @@ export async function downloadYoutubeSource(input: {
 
         await input.onProgress?.(
           totalProgress,
-          `Скачивание YouTube: ${downloadPercent.toFixed(1)}%`,
+          `Скачивание yt-dlp: ${downloadPercent.toFixed(1)}%`,
         );
       },
     },
@@ -78,6 +119,30 @@ export async function downloadYoutubeSource(input: {
   await input.onProgress?.(30, "YouTube-исходник скачан");
 
   return outputPath;
+}
+
+export async function downloadSourceFromUrl(input: {
+  jobId: string;
+  sourceUrl: string;
+  onProgress?: ProgressCallback;
+  isCanceled?: CancelCheck;
+}) {
+  if (!isYoutubeUrl(input.sourceUrl)) {
+    return downloadDirectSource(input);
+  }
+
+  try {
+    return await downloadViaRipYoutube(input);
+  } catch (error) {
+    console.error("RIP downloader failed", error);
+
+    await input.onProgress?.(
+      3,
+      "RIP-сервис не сработал, пробую запасной способ",
+    );
+
+    return downloadYoutubeSourceWithYtDlp(input);
+  }
 }
 
 export async function getSourceDuration(sourcePath: string) {
