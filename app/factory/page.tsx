@@ -12,12 +12,16 @@ type FactoryJob = {
   status: string;
   error: string | null;
   totalClips: number;
+  progress: number;
+  progressLabel: string | null;
+  cancelRequested: boolean;
   createdAt: string;
   clips: {
     id: string;
     index: number;
     title: string;
     filePath: string | null;
+    storageKey: string | null;
     publishes: {
       id: string;
       platform: string;
@@ -28,6 +32,10 @@ type FactoryJob = {
   }[];
 };
 
+function canCancel(job: FactoryJob) {
+  return !["DONE", "FAILED", "CANCELED"].includes(job.status);
+}
+
 export default function FactoryPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [clipSeconds, setClipSeconds] = useState("45");
@@ -36,6 +44,7 @@ export default function FactoryPage() {
   const [publishTikTok, setPublishTikTok] = useState(false);
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
   const [isCreating, setIsCreating] = useState(false);
+  const [cancelingJobId, setCancelingJobId] = useState("");
   const [error, setError] = useState("");
 
   async function loadJobs() {
@@ -55,7 +64,7 @@ export default function FactoryPage() {
 
     const timer = window.setInterval(() => {
       loadJobs();
-    }, 4000);
+    }, 1500);
 
     return () => window.clearInterval(timer);
   }, []);
@@ -106,6 +115,20 @@ export default function FactoryPage() {
     }
   }
 
+  async function cancelJob(jobId: string) {
+    setCancelingJobId(jobId);
+
+    try {
+      await fetch(`/api/factory/jobs/${jobId}/cancel`, {
+        method: "POST",
+      });
+
+      await loadJobs();
+    } finally {
+      setCancelingJobId("");
+    }
+  }
+
   return (
     <main className="page">
       <div className="shell">
@@ -118,8 +141,8 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Вставляешь YouTube-ссылку. Worker сам качает исходник во временную
-            папку, режет его на короткие клипы, накладывает видео Ланы и
+            Вставляешь YouTube-ссылку. Worker качает исходник, режет его на
+            короткие клипы, накладывает видео Ланы, отправляет файлы в R2 и
             публикует.
           </p>
 
@@ -202,7 +225,7 @@ export default function FactoryPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>Статус</th>
+                <th>Прогресс</th>
                 <th>URL</th>
                 <th>Клипы</th>
                 <th>Публикации</th>
@@ -213,8 +236,43 @@ export default function FactoryPage() {
               {jobs.map((job) => (
                 <tr key={job.id}>
                   <td>
-                    <span className="badge">{job.status}</span>
-                    {job.error ? <p className="error">{job.error}</p> : null}
+                    <div className="progress-row">
+                      <button
+                        type="button"
+                        className="cancel-button"
+                        disabled={!canCancel(job) || cancelingJobId === job.id}
+                        onClick={() => cancelJob(job.id)}
+                      >
+                        {job.cancelRequested || cancelingJobId === job.id
+                          ? "Отмена..."
+                          : "Отменить"}
+                      </button>
+
+                      <div className="progress-block">
+                        <div className="progress-head">
+                          <span className="badge">{job.status}</span>
+                          <span>{Math.round(job.progress ?? 0)}%</span>
+                        </div>
+
+                        <div className="progress-track">
+                          <div
+                            className="progress-fill"
+                            style={{
+                              width: `${Math.max(
+                                0,
+                                Math.min(100, job.progress ?? 0),
+                              )}%`,
+                            }}
+                          />
+                        </div>
+
+                        <p className="muted">
+                          {job.progressLabel ?? "Ожидание"}
+                        </p>
+
+                        {job.error ? <p className="error">{job.error}</p> : null}
+                      </div>
+                    </div>
                   </td>
 
                   <td>
