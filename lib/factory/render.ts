@@ -24,7 +24,7 @@ export async function downloadYoutubeSource(input: {
 
   const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
 
-  await input.onProgress?.(2, "Начинаю скачивать исходник");
+  await input.onProgress?.(2, "Начинаю скачивать YouTube-исходник");
 
   await runCommand(
     "yt-dlp",
@@ -37,8 +37,13 @@ export async function downloadYoutubeSource(input: {
       "3",
       "--fragment-retries",
       "3",
+
+      "--js-runtimes",
+      "node:/usr/local/bin/node",
+
       "-f",
       "bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]/best",
+
       "--merge-output-format",
       "mp4",
       "-o",
@@ -64,13 +69,13 @@ export async function downloadYoutubeSource(input: {
 
         await input.onProgress?.(
           totalProgress,
-          `Скачивание исходника: ${downloadPercent.toFixed(1)}%`,
+          `Скачивание YouTube: ${downloadPercent.toFixed(1)}%`,
         );
       },
     },
   );
 
-  await input.onProgress?.(30, "Исходник скачан");
+  await input.onProgress?.(30, "YouTube-исходник скачан");
 
   return outputPath;
 }
