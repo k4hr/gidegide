@@ -7,15 +7,19 @@ import { prisma } from "@/lib/prisma";
 import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { extFromName, safeFileName } from "@/lib/factory/video";
 import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
+import { getGameMeta } from "@/lib/factory/games";
 
 export const runtime = "nodejs";
 
 const platformSchema = z.enum(["YOUTUBE", "TIKTOK"]);
+const gameSchema = z.enum(["ROBLOX", "FORTNITE", "MINECRAFT", "BRAWL_STARS", "DOTA2", "OTHER"]);
 
 const jsonCreateJobSchema = z.object({
   sourceUrl: z.string().url(),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]),
-  titlePrefix: z.string().min(1).max(80).default("Lana watches games"),
+  game: gameSchema.default("OTHER"),
+  titlePrefix: z.string().max(80).optional(),
+  templateId: z.string().optional().nullable(),
   platforms: z.array(platformSchema).min(1).default(["YOUTUBE"]),
 });
 
@@ -39,6 +43,28 @@ function parsePlatforms(value: FormDataEntryValue | null) {
   return z.array(platformSchema).min(1).parse(parsed);
 }
 
+function parseGame(value: FormDataEntryValue | null) {
+  if (!value || typeof value !== "string") {
+    return "OTHER" as const;
+  }
+
+  return gameSchema.parse(value);
+}
+
+async function resolveTemplateId(templateId?: string | null) {
+  if (templateId) {
+    return templateId;
+  }
+
+  const defaultTemplate = await prisma.factoryTemplate.findFirst({
+    where: {
+      isDefault: true,
+    },
+  });
+
+  return defaultTemplate?.id ?? null;
+}
+
 export async function GET() {
   const jobs = await prisma.factoryJob.findMany({
     orderBy: {
@@ -46,6 +72,7 @@ export async function GET() {
     },
     take: 30,
     include: {
+      template: true,
       clips: {
         orderBy: {
           index: "asc",
@@ -71,12 +98,19 @@ export async function POST(request: Request) {
     if (contentType.includes("multipart/form-data")) {
       const formData = await request.formData();
 
-      const titlePrefix = z
+      const game = parseGame(formData.get("game"));
+      const gameMeta = getGameMeta(game);
+
+      const rawTitlePrefix = z
         .string()
-        .min(1)
         .max(80)
-        .default("Lana watches games")
-        .parse(formData.get("titlePrefix"));
+        .optional()
+        .parse(formData.get("titlePrefix") || undefined);
+
+      const titlePrefix = rawTitlePrefix?.trim() || gameMeta.titlePrefix;
+      const templateId = await resolveTemplateId(
+        z.string().optional().nullable().parse(formData.get("templateId") || null),
+      );
 
       const clipSeconds = parseClipSeconds(formData.get("clipSeconds"));
       const platforms = parsePlatforms(formData.get("platforms"));
@@ -98,6 +132,8 @@ export async function POST(request: Request) {
           sourceUrl: null,
           clipSeconds,
           titlePrefix,
+          game,
+          templateId,
           platforms,
           progress: 0,
           progressLabel: "Загружаю исходный файл",
@@ -140,12 +176,17 @@ export async function POST(request: Request) {
 
     const body = await request.json();
     const data = jsonCreateJobSchema.parse(body);
+    const gameMeta = getGameMeta(data.game);
+    const templateId = await resolveTemplateId(data.templateId);
+    const titlePrefix = data.titlePrefix?.trim() || gameMeta.titlePrefix;
 
     const job = await prisma.factoryJob.create({
       data: {
         sourceUrl: data.sourceUrl,
         clipSeconds: data.clipSeconds,
-        titlePrefix: data.titlePrefix,
+        titlePrefix,
+        game: data.game,
+        templateId,
         platforms: data.platforms,
         progress: 0,
         progressLabel: "Задача создана",
