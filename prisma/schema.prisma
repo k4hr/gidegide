@@ -19,6 +19,7 @@ enum FactoryJobStatus {
   PUBLISHING
   DONE
   FAILED
+  CANCELED
 }
 
 enum FactoryPublishStatus {
@@ -27,12 +28,14 @@ enum FactoryPublishStatus {
   PUBLISHED
   FAILED
   SKIPPED
+  CANCELED
 }
 
 model FactoryAsset {
   id           String   @id @default(cuid())
   title        String
   filePath     String
+  storageKey   String?
   originalName String?
   mimeType     String?
   sizeBytes    Int?
@@ -41,6 +44,7 @@ model FactoryAsset {
   updatedAt    DateTime @updatedAt
 
   @@index([createdAt])
+  @@index([storageKey])
 }
 
 model FactoryAccount {
@@ -59,42 +63,50 @@ model FactoryAccount {
 }
 
 model FactoryJob {
-  id          String            @id @default(cuid())
-  sourceUrl   String
-  clipSeconds Int               @default(45)
-  titlePrefix String            @default("Lana watches games")
-  platforms   FactoryPlatform[]
-  status      FactoryJobStatus  @default(QUEUED)
-  error       String?
-  totalClips  Int               @default(0)
+  id              String            @id @default(cuid())
+  sourceUrl       String
+  clipSeconds     Int               @default(45)
+  titlePrefix     String            @default("Lana watches games")
+  platforms       FactoryPlatform[]
+  status          FactoryJobStatus  @default(QUEUED)
+  error           String?
+  totalClips      Int               @default(0)
 
-  clips       FactoryClip[]
+  progress        Int               @default(0)
+  progressLabel   String?
+  cancelRequested Boolean           @default(false)
+  canceledAt      DateTime?
 
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  clips           FactoryClip[]
+
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
 
   @@index([status])
   @@index([createdAt])
+  @@index([cancelRequested])
 }
 
 model FactoryClip {
-  id        String      @id @default(cuid())
-  jobId     String
-  job       FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id         String      @id @default(cuid())
+  jobId      String
+  job        FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  index     Int
-  startSec  Int
-  endSec    Int
-  title     String
-  filePath  String?
+  index      Int
+  startSec   Int
+  endSec     Int
+  title      String
+  filePath   String?
+  storageKey String?
 
-  publishes FactoryPublish[]
+  publishes  FactoryPublish[]
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   @@index([jobId])
   @@index([createdAt])
+  @@index([storageKey])
 }
 
 model FactoryPublish {
