@@ -4,12 +4,35 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type SourceMode = "UPLOAD" | "YOUTUBE";
-type FactoryGame = "ROBLOX" | "FORTNITE" | "MINECRAFT" | "BRAWL_STARS" | "DOTA2" | "OTHER";
+
+type FactoryPlatform = "YOUTUBE" | "TIKTOK";
+
+type FactoryGame =
+  | "ROBLOX"
+  | "FORTNITE"
+  | "MINECRAFT"
+  | "BRAWL_STARS"
+  | "DOTA2"
+  | "OTHER";
 
 type FactoryTemplate = {
   id: string;
   name: string;
   isDefault: boolean;
+};
+
+type FactoryAccount = {
+  id: string;
+  platform: FactoryPlatform;
+  name: string;
+  expiresAt: string | null;
+  createdAt: string;
+};
+
+type TargetState = {
+  enabled: boolean;
+  templateId: string;
+  titlePrefix: string;
 };
 
 type FactoryJob = {
@@ -28,19 +51,27 @@ type FactoryJob = {
   progressLabel: string | null;
   cancelRequested: boolean;
   createdAt: string;
-  template: FactoryTemplate | null;
+  targets: {
+    id: string;
+    platform: FactoryPlatform;
+    titlePrefix: string | null;
+    account: FactoryAccount;
+    template: FactoryTemplate | null;
+  }[];
   clips: {
     id: string;
     index: number;
     title: string;
-    filePath: string | null;
-    storageKey: string | null;
     publishes: {
       id: string;
-      platform: string;
+      platform: FactoryPlatform;
       status: string;
       platformUrl: string | null;
       error: string | null;
+      account: FactoryAccount | null;
+      target: {
+        template: FactoryTemplate | null;
+      } | null;
     }[];
   }[];
 };
@@ -68,6 +99,14 @@ function formatMb(bytes: number | null) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+function getDefaultTemplateId(templates: FactoryTemplate[]) {
+  return (
+    templates.find((template) => template.isDefault)?.id ??
+    templates[0]?.id ??
+    ""
+  );
+}
+
 export default function FactoryPage() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -77,8 +116,8 @@ export default function FactoryPage() {
   const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
   const [templateId, setTemplateId] = useState("");
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
-  const [publishYoutube, setPublishYoutube] = useState(true);
-  const [publishTikTok, setPublishTikTok] = useState(false);
+  const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
+  const [targets, setTargets] = useState<Record<string, TargetState>>({});
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
   const [isCreating, setIsCreating] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -113,16 +152,60 @@ export default function FactoryPage() {
 
     setTemplates(data.templates);
 
-    const defaultTemplate = data.templates.find((template) => template.isDefault);
+    const defaultTemplateId = getDefaultTemplateId(data.templates);
 
-    if (!templateId && defaultTemplate) {
-      setTemplateId(defaultTemplate.id);
+    if (!templateId && defaultTemplateId) {
+      setTemplateId(defaultTemplateId);
     }
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const accountId of Object.keys(next)) {
+        if (!next[accountId].templateId && defaultTemplateId) {
+          next[accountId] = {
+            ...next[accountId],
+            templateId: defaultTemplateId,
+          };
+        }
+      }
+
+      return next;
+    });
+  }
+
+  async function loadAccounts() {
+    const response = await fetch("/api/factory/accounts", {
+      cache: "no-store",
+    });
+
+    const data = (await response.json()) as {
+      accounts: FactoryAccount[];
+    };
+
+    setAccounts(data.accounts);
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const account of data.accounts) {
+        if (!next[account.id]) {
+          next[account.id] = {
+            enabled: false,
+            templateId,
+            titlePrefix,
+          };
+        }
+      }
+
+      return next;
+    });
   }
 
   useEffect(() => {
     loadJobs();
     loadTemplates();
+    loadAccounts();
 
     const timer = window.setInterval(() => {
       loadJobs();
@@ -131,21 +214,53 @@ export default function FactoryPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  function getPlatforms() {
-    const platforms: string[] = [];
-
-    if (publishYoutube) platforms.push("YOUTUBE");
-    if (publishTikTok) platforms.push("TIKTOK");
-
-    return platforms;
-  }
-
   function handleGameChange(nextGame: FactoryGame) {
     const nextGameMeta =
       gameOptions.find((option) => option.value === nextGame) ?? gameOptions[5];
 
     setGame(nextGame);
     setTitlePrefix(nextGameMeta.titlePrefix);
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const accountId of Object.keys(next)) {
+        next[accountId] = {
+          ...next[accountId],
+          titlePrefix: nextGameMeta.titlePrefix,
+        };
+      }
+
+      return next;
+    });
+  }
+
+  function updateTarget(accountId: string, patch: Partial<TargetState>) {
+    setTargets((current) => ({
+      ...current,
+      [accountId]: {
+        enabled: current[accountId]?.enabled ?? false,
+        templateId:
+          current[accountId]?.templateId ||
+          templateId ||
+          getDefaultTemplateId(templates),
+        titlePrefix: current[accountId]?.titlePrefix || titlePrefix,
+        ...patch,
+      },
+    }));
+  }
+
+  function getSelectedTargets() {
+    return accounts
+      .filter((account) => targets[account.id]?.enabled)
+      .map((account) => ({
+        accountId: account.id,
+        templateId:
+          targets[account.id]?.templateId ||
+          templateId ||
+          getDefaultTemplateId(templates),
+        titlePrefix: targets[account.id]?.titlePrefix || titlePrefix,
+      }));
   }
 
   async function createYoutubeUrlJob() {
@@ -160,7 +275,7 @@ export default function FactoryPage() {
         game,
         titlePrefix,
         templateId: templateId || null,
-        platforms: getPlatforms(),
+        targets: getSelectedTargets(),
       }),
     });
 
@@ -185,7 +300,7 @@ export default function FactoryPage() {
     formData.set("game", game);
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
-    formData.set("platforms", JSON.stringify(getPlatforms()));
+    formData.set("targets", JSON.stringify(getSelectedTargets()));
 
     await new Promise<void>((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -231,12 +346,12 @@ export default function FactoryPage() {
     setUploadProgress(0);
 
     try {
-      if (getPlatforms().length === 0) {
-        throw new Error("Выбери хотя бы одну платформу");
-      }
-
       if (templates.length === 0) {
         throw new Error("Сначала создай хотя бы один шаблон на странице /factory/templates");
+      }
+
+      if (getSelectedTargets().length === 0) {
+        throw new Error("Выбери хотя бы один YouTube или TikTok аккаунт");
       }
 
       if (sourceMode === "UPLOAD") {
@@ -287,8 +402,9 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Выбираешь игру, шаблон Ланы и источник. Название и 5 хэштегов
-            подставляются автоматически по выбранной игре.
+            Выбираешь игру, источник и конкретные аккаунты. Для каждого
+            YouTube/TikTok аккаунта можно выбрать свой шаблон: Lana, Mia,
+            Amelia или любой другой.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -363,10 +479,12 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Шаблон Ланы
+                Шаблон по умолчанию
                 <select
                   value={templateId}
-                  onChange={(event) => setTemplateId(event.target.value)}
+                  onChange={(event) => {
+                    setTemplateId(event.target.value);
+                  }}
                 >
                   {templates.length === 0 ? (
                     <option value="">Сначала создай шаблон</option>
@@ -396,7 +514,7 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Название ролика
+                Название по умолчанию
                 <input
                   value={titlePrefix}
                   onChange={(event) => setTitlePrefix(event.target.value)}
@@ -405,33 +523,84 @@ export default function FactoryPage() {
               </label>
             </div>
 
-            <div className="grid grid-2">
-              <label>
-                <span>YouTube</span>
-                <select
-                  value={publishYoutube ? "yes" : "no"}
-                  onChange={(event) =>
-                    setPublishYoutube(event.target.value === "yes")
-                  }
-                >
-                  <option value="yes">Заливать</option>
-                  <option value="no">Не заливать</option>
-                </select>
-              </label>
+            <section className="target-panel">
+              <h2>Куда публиковать</h2>
+              <p className="muted">
+                Отметь аккаунты и выбери отдельный шаблон под каждый канал.
+              </p>
 
-              <label>
-                <span>TikTok</span>
-                <select
-                  value={publishTikTok ? "yes" : "no"}
-                  onChange={(event) =>
-                    setPublishTikTok(event.target.value === "yes")
-                  }
-                >
-                  <option value="no">Пока выключено</option>
-                  <option value="yes">Создать publish-задачи</option>
-                </select>
-              </label>
-            </div>
+              <div className="target-list">
+                {accounts.map((account) => {
+                  const state = targets[account.id] ?? {
+                    enabled: false,
+                    templateId: templateId || getDefaultTemplateId(templates),
+                    titlePrefix,
+                  };
+
+                  return (
+                    <div className="target-card" key={account.id}>
+                      <label className="target-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={state.enabled}
+                          onChange={(event) =>
+                            updateTarget(account.id, {
+                              enabled: event.target.checked,
+                            })
+                          }
+                        />
+                        <span className="badge">{account.platform}</span>
+                        <b>{account.name}</b>
+                      </label>
+
+                      <div className="grid grid-2">
+                        <label>
+                          Шаблон
+                          <select
+                            value={
+                              state.templateId ||
+                              templateId ||
+                              getDefaultTemplateId(templates)
+                            }
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                templateId: event.target.value,
+                              })
+                            }
+                          >
+                            {templates.map((template) => (
+                              <option key={template.id} value={template.id}>
+                                {template.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label>
+                          Название для этого аккаунта
+                          <input
+                            value={state.titlePrefix || ""}
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                titlePrefix: event.target.value,
+                              })
+                            }
+                            placeholder={titlePrefix}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {accounts.length === 0 ? (
+                  <p className="muted">
+                    Пока нет подключенных аккаунтов. Перейди в /factory/accounts
+                    и подключи YouTube или TikTok.
+                  </p>
+                ) : null}
+              </div>
+            </section>
 
             <p className="muted">
               Для {selectedGame.label} описание будет с 5 хэштегами автоматически.
@@ -455,7 +624,7 @@ export default function FactoryPage() {
               <tr>
                 <th>Прогресс</th>
                 <th>Источник</th>
-                <th>Игра / шаблон</th>
+                <th>Аккаунты</th>
                 <th>Клипы</th>
                 <th>Публикации</th>
               </tr>
@@ -509,13 +678,17 @@ export default function FactoryPage() {
 
                     <p className="muted">
                       {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
-                      {job.clipSeconds} сек · {job.platforms.join(", ")}
+                      {job.clipSeconds} сек
                     </p>
                   </td>
 
                   <td>
-                    <span className="badge">{job.game}</span>
-                    <p className="muted">{job.template?.name ?? "Default"}</p>
+                    {job.targets.map((target) => (
+                      <p key={target.id} className="muted">
+                        <span className="badge">{target.platform}</span>{" "}
+                        {target.account.name} · {target.template?.name ?? "Default"}
+                      </p>
+                    ))}
                   </td>
 
                   <td>
@@ -527,7 +700,7 @@ export default function FactoryPage() {
                       clip.publishes.map((publish) => (
                         <div key={publish.id}>
                           <b>
-                            {clip.index}. {publish.platform}
+                            {clip.index}. {publish.account?.name ?? publish.platform}
                           </b>{" "}
                           <span className="badge">{publish.status}</span>
                           {publish.platformUrl ? (
