@@ -52,6 +52,8 @@ model FactoryAsset {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  templates    FactoryTemplate[]
+
   @@index([createdAt])
   @@index([storageKey])
 }
@@ -60,6 +62,9 @@ model FactoryTemplate {
   id          String   @id @default(cuid())
   name        String
   isDefault   Boolean  @default(false)
+
+  assetId     String?
+  asset       FactoryAsset? @relation(fields: [assetId], references: [id], onDelete: SetNull)
 
   lanaX       Int      @default(78)
   lanaY       Int      @default(68)
@@ -75,6 +80,7 @@ model FactoryTemplate {
 
   @@index([isDefault])
   @@index([createdAt])
+  @@index([assetId])
 }
 
 model FactoryAccount {
@@ -165,21 +171,21 @@ model FactoryJobTarget {
 }
 
 model FactoryClip {
-  id        String      @id @default(cuid())
-  jobId     String
-  job       FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id         String      @id @default(cuid())
+  jobId      String
+  job        FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  index     Int
-  startSec  Int
-  endSec    Int
-  title     String
-  filePath  String?
+  index      Int
+  startSec   Int
+  endSec     Int
+  title      String
+  filePath   String?
   storageKey String?
 
-  publishes FactoryPublish[]
+  publishes  FactoryPublish[]
 
-  createdAt DateTime    @default(now())
-  updatedAt DateTime    @updatedAt
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
 
   @@index([jobId])
   @@index([createdAt])
@@ -187,30 +193,30 @@ model FactoryClip {
 }
 
 model FactoryPublish {
-  id             String               @id @default(cuid())
+  id              String               @id @default(cuid())
 
-  clipId         String
-  clip           FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clipId          String
+  clip            FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
 
-  targetId       String?
-  target         FactoryJobTarget?    @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  targetId        String?
+  target          FactoryJobTarget?    @relation(fields: [targetId], references: [id], onDelete: SetNull)
 
-  accountId      String?
-  account        FactoryAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  accountId       String?
+  account         FactoryAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
-  platform       FactoryPlatform
-  status         FactoryPublishStatus @default(QUEUED)
+  platform        FactoryPlatform
+  status          FactoryPublishStatus @default(QUEUED)
 
-  platformPostId String?
-  platformUrl    String?
+  platformPostId  String?
+  platformUrl     String?
 
   renderFilePath  String?
   renderStorageKey String?
 
-  error          String?
+  error           String?
 
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
 
   @@index([clipId])
   @@index([targetId])
