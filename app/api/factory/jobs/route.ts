@@ -11,8 +11,20 @@ import { getGameMeta } from "@/lib/factory/games";
 
 export const runtime = "nodejs";
 
-const platformSchema = z.enum(["YOUTUBE", "TIKTOK"]);
-const gameSchema = z.enum(["ROBLOX", "FORTNITE", "MINECRAFT", "BRAWL_STARS", "DOTA2", "OTHER"]);
+const gameSchema = z.enum([
+  "ROBLOX",
+  "FORTNITE",
+  "MINECRAFT",
+  "BRAWL_STARS",
+  "DOTA2",
+  "OTHER",
+]);
+
+const targetSchema = z.object({
+  accountId: z.string().min(1),
+  templateId: z.string().optional().nullable(),
+  titlePrefix: z.string().max(80).optional().nullable(),
+});
 
 const jsonCreateJobSchema = z.object({
   sourceUrl: z.string().url(),
@@ -20,7 +32,7 @@ const jsonCreateJobSchema = z.object({
   game: gameSchema.default("OTHER"),
   titlePrefix: z.string().max(80).optional(),
   templateId: z.string().optional().nullable(),
-  platforms: z.array(platformSchema).min(1).default(["YOUTUBE"]),
+  targets: z.array(targetSchema).min(1),
 });
 
 function parseClipSeconds(value: FormDataEntryValue | null) {
@@ -33,22 +45,22 @@ function parseClipSeconds(value: FormDataEntryValue | null) {
   return numberValue;
 }
 
-function parsePlatforms(value: FormDataEntryValue | null) {
-  if (!value || typeof value !== "string") {
-    return ["YOUTUBE"] as Array<"YOUTUBE" | "TIKTOK">;
-  }
-
-  const parsed = JSON.parse(value) as string[];
-
-  return z.array(platformSchema).min(1).parse(parsed);
-}
-
 function parseGame(value: FormDataEntryValue | null) {
   if (!value || typeof value !== "string") {
     return "OTHER" as const;
   }
 
   return gameSchema.parse(value);
+}
+
+function parseTargets(value: FormDataEntryValue | null) {
+  if (!value || typeof value !== "string") {
+    throw new Error("Выбери хотя бы один аккаунт для публикации");
+  }
+
+  const parsed = JSON.parse(value) as unknown;
+
+  return z.array(targetSchema).min(1).parse(parsed);
 }
 
 async function resolveTemplateId(templateId?: string | null) {
@@ -65,6 +77,51 @@ async function resolveTemplateId(templateId?: string | null) {
   return defaultTemplate?.id ?? null;
 }
 
+async function createTargetsForJob(input: {
+  jobId: string;
+  globalTemplateId: string | null;
+  globalTitlePrefix: string;
+  targets: Array<z.infer<typeof targetSchema>>;
+}) {
+  const accountIds = Array.from(
+    new Set(input.targets.map((target) => target.accountId)),
+  );
+
+  const accounts = await prisma.factoryAccount.findMany({
+    where: {
+      id: {
+        in: accountIds,
+      },
+    },
+  });
+
+  if (accounts.length !== accountIds.length) {
+    throw new Error("Один или несколько аккаунтов не найдены");
+  }
+
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
+
+  await prisma.factoryJobTarget.createMany({
+    data: input.targets.map((target) => {
+      const account = accountById.get(target.accountId);
+
+      if (!account) {
+        throw new Error("Аккаунт не найден");
+      }
+
+      return {
+        jobId: input.jobId,
+        accountId: account.id,
+        platform: account.platform,
+        templateId: target.templateId || input.globalTemplateId,
+        titlePrefix: target.titlePrefix?.trim() || input.globalTitlePrefix,
+      };
+    }),
+  });
+
+  return Array.from(new Set(accounts.map((account) => account.platform)));
+}
+
 export async function GET() {
   const jobs = await prisma.factoryJob.findMany({
     orderBy: {
@@ -73,12 +130,30 @@ export async function GET() {
     take: 30,
     include: {
       template: true,
+      targets: {
+        include: {
+          account: true,
+          template: true,
+        },
+        orderBy: {
+          createdAt: "asc",
+        },
+      },
       clips: {
         orderBy: {
           index: "asc",
         },
         include: {
-          publishes: true,
+          publishes: {
+            include: {
+              account: true,
+              target: {
+                include: {
+                  template: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -109,11 +184,15 @@ export async function POST(request: Request) {
 
       const titlePrefix = rawTitlePrefix?.trim() || gameMeta.titlePrefix;
       const templateId = await resolveTemplateId(
-        z.string().optional().nullable().parse(formData.get("templateId") || null),
+        z
+          .string()
+          .optional()
+          .nullable()
+          .parse(formData.get("templateId") || null),
       );
 
       const clipSeconds = parseClipSeconds(formData.get("clipSeconds"));
-      const platforms = parsePlatforms(formData.get("platforms"));
+      const targets = parseTargets(formData.get("targets"));
       const file = formData.get("sourceFile");
 
       if (!(file instanceof File)) {
@@ -134,10 +213,26 @@ export async function POST(request: Request) {
           titlePrefix,
           game,
           templateId,
-          platforms,
+          platforms: [],
           progress: 0,
           progressLabel: "Загружаю исходный файл",
           cancelRequested: false,
+        },
+      });
+
+      const platforms = await createTargetsForJob({
+        jobId: job.id,
+        globalTemplateId: templateId,
+        globalTitlePrefix: titlePrefix,
+        targets,
+      });
+
+      await prisma.factoryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          platforms,
         },
       });
 
@@ -187,15 +282,31 @@ export async function POST(request: Request) {
         titlePrefix,
         game: data.game,
         templateId,
-        platforms: data.platforms,
+        platforms: [],
         progress: 0,
         progressLabel: "Задача создана",
         cancelRequested: false,
       },
     });
 
+    const platforms = await createTargetsForJob({
+      jobId: job.id,
+      globalTemplateId: templateId,
+      globalTitlePrefix: titlePrefix,
+      targets: data.targets,
+    });
+
+    const updatedJob = await prisma.factoryJob.update({
+      where: {
+        id: job.id,
+      },
+      data: {
+        platforms,
+      },
+    });
+
     return NextResponse.json({
-      job,
+      job: updatedJob,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
