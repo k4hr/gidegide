@@ -70,7 +70,8 @@ model FactoryTemplate {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  jobs        FactoryJob[]
+  jobs         FactoryJob[]
+  jobTargets   FactoryJobTarget[]
 
   @@index([isDefault])
   @@index([createdAt])
@@ -86,6 +87,9 @@ model FactoryAccount {
 
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
+
+  targets      FactoryJobTarget[]
+  publishes    FactoryPublish[]
 
   @@unique([platform, name])
   @@index([platform])
@@ -118,6 +122,7 @@ model FactoryJob {
   cancelRequested    Boolean           @default(false)
   canceledAt         DateTime?
 
+  targets            FactoryJobTarget[]
   clips              FactoryClip[]
 
   createdAt          DateTime          @default(now())
@@ -131,22 +136,50 @@ model FactoryJob {
   @@index([templateId])
 }
 
-model FactoryClip {
-  id         String      @id @default(cuid())
-  jobId      String
-  job        FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+model FactoryJobTarget {
+  id          String          @id @default(cuid())
 
-  index      Int
-  startSec   Int
-  endSec     Int
-  title      String
-  filePath   String?
+  jobId       String
+  job         FactoryJob      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  accountId   String
+  account     FactoryAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  platform    FactoryPlatform
+
+  templateId  String?
+  template    FactoryTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
+  titlePrefix String?
+
+  publishes   FactoryPublish[]
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([jobId, accountId])
+  @@index([jobId])
+  @@index([accountId])
+  @@index([platform])
+  @@index([templateId])
+}
+
+model FactoryClip {
+  id        String      @id @default(cuid())
+  jobId     String
+  job       FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  index     Int
+  startSec  Int
+  endSec    Int
+  title     String
+  filePath  String?
   storageKey String?
 
-  publishes  FactoryPublish[]
+  publishes FactoryPublish[]
 
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
 
   @@index([jobId])
   @@index([createdAt])
@@ -155,19 +188,33 @@ model FactoryClip {
 
 model FactoryPublish {
   id             String               @id @default(cuid())
+
   clipId         String
   clip           FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
 
+  targetId       String?
+  target         FactoryJobTarget?    @relation(fields: [targetId], references: [id], onDelete: SetNull)
+
+  accountId      String?
+  account        FactoryAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
   platform       FactoryPlatform
   status         FactoryPublishStatus @default(QUEUED)
+
   platformPostId String?
   platformUrl    String?
+
+  renderFilePath  String?
+  renderStorageKey String?
+
   error          String?
 
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
 
   @@index([clipId])
+  @@index([targetId])
+  @@index([accountId])
   @@index([platform])
   @@index([status])
 }
