@@ -11,6 +11,7 @@ import {
   type FactoryRenderTemplate,
 } from "@/lib/factory/render";
 import { uploadYoutubeShort } from "@/lib/factory/youtube";
+import { uploadTikTokDraft } from "@/lib/factory/tiktok";
 import {
   downloadR2ObjectToFile,
   getR2Prefix,
@@ -399,10 +400,42 @@ async function processOneJob() {
               id: publish.id,
             },
             data: {
-              status: "SKIPPED",
-              error: "TikTok uploader добавим следующим шагом",
+              status: "UPLOADING",
             },
           });
+
+          try {
+            const result = await uploadTikTokDraft({
+              filePath: outputPath,
+              title,
+              description,
+            });
+
+            await prisma.factoryPublish.update({
+              where: {
+                id: publish.id,
+              },
+              data: {
+                status: "PUBLISHED",
+                platformPostId: result.id,
+                platformUrl: result.url,
+                error: result.message,
+              },
+            });
+          } catch (error) {
+            await prisma.factoryPublish.update({
+              where: {
+                id: publish.id,
+              },
+              data: {
+                status: "FAILED",
+                error:
+                  error instanceof Error
+                    ? error.message
+                    : "TikTok draft upload failed",
+              },
+            });
+          }
         }
       }
 
