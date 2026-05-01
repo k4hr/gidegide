@@ -19,6 +19,7 @@
     "lucide-react": "^0.468.0",
     "nanoid": "^5.0.9",
     "next": "latest",
+    "playwright": "^1.56.1",
     "prisma": "6.19.3",
     "react": "latest",
     "react-dom": "latest",
