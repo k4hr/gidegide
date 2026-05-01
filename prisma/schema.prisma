@@ -31,6 +31,15 @@ enum FactoryPublishStatus {
   CANCELED
 }
 
+enum FactoryGame {
+  ROBLOX
+  FORTNITE
+  MINECRAFT
+  BRAWL_STARS
+  DOTA2
+  OTHER
+}
+
 model FactoryAsset {
   id           String   @id @default(cuid())
   title        String
@@ -45,6 +54,26 @@ model FactoryAsset {
 
   @@index([createdAt])
   @@index([storageKey])
+}
+
+model FactoryTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  isDefault   Boolean  @default(false)
+
+  lanaX       Int      @default(78)
+  lanaY       Int      @default(68)
+  lanaWidth   Int      @default(300)
+  lanaHeight  Int      @default(533)
+  mirrorLana  Boolean  @default(false)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  jobs        FactoryJob[]
+
+  @@index([isDefault])
+  @@index([createdAt])
 }
 
 model FactoryAccount {
@@ -73,6 +102,11 @@ model FactoryJob {
 
   clipSeconds        Int               @default(45)
   titlePrefix        String            @default("Lana watches games")
+  game               FactoryGame       @default(OTHER)
+
+  templateId         String?
+  template           FactoryTemplate?  @relation(fields: [templateId], references: [id], onDelete: SetNull)
+
   platforms          FactoryPlatform[]
 
   status             FactoryJobStatus  @default(QUEUED)
@@ -93,6 +127,8 @@ model FactoryJob {
   @@index([createdAt])
   @@index([cancelRequested])
   @@index([sourceStorageKey])
+  @@index([game])
+  @@index([templateId])
 }
 
 model FactoryClip {
