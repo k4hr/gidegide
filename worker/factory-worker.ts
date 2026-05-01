@@ -8,6 +8,7 @@ import {
   downloadSourceFromUrl,
   getSourceDuration,
   renderFactoryClip,
+  type FactoryRenderTemplate,
 } from "@/lib/factory/render";
 import { uploadYoutubeShort } from "@/lib/factory/youtube";
 import {
@@ -16,6 +17,7 @@ import {
   isR2Enabled,
   uploadFileToR2,
 } from "@/lib/factory/r2";
+import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -154,6 +156,16 @@ async function ensureLocalSourceFile(job: {
   throw new Error("У задачи нет исходного MP4 и нет YouTube-ссылки");
 }
 
+function getDefaultTemplate(): FactoryRenderTemplate {
+  return {
+    lanaX: 78,
+    lanaY: 68,
+    lanaWidth: 300,
+    lanaHeight: 533,
+    mirrorLana: false,
+  };
+}
+
 async function processOneJob() {
   const job = await prisma.factoryJob.findFirst({
     where: {
@@ -161,6 +173,9 @@ async function processOneJob() {
     },
     orderBy: {
       createdAt: "asc",
+    },
+    include: {
+      template: true,
     },
   });
 
@@ -182,6 +197,16 @@ async function processOneJob() {
     if (lanaVideos.length === 0) {
       throw new Error("Нет загруженных видео Ланы");
     }
+
+    const template: FactoryRenderTemplate = job.template
+      ? {
+          lanaX: job.template.lanaX,
+          lanaY: job.template.lanaY,
+          lanaWidth: job.template.lanaWidth,
+          lanaHeight: job.template.lanaHeight,
+          mirrorLana: job.template.mirrorLana,
+        }
+      : getDefaultTemplate();
 
     await prisma.factoryJob.update({
       where: {
@@ -234,7 +259,14 @@ async function processOneJob() {
       const clipIndex = i + 1;
       const startSec = clipStarts[i];
       const endSec = startSec + job.clipSeconds;
-      const title = `${job.titlePrefix} #${clipIndex}`;
+
+      const title = buildClipTitle({
+        game: job.game,
+        clipIndex,
+        customPrefix: job.titlePrefix,
+      });
+
+      const description = buildClipDescription(job.game);
 
       const renderProgress =
         30 + Math.round((i / Math.max(1, clipStarts.length)) * 45);
@@ -270,6 +302,7 @@ async function processOneJob() {
         lanaPath,
         startSec,
         clipSeconds: job.clipSeconds,
+        template,
         isCanceled: () => isJobCanceled(job.id),
       });
 
@@ -331,7 +364,7 @@ async function processOneJob() {
             const result = await uploadYoutubeShort({
               filePath: outputPath,
               title,
-              description: "Lana watches gaming clips. #shorts #gaming #games",
+              description,
             });
 
             await prisma.factoryPublish.update({
