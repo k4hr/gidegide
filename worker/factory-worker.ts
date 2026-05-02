@@ -163,20 +163,12 @@ async function ensureLocalSourceFile(job: {
 
 function getDefaultTemplate(): FactoryRenderTemplate {
   return {
-    lanaX: 78,
-    lanaY: 68,
-    lanaWidth: 300,
-    lanaHeight: 533,
     mirrorLana: false,
   };
 }
 
 function getTargetTemplate(target: {
   template: {
-    lanaX: number;
-    lanaY: number;
-    lanaWidth: number;
-    lanaHeight: number;
     mirrorLana: boolean;
   } | null;
 }): FactoryRenderTemplate {
@@ -185,10 +177,6 @@ function getTargetTemplate(target: {
   }
 
   return {
-    lanaX: target.template.lanaX,
-    lanaY: target.template.lanaY,
-    lanaWidth: target.template.lanaWidth,
-    lanaHeight: target.template.lanaHeight,
     mirrorLana: target.template.mirrorLana,
   };
 }
@@ -251,6 +239,16 @@ async function processOneJob() {
     prisma.factoryJob.findFirst({
       where: {
         status: "QUEUED",
+        OR: [
+          {
+            scheduledAt: null,
+          },
+          {
+            scheduledAt: {
+              lte: new Date(),
+            },
+          },
+        ],
       },
       orderBy: {
         createdAt: "asc",
@@ -319,7 +317,13 @@ async function processOneJob() {
 
     const duration = await getSourceDuration(sourcePath);
 
-    const maxClips = Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40);
+    const globalMaxClips = Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40);
+    const maxTargetClips = Math.max(
+      1,
+      ...targets.map((target) => target.maxClips ?? 10),
+    );
+
+    const maxClips = Math.min(globalMaxClips, maxTargetClips);
     const clipStarts: number[] = [];
 
     for (
@@ -348,7 +352,15 @@ async function processOneJob() {
       }),
     );
 
-    const totalRenders = clipStarts.length * targets.length;
+    const totalRenders = clipStarts.reduce((sum, _startSec, index) => {
+      const clipIndex = index + 1;
+
+      return (
+        sum +
+        targets.filter((target) => clipIndex <= (target.maxClips ?? 10)).length
+      );
+    }, 0);
+
     let completedRenders = 0;
 
     for (let i = 0; i < clipStarts.length; i += 1) {
@@ -377,6 +389,10 @@ async function processOneJob() {
       );
 
       for (const target of targets) {
+        if (clipIndex > (target.maxClips ?? 10)) {
+          continue;
+        }
+
         await assertNotCanceled(job.id);
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
