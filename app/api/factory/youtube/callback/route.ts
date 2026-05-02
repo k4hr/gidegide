@@ -5,6 +5,24 @@ import { prisma } from "@/lib/prisma";
 
 export const runtime = "nodejs";
 
+function getRequiredEnv(name: string) {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(`Missing environment variable: ${name}`);
+  }
+
+  return value;
+}
+
+function getCookieValue(cookieHeader: string, name: string) {
+  return cookieHeader
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.split("=")[1];
+}
+
 function buildAccountName(input: {
   channelTitle: string | null | undefined;
   channelId: string | null | undefined;
@@ -15,98 +33,114 @@ function buildAccountName(input: {
   return `${baseName}${suffix}`;
 }
 
+function buildErrorRedirect(origin: string, message: string) {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? origin;
+  const redirectUrl = new URL("/factory/accounts", appUrl);
+
+  redirectUrl.searchParams.set("youtube_error", message);
+
+  return redirectUrl.toString();
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
+
   const code = url.searchParams.get("code");
+  const state = url.searchParams.get("state");
+  const error = url.searchParams.get("error");
+  const errorDescription = url.searchParams.get("error_description");
+
+  const cookieHeader = request.headers.get("cookie") ?? "";
+  const stateCookie = getCookieValue(cookieHeader, "youtube_oauth_state");
+
+  if (error) {
+    return NextResponse.redirect(
+      buildErrorRedirect(url.origin, errorDescription ?? error),
+    );
+  }
 
   if (!code) {
-    return NextResponse.json(
-      {
-        error: "Google не вернул code",
-      },
-      {
-        status: 400,
-      },
+    return NextResponse.redirect(
+      buildErrorRedirect(url.origin, "Google did not return authorization code"),
     );
   }
 
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = process.env.GOOGLE_REDIRECT_URI;
-
-  if (!clientId || !clientSecret || !redirectUri) {
-    return NextResponse.json(
-      {
-        error:
-          "Нет GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET или GOOGLE_REDIRECT_URI",
-      },
-      {
-        status: 500,
-      },
+  if (!state || !stateCookie || state !== stateCookie) {
+    return NextResponse.redirect(
+      buildErrorRedirect(url.origin, "Invalid YouTube OAuth state"),
     );
   }
 
-  const oauth2Client = new google.auth.OAuth2(
-    clientId,
-    clientSecret,
-    redirectUri,
-  );
-
-  const { tokens } = await oauth2Client.getToken(code);
-
-  if (!tokens.access_token) {
-    return NextResponse.json(
-      {
-        error: "Google не вернул access_token",
-      },
-      {
-        status: 500,
-      },
+  try {
+    const oauth2Client = new google.auth.OAuth2(
+      getRequiredEnv("GOOGLE_CLIENT_ID"),
+      getRequiredEnv("GOOGLE_CLIENT_SECRET"),
+      getRequiredEnv("GOOGLE_REDIRECT_URI"),
     );
-  }
 
-  oauth2Client.setCredentials(tokens);
+    const { tokens } = await oauth2Client.getToken(code);
 
-  const youtube = google.youtube({
-    version: "v3",
-    auth: oauth2Client,
-  });
+    if (!tokens.access_token) {
+      throw new Error("Google did not return access_token");
+    }
 
-  const channelsResponse = await youtube.channels.list({
-    part: ["snippet"],
-    mine: true,
-  });
+    oauth2Client.setCredentials(tokens);
 
-  const channel = channelsResponse.data.items?.[0];
-  const channelTitle = channel?.snippet?.title;
-  const channelId = channel?.id;
-  const accountName = buildAccountName({
-    channelTitle,
-    channelId,
-  });
+    const youtube = google.youtube({
+      version: "v3",
+      auth: oauth2Client,
+    });
 
-  await prisma.factoryAccount.upsert({
-    where: {
-      platform_name: {
+    const channelsResponse = await youtube.channels.list({
+      part: ["snippet"],
+      mine: true,
+    });
+
+    const channel = channelsResponse.data.items?.[0];
+
+    const accountName = buildAccountName({
+      channelTitle: channel?.snippet?.title,
+      channelId: channel?.id,
+    });
+
+    await prisma.factoryAccount.upsert({
+      where: {
+        platform_name: {
+          platform: "YOUTUBE",
+          name: accountName,
+        },
+      },
+      update: {
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? undefined,
+        expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
+      },
+      create: {
         platform: "YOUTUBE",
         name: accountName,
+        accessToken: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? undefined,
+        expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
       },
-    },
-    update: {
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token ?? undefined,
-      expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
-    },
-    create: {
-      platform: "YOUTUBE",
-      name: accountName,
-      accessToken: tokens.access_token,
-      refreshToken: tokens.refresh_token ?? undefined,
-      expiresAt: tokens.expiry_date ? new Date(tokens.expiry_date) : undefined,
-    },
-  });
+    });
 
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? url.origin;
 
-  return NextResponse.redirect(`${appUrl}/factory/accounts?youtube=connected`);
+    const response = NextResponse.redirect(
+      `${appUrl}/factory/accounts?youtube=connected`,
+    );
+
+    response.cookies.delete("youtube_oauth_state");
+
+    return response;
+  } catch (callbackError) {
+    console.error("YouTube OAuth callback error:", callbackError);
+
+    const message =
+      callbackError instanceof Error
+        ? callbackError.message
+        : "Failed to connect YouTube";
+
+    return NextResponse.redirect(buildErrorRedirect(url.origin, message));
+  }
 }
