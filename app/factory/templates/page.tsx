@@ -7,41 +7,21 @@ type FactoryAsset = {
   id: string;
   title: string;
   originalName: string | null;
-  storageKey: string | null;
 };
 
 type FactoryTemplate = {
   id: string;
   name: string;
   isDefault: boolean;
-  assetId: string | null;
-  asset: FactoryAsset | null;
-  lanaX: number;
-  lanaY: number;
-  lanaWidth: number;
-  lanaHeight: number;
   mirrorLana: boolean;
+  asset: FactoryAsset | null;
 };
-
-type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
-function cornerToPosition(corner: Corner) {
-  if (corner === "top-left") return { lanaX: 4, lanaY: 4 };
-  if (corner === "top-right") return { lanaX: 78, lanaY: 4 };
-  if (corner === "bottom-left") return { lanaX: 4, lanaY: 68 };
-
-  return { lanaX: 78, lanaY: 68 };
-}
 
 export default function FactoryTemplatesPage() {
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [assets, setAssets] = useState<FactoryAsset[]>([]);
-  const [name, setName] = useState("Lana Template");
+  const [name, setName] = useState("Ember watch");
   const [assetId, setAssetId] = useState("");
-  const [lanaX, setLanaX] = useState(78);
-  const [lanaY, setLanaY] = useState(68);
-  const [lanaWidth, setLanaWidth] = useState(300);
-  const [lanaHeight, setLanaHeight] = useState(533);
   const [mirrorLana, setMirrorLana] = useState(false);
   const [isDefault, setIsDefault] = useState(true);
   const [error, setError] = useState("");
@@ -84,13 +64,6 @@ export default function FactoryTemplatesPage() {
     loadAssets();
   }, []);
 
-  function setCorner(corner: Corner) {
-    const position = cornerToPosition(corner);
-
-    setLanaX(position.lanaX);
-    setLanaY(position.lanaY);
-  }
-
   async function saveTemplate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -109,10 +82,10 @@ export default function FactoryTemplatesPage() {
         body: JSON.stringify({
           name,
           assetId,
-          lanaX,
-          lanaY,
-          lanaWidth,
-          lanaHeight,
+          lanaX: 0,
+          lanaY: 50,
+          lanaWidth: 1080,
+          lanaHeight: 960,
           mirrorLana,
           isDefault,
         }),
@@ -151,6 +124,12 @@ export default function FactoryTemplatesPage() {
   }
 
   async function removeTemplate(id: string) {
+    const confirmed = window.confirm(
+      "Удалить шаблон? Если он был выбран в задачах, старые задачи останутся в истории.",
+    );
+
+    if (!confirmed) return;
+
     await fetch(`/api/factory/templates/${id}`, {
       method: "DELETE",
     });
@@ -171,19 +150,19 @@ export default function FactoryTemplatesPage() {
         <section className="card">
           <h1>Шаблоны персонажей</h1>
           <p>
-            Шаблон теперь хранит не только позицию, размер и зеркальность, но и
-            конкретное видео персонажа. Например: Lana template = Lana video,
-            Mia template = Mia video, Amelia template = Amelia video.
+            Новый шаблон — это только видео персонажа и зеркальность. Рендер всегда
+            делит экран 9:16 ровно пополам: сверху игра, снизу персонаж по центру
+            с сохранением пропорций.
           </p>
 
-          <div className="template-editor">
+          <div className="template-editor split-template-editor">
             <form className="grid" onSubmit={saveTemplate}>
               <label>
                 Название шаблона
                 <input
                   value={name}
                   onChange={(event) => setName(event.target.value)}
-                  placeholder="Lana / Mia / Amelia"
+                  placeholder="Lana watch / Ember watch / Mia watch"
                   required
                 />
               </label>
@@ -207,69 +186,6 @@ export default function FactoryTemplatesPage() {
                   ))}
                 </select>
               </label>
-
-              <div className="corner-buttons">
-                <button type="button" onClick={() => setCorner("top-left")}>
-                  Слева сверху
-                </button>
-                <button type="button" onClick={() => setCorner("top-right")}>
-                  Справа сверху
-                </button>
-                <button type="button" onClick={() => setCorner("bottom-left")}>
-                  Слева снизу
-                </button>
-                <button type="button" onClick={() => setCorner("bottom-right")}>
-                  Справа снизу
-                </button>
-              </div>
-
-              <div className="grid grid-2">
-                <label>
-                  X: {lanaX}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={lanaX}
-                    onChange={(event) => setLanaX(Number(event.target.value))}
-                  />
-                </label>
-
-                <label>
-                  Y: {lanaY}%
-                  <input
-                    type="range"
-                    min="0"
-                    max="100"
-                    value={lanaY}
-                    onChange={(event) => setLanaY(Number(event.target.value))}
-                  />
-                </label>
-
-                <label>
-                  Ширина: {lanaWidth}px
-                  <input
-                    type="range"
-                    min="120"
-                    max="760"
-                    value={lanaWidth}
-                    onChange={(event) => setLanaWidth(Number(event.target.value))}
-                  />
-                </label>
-
-                <label>
-                  Высота: {lanaHeight}px
-                  <input
-                    type="range"
-                    min="120"
-                    max="1200"
-                    value={lanaHeight}
-                    onChange={(event) =>
-                      setLanaHeight(Number(event.target.value))
-                    }
-                  />
-                </label>
-              </div>
 
               <div className="grid grid-2">
                 <label>
@@ -297,23 +213,24 @@ export default function FactoryTemplatesPage() {
                 </label>
               </div>
 
+              <div className="split-template-note">
+                <b>Как будет выглядеть рендер:</b>
+                <span>Верхние 50% — игровое видео, crop по центру.</span>
+                <span>Нижние 50% — видео персонажа, crop по центру.</span>
+                <span>Позиции X/Y больше не нужны и не используются.</span>
+              </div>
+
               {error ? <p className="error">{error}</p> : null}
 
               <button type="submit">Сохранить шаблон</button>
             </form>
 
-            <div className="template-preview">
-              <div className="preview-game">GAME VIDEO</div>
-              <div
-                className={`preview-lana ${mirrorLana ? "mirror" : ""}`}
-                style={{
-                  width: `${(lanaWidth / 1080) * 100}%`,
-                  height: `${(lanaHeight / 1920) * 100}%`,
-                  left: `${lanaX}%`,
-                  top: `${lanaY}%`,
-                }}
-              >
-                {selectedAsset?.title ?? "PERSON"}
+            <div className="split-template-preview">
+              <div className="split-preview-half split-preview-game">
+                <span>GAME VIDEO</span>
+              </div>
+              <div className={`split-preview-half split-preview-person ${mirrorLana ? "mirror" : ""}`}>
+                <span>{selectedAsset?.title ?? "PERSON VIDEO"}</span>
               </div>
             </div>
           </div>
@@ -329,8 +246,7 @@ export default function FactoryTemplatesPage() {
               <tr>
                 <th>Название</th>
                 <th>Видео персонажа</th>
-                <th>Позиция</th>
-                <th>Размер</th>
+                <th>Формат</th>
                 <th>Зеркало</th>
                 <th>Действия</th>
               </tr>
@@ -357,19 +273,18 @@ export default function FactoryTemplatesPage() {
                       <span className="error">Видео не выбрано</span>
                     )}
                   </td>
-                  <td>
-                    X {template.lanaX}% / Y {template.lanaY}%
-                  </td>
-                  <td>
-                    {template.lanaWidth}x{template.lanaHeight}
-                  </td>
+                  <td>50/50: игра сверху, персонаж снизу</td>
                   <td>{template.mirrorLana ? "Да" : "Нет"}</td>
                   <td>
                     <div className="inline-actions">
                       <button type="button" onClick={() => makeDefault(template.id)}>
                         Сделать основным
                       </button>
-                      <button type="button" onClick={() => removeTemplate(template.id)}>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        onClick={() => removeTemplate(template.id)}
+                      >
                         Удалить
                       </button>
                     </div>
@@ -379,7 +294,7 @@ export default function FactoryTemplatesPage() {
 
               {templates.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={5} className="muted">
                     Пока шаблонов нет.
                   </td>
                 </tr>
