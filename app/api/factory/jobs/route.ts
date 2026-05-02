@@ -9,6 +9,11 @@ import { extFromName, safeFileName } from "@/lib/factory/video";
 import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 import { getGameMeta } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
+import {
+  formatScheduledAtForLabel,
+  getNextNewYorkPublishAt,
+  getPublishTimingLabel,
+} from "@/lib/factory/schedule";
 
 export const runtime = "nodejs";
 
@@ -21,10 +26,15 @@ const gameSchema = z.enum([
   "OTHER",
 ]);
 
+const publishTimingSchema = z
+  .enum(["NOW", "NY_14", "NY_17", "NY_20", "NY_22"])
+  .default("NOW");
+
 const targetSchema = z.object({
   accountId: z.string().min(1),
   templateId: z.string().optional().nullable(),
   titlePrefix: z.string().max(80).optional().nullable(),
+  maxClips: z.coerce.number().int().min(1).max(100).default(10),
 });
 
 const jsonCreateJobSchema = z.object({
@@ -33,6 +43,7 @@ const jsonCreateJobSchema = z.object({
   game: gameSchema.default("OTHER"),
   titlePrefix: z.string().max(80).optional(),
   templateId: z.string().optional().nullable(),
+  publishTiming: publishTimingSchema,
   targets: z.array(targetSchema).min(1),
 });
 
@@ -54,6 +65,14 @@ function parseGame(value: FormDataEntryValue | null) {
   return gameSchema.parse(value);
 }
 
+function parsePublishTiming(value: FormDataEntryValue | null) {
+  if (!value || typeof value !== "string") {
+    return "NOW" as const;
+  }
+
+  return publishTimingSchema.parse(value);
+}
+
 function parseTargets(value: FormDataEntryValue | null) {
   if (!value || typeof value !== "string") {
     throw new Error("Выбери хотя бы один аккаунт для публикации");
@@ -62,6 +81,24 @@ function parseTargets(value: FormDataEntryValue | null) {
   const parsed = JSON.parse(value) as unknown;
 
   return z.array(targetSchema).min(1).parse(parsed);
+}
+
+function buildSchedule(publishTiming: z.infer<typeof publishTimingSchema>) {
+  const scheduledAt = getNextNewYorkPublishAt(publishTiming);
+
+  if (!scheduledAt) {
+    return {
+      scheduledAt: null,
+      progressLabel: "Задача создана",
+    };
+  }
+
+  return {
+    scheduledAt,
+    progressLabel: `Задача создана. Запланировано: ${getPublishTimingLabel(
+      publishTiming,
+    )} — ${formatScheduledAtForLabel(scheduledAt)} New York`,
+  };
 }
 
 async function resolveTemplateId(templateId?: string | null) {
@@ -116,6 +153,7 @@ async function createTargetsForJob(input: {
         platform: account.platform,
         templateId: target.templateId || input.globalTemplateId,
         titlePrefix: target.titlePrefix?.trim() || input.globalTitlePrefix,
+        maxClips: target.maxClips,
       };
     }),
   });
@@ -192,6 +230,8 @@ export async function POST(request: Request) {
 
       const game = parseGame(formData.get("game"));
       const gameMeta = getGameMeta(game);
+      const publishTiming = parsePublishTiming(formData.get("publishTiming"));
+      const schedule = buildSchedule(publishTiming);
 
       const rawTitlePrefix = z
         .string()
@@ -231,8 +271,13 @@ export async function POST(request: Request) {
           game,
           templateId,
           platforms: [],
+          publishTiming,
+          scheduledAt: schedule.scheduledAt,
           progress: 0,
-          progressLabel: "Загружаю исходный файл",
+          progressLabel:
+            publishTiming === "NOW"
+              ? "Загружаю исходный файл"
+              : schedule.progressLabel,
           cancelRequested: false,
         },
       });
@@ -277,7 +322,7 @@ export async function POST(request: Request) {
           sourceOriginalName: file.name,
           sourceSizeBytes: buffer.byteLength,
           progress: 0,
-          progressLabel: "Исходный файл загружен",
+          progressLabel: schedule.progressLabel,
         },
       });
 
@@ -291,6 +336,7 @@ export async function POST(request: Request) {
     const gameMeta = getGameMeta(data.game);
     const templateId = await resolveTemplateId(data.templateId);
     const titlePrefix = data.titlePrefix?.trim() || gameMeta.titlePrefix;
+    const schedule = buildSchedule(data.publishTiming);
 
     const job = await prisma.factoryJob.create({
       data: {
@@ -300,8 +346,10 @@ export async function POST(request: Request) {
         game: data.game,
         templateId,
         platforms: [],
+        publishTiming: data.publishTiming,
+        scheduledAt: schedule.scheduledAt,
         progress: 0,
-        progressLabel: "Задача создана",
+        progressLabel: schedule.progressLabel,
         cancelRequested: false,
       },
     });
