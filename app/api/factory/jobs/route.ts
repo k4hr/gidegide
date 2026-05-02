@@ -8,6 +8,7 @@ import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { extFromName, safeFileName } from "@/lib/factory/video";
 import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 import { getGameMeta } from "@/lib/factory/games";
+import { withDbRetry } from "@/lib/factory/db-retry";
 
 export const runtime = "nodejs";
 
@@ -123,45 +124,61 @@ async function createTargetsForJob(input: {
 }
 
 export async function GET() {
-  const jobs = await prisma.factoryJob.findMany({
-    orderBy: {
-      createdAt: "desc",
-    },
-    take: 30,
-    include: {
-      template: true,
-      targets: {
+  try {
+    const jobs = await withDbRetry(() =>
+      prisma.factoryJob.findMany({
+        orderBy: {
+          createdAt: "desc",
+        },
+        take: 30,
         include: {
-          account: true,
           template: true,
-        },
-        orderBy: {
-          createdAt: "asc",
-        },
-      },
-      clips: {
-        orderBy: {
-          index: "asc",
-        },
-        include: {
-          publishes: {
+          targets: {
             include: {
               account: true,
-              target: {
+              template: true,
+            },
+            orderBy: {
+              createdAt: "asc",
+            },
+          },
+          clips: {
+            orderBy: {
+              index: "asc",
+            },
+            include: {
+              publishes: {
                 include: {
-                  template: true,
+                  account: true,
+                  target: {
+                    include: {
+                      template: true,
+                    },
+                  },
                 },
               },
             },
           },
         },
-      },
-    },
-  });
+      }),
+    );
 
-  return NextResponse.json({
-    jobs,
-  });
+    return NextResponse.json({
+      jobs,
+    });
+  } catch (error) {
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error ? error.message : "Не получилось загрузить задачи",
+      },
+      {
+        status: 500,
+      },
+    );
+  }
 }
 
 export async function POST(request: Request) {
