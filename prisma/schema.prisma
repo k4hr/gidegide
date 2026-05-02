@@ -40,6 +40,14 @@ enum FactoryGame {
   OTHER
 }
 
+enum FactoryPublishTiming {
+  NOW
+  NY_14
+  NY_17
+  NY_20
+  NY_22
+}
+
 model FactoryAsset {
   id           String   @id @default(cuid())
   title        String
@@ -125,6 +133,8 @@ model FactoryJob {
 
   progress           Int               @default(0)
   progressLabel      String?
+  publishTiming      FactoryPublishTiming @default(NOW)
+  scheduledAt        DateTime?
   cancelRequested    Boolean           @default(false)
   canceledAt         DateTime?
 
@@ -140,6 +150,8 @@ model FactoryJob {
   @@index([sourceStorageKey])
   @@index([game])
   @@index([templateId])
+  @@index([publishTiming])
+  @@index([scheduledAt])
 }
 
 model FactoryJobTarget {
@@ -157,6 +169,7 @@ model FactoryJobTarget {
   template    FactoryTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
 
   titlePrefix String?
+  maxClips    Int             @default(10)
 
   publishes   FactoryPublish[]
 
