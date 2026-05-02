@@ -130,15 +130,24 @@ export default function FactoryPage() {
   );
 
   async function loadJobs() {
-    const response = await fetch("/api/factory/jobs", {
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch("/api/factory/jobs", {
+        cache: "no-store",
+      });
 
-    const data = (await response.json()) as {
-      jobs: FactoryJob[];
-    };
+      const data = (await response.json()) as {
+        jobs?: FactoryJob[];
+        error?: string;
+      };
 
-    setJobs(data.jobs);
+      if (!response.ok) {
+        throw new Error(data.error ?? "Не получилось загрузить задачи");
+      }
+
+      setJobs(data.jobs ?? []);
+    } catch (jobsError) {
+      console.error(jobsError);
+    }
   }
 
   async function loadTemplates() {
@@ -209,7 +218,7 @@ export default function FactoryPage() {
 
     const timer = window.setInterval(() => {
       loadJobs();
-    }, 1500);
+    }, 5000);
 
     return () => window.clearInterval(timer);
   }, []);
@@ -394,7 +403,7 @@ export default function FactoryPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/assets">Видео Ланы</Link>
+          <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
