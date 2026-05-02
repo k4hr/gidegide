@@ -15,41 +15,23 @@ type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
 
 export type FactoryRenderTemplate = {
-  lanaX: number;
-  lanaY: number;
-  lanaWidth: number;
-  lanaHeight: number;
   mirrorLana: boolean;
 };
 
-function clamp(value: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, value));
-}
-
 function buildRenderFilter(template: FactoryRenderTemplate) {
-  const lanaWidth = clamp(template.lanaWidth, 120, 760);
-  const lanaHeight = clamp(template.lanaHeight, 120, 1200);
-
-  const maxX = 1080 - lanaWidth;
-  const maxY = 1920 - lanaHeight;
-
-  const lanaX = Math.round((clamp(template.lanaX, 0, 100) / 100) * maxX);
-  const lanaY = Math.round((clamp(template.lanaY, 0, 100) / 100) * maxY);
-
-  const lanaFilters = [
-    `scale=${lanaWidth}:${lanaHeight}:force_original_aspect_ratio=increase`,
-    `crop=${lanaWidth}:${lanaHeight}`,
+  const personFilters = [
+    "scale=1080:960:force_original_aspect_ratio=increase",
+    "crop=1080:960",
     template.mirrorLana ? "hflip" : null,
+    "setsar=1",
   ]
     .filter(Boolean)
     .join(",");
 
   return [
-    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=18:1[bg]",
-    "[0:v]scale=1080:1080:force_original_aspect_ratio=decrease[game]",
-    "[bg][game]overlay=(W-w)/2:260[base]",
-    `[1:v]${lanaFilters}[lana]`,
-    `[base][lana]overlay=${lanaX}:${lanaY}[v]`,
+    "[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[game]",
+    `[1:v]${personFilters}[person]`,
+    "[game][person]vstack=inputs=2,format=yuv420p[v]",
   ].join(";");
 }
 
@@ -106,7 +88,7 @@ export async function downloadYoutubeSourceWithYtDlp(input: {
 
   const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
 
-  await input.onProgress?.(2, "Пробую скачать через yt-dlp");
+  await input.onProgress?.(2, "Пробую скачать через yt-dlp в 720p");
 
   await runCommand(
     "yt-dlp",
@@ -133,28 +115,29 @@ export async function downloadYoutubeSourceWithYtDlp(input: {
       logPrefix: "yt-dlp",
       isCanceled: input.isCanceled,
       onOutput: async (text) => {
-        const match = text.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+        const percentMatch = text.match(/\[download]\s+(\d+(?:\.\d+)?)%/);
+        const downloadPercent = percentMatch?.[1]
+          ? Number(percentMatch[1])
+          : null;
 
-        if (!match) return;
-
-        const downloadPercent = Number(match[1]);
-
-        if (!Number.isFinite(downloadPercent)) return;
+        if (downloadPercent === null || Number.isNaN(downloadPercent)) {
+          return;
+        }
 
         const totalProgress = Math.min(
           30,
-          Math.max(2, Math.round(downloadPercent * 0.3)),
+          Math.max(3, 3 + Math.round(downloadPercent * 0.3)),
         );
 
         await input.onProgress?.(
           totalProgress,
-          `Скачивание yt-dlp: ${downloadPercent.toFixed(1)}%`,
+          `Скачивание yt-dlp 720p: ${downloadPercent.toFixed(1)}%`,
         );
       },
     },
   );
 
-  await input.onProgress?.(30, "YouTube-исходник скачан");
+  await input.onProgress?.(30, "YouTube-исходник скачан в 720p");
 
   return outputPath;
 }
@@ -176,7 +159,7 @@ export async function downloadSourceFromUrl(input: {
 
     await input.onProgress?.(
       3,
-      "RIP-сервис не сработал, пробую запасной способ",
+      "RIP-сервис не сработал, пробую запасной способ 720p",
     );
 
     return downloadYoutubeSourceWithYtDlp(input);
@@ -265,6 +248,9 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
 
     return outputPath;
   } finally {
-    await rm(tempDir, { recursive: true, force: true });
+    await rm(tempDir, {
+      recursive: true,
+      force: true,
+    });
   }
 }
