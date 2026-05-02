@@ -10,8 +10,8 @@ const templateSchema = z.object({
   assetId: z.string().min(1).optional().nullable(),
   lanaX: z.number().int().min(0).max(100),
   lanaY: z.number().int().min(0).max(100),
-  lanaWidth: z.number().int().min(120).max(760),
-  lanaHeight: z.number().int().min(120).max(1200),
+  lanaWidth: z.number().int().min(120).max(1080),
+  lanaHeight: z.number().int().min(120).max(1920),
   mirrorLana: z.boolean(),
   isDefault: z.boolean().default(false),
 });
