@@ -19,33 +19,51 @@ import {
   uploadFileToR2,
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
+import { withDbRetry } from "@/lib/factory/db-retry";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function db<T>(operation: () => Promise<T>) {
+  return withDbRetry(operation, 5);
+}
+
+async function safeDb<T>(operation: () => Promise<T>) {
+  try {
+    return await db(operation);
+  } catch (error) {
+    console.error("Database operation failed after retries:", error);
+    return null;
+  }
+}
+
 async function updateJobProgress(jobId: string, progress: number, label: string) {
-  await prisma.factoryJob.update({
-    where: {
-      id: jobId,
-    },
-    data: {
-      progress: Math.max(0, Math.min(100, Math.round(progress))),
-      progressLabel: label,
-    },
-  });
+  await db(() =>
+    prisma.factoryJob.update({
+      where: {
+        id: jobId,
+      },
+      data: {
+        progress: Math.max(0, Math.min(100, Math.round(progress))),
+        progressLabel: label,
+      },
+    }),
+  );
 }
 
 async function isJobCanceled(jobId: string) {
-  const job = await prisma.factoryJob.findUnique({
-    where: {
-      id: jobId,
-    },
-    select: {
-      cancelRequested: true,
-      status: true,
-    },
-  });
+  const job = await db(() =>
+    prisma.factoryJob.findUnique({
+      where: {
+        id: jobId,
+      },
+      select: {
+        cancelRequested: true,
+        status: true,
+      },
+    }),
+  );
 
   return Boolean(job?.cancelRequested || job?.status === "CANCELED");
 }
@@ -59,31 +77,50 @@ async function assertNotCanceled(jobId: string) {
 }
 
 async function markJobCanceled(jobId: string) {
-  await prisma.factoryJob.update({
-    where: {
-      id: jobId,
-    },
-    data: {
-      status: "CANCELED",
-      canceledAt: new Date(),
-      progressLabel: "Задача отменена",
-    },
-  });
+  await safeDb(() =>
+    prisma.factoryJob.update({
+      where: {
+        id: jobId,
+      },
+      data: {
+        status: "CANCELED",
+        canceledAt: new Date(),
+        progressLabel: "Задача отменена",
+      },
+    }),
+  );
 
-  await prisma.factoryPublish.updateMany({
-    where: {
-      clip: {
-        jobId,
+  await safeDb(() =>
+    prisma.factoryPublish.updateMany({
+      where: {
+        clip: {
+          jobId,
+        },
+        status: {
+          in: ["QUEUED", "UPLOADING"],
+        },
       },
-      status: {
-        in: ["QUEUED", "UPLOADING"],
+      data: {
+        status: "CANCELED",
+        error: "Задача отменена пользователем",
       },
-    },
-    data: {
-      status: "CANCELED",
-      error: "Задача отменена пользователем",
-    },
-  });
+    }),
+  );
+}
+
+async function markJobFailed(jobId: string, error: unknown) {
+  await safeDb(() =>
+    prisma.factoryJob.update({
+      where: {
+        id: jobId,
+      },
+      data: {
+        status: "FAILED",
+        error: error instanceof Error ? error.message : "Unknown error",
+        progressLabel: "Ошибка",
+      },
+    }),
+  );
 }
 
 async function ensureLocalSourceFile(job: {
@@ -210,26 +247,28 @@ async function ensureLocalTemplateAssetFile(target: {
 }
 
 async function processOneJob() {
-  const job = await prisma.factoryJob.findFirst({
-    where: {
-      status: "QUEUED",
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-    include: {
-      targets: {
-        include: {
-          account: true,
-          template: {
-            include: {
-              asset: true,
+  const job = await db(() =>
+    prisma.factoryJob.findFirst({
+      where: {
+        status: "QUEUED",
+      },
+      orderBy: {
+        createdAt: "asc",
+      },
+      include: {
+        targets: {
+          include: {
+            account: true,
+            template: {
+              include: {
+                asset: true,
+              },
             },
           },
         },
       },
-    },
-  });
+    }),
+  );
 
   if (!job) {
     return false;
@@ -260,17 +299,19 @@ async function processOneJob() {
       }
     }
 
-    await prisma.factoryJob.update({
-      where: {
-        id: job.id,
-      },
-      data: {
-        status: "DOWNLOADING",
-        error: null,
-        progress: 1,
-        progressLabel: "Подготовка исходника",
-      },
-    });
+    await db(() =>
+      prisma.factoryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          status: "DOWNLOADING",
+          error: null,
+          progress: 1,
+          progressLabel: "Подготовка исходника",
+        },
+      }),
+    );
 
     sourcePath = await ensureLocalSourceFile(job);
 
@@ -293,17 +334,19 @@ async function processOneJob() {
       throw new Error("Видео слишком короткое для выбранной длины клипа");
     }
 
-    await prisma.factoryJob.update({
-      where: {
-        id: job.id,
-      },
-      data: {
-        status: "RENDERING",
-        totalClips: clipStarts.length,
-        progress: 30,
-        progressLabel: `Найдено клипов: ${clipStarts.length}`,
-      },
-    });
+    await db(() =>
+      prisma.factoryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          status: "RENDERING",
+          totalClips: clipStarts.length,
+          progress: 30,
+          progressLabel: `Найдено клипов: ${clipStarts.length}`,
+        },
+      }),
+    );
 
     const totalRenders = clipStarts.length * targets.length;
     let completedRenders = 0;
@@ -321,15 +364,17 @@ async function processOneJob() {
         customPrefix: job.titlePrefix,
       });
 
-      const clip = await prisma.factoryClip.create({
-        data: {
-          jobId: job.id,
-          index: clipIndex,
-          startSec,
-          endSec,
-          title: baseTitle,
-        },
-      });
+      const clip = await db(() =>
+        prisma.factoryClip.create({
+          data: {
+            jobId: job.id,
+            index: clipIndex,
+            startSec,
+            endSec,
+            title: baseTitle,
+          },
+        }),
+      );
 
       for (const target of targets) {
         await assertNotCanceled(job.id);
@@ -369,147 +414,173 @@ async function processOneJob() {
           isCanceled: () => isJobCanceled(job.id),
         });
 
-        await assertNotCanceled(job.id);
+        try {
+          await assertNotCanceled(job.id);
 
-        const storageKey = `${getR2Prefix()}/jobs/${job.id}/targets/${
-          target.accountId
-        }/clips/${String(clipIndex).padStart(4, "0")}.mp4`;
+          const storageKey = `${getR2Prefix()}/jobs/${job.id}/targets/${
+            target.accountId
+          }/clips/${String(clipIndex).padStart(4, "0")}.mp4`;
 
-        const uploadedKey = await uploadFileToR2({
-          key: storageKey,
-          filePath: outputPath,
-          contentType: "video/mp4",
-        });
-
-        await prisma.factoryJob.update({
-          where: {
-            id: job.id,
-          },
-          data: {
-            status: "PUBLISHING",
-            progress:
-              75 + Math.round((completedRenders / Math.max(1, totalRenders)) * 20),
-            progressLabel: `Публикация ${clipIndex}/${clipStarts.length} в ${target.account.name}`,
-          },
-        });
-
-        const publish = await prisma.factoryPublish.create({
-          data: {
-            clipId: clip.id,
-            targetId: target.id,
-            accountId: target.accountId,
-            platform: target.platform,
-            status: "QUEUED",
-            renderFilePath: outputPath,
-            renderStorageKey: uploadedKey,
-          },
-        });
-
-        if (target.platform === "YOUTUBE") {
-          await prisma.factoryPublish.update({
-            where: {
-              id: publish.id,
-            },
-            data: {
-              status: "UPLOADING",
-            },
+          const uploadedKey = await uploadFileToR2({
+            key: storageKey,
+            filePath: outputPath,
+            contentType: "video/mp4",
           });
 
-          try {
-            const result = await uploadYoutubeShort({
-              accountId: target.accountId,
-              filePath: outputPath,
-              title,
-              description,
-            });
+          await db(() =>
+            prisma.factoryJob.update({
+              where: {
+                id: job.id,
+              },
+              data: {
+                status: "PUBLISHING",
+                progress:
+                  75 +
+                  Math.round(
+                    (completedRenders / Math.max(1, totalRenders)) * 20,
+                  ),
+                progressLabel: `Публикация ${clipIndex}/${clipStarts.length} в ${target.account.name}`,
+              },
+            }),
+          );
 
-            await prisma.factoryPublish.update({
-              where: {
-                id: publish.id,
-              },
+          const publish = await db(() =>
+            prisma.factoryPublish.create({
               data: {
-                status: "PUBLISHED",
-                platformPostId: result.id,
-                platformUrl: result.url,
+                clipId: clip.id,
+                targetId: target.id,
+                accountId: target.accountId,
+                platform: target.platform,
+                status: "QUEUED",
+                renderFilePath: outputPath,
+                renderStorageKey: uploadedKey,
               },
-            });
-          } catch (error) {
-            await prisma.factoryPublish.update({
-              where: {
-                id: publish.id,
-              },
-              data: {
-                status: "FAILED",
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "YouTube upload failed",
-              },
-            });
+            }),
+          );
+
+          if (target.platform === "YOUTUBE") {
+            await db(() =>
+              prisma.factoryPublish.update({
+                where: {
+                  id: publish.id,
+                },
+                data: {
+                  status: "UPLOADING",
+                  error: null,
+                },
+              }),
+            );
+
+            try {
+              const result = await uploadYoutubeShort({
+                accountId: target.accountId,
+                filePath: outputPath,
+                title,
+                description,
+              });
+
+              await db(() =>
+                prisma.factoryPublish.update({
+                  where: {
+                    id: publish.id,
+                  },
+                  data: {
+                    status: "PUBLISHED",
+                    platformPostId: result.id,
+                    platformUrl: result.url,
+                    error: null,
+                  },
+                }),
+              );
+            } catch (error) {
+              await safeDb(() =>
+                prisma.factoryPublish.update({
+                  where: {
+                    id: publish.id,
+                  },
+                  data: {
+                    status: "FAILED",
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "YouTube upload failed",
+                  },
+                }),
+              );
+            }
           }
-        }
 
-        if (target.platform === "TIKTOK") {
-          await prisma.factoryPublish.update({
-            where: {
-              id: publish.id,
-            },
-            data: {
-              status: "UPLOADING",
-            },
-          });
+          if (target.platform === "TIKTOK") {
+            await db(() =>
+              prisma.factoryPublish.update({
+                where: {
+                  id: publish.id,
+                },
+                data: {
+                  status: "UPLOADING",
+                  error: null,
+                },
+              }),
+            );
 
-          try {
-            const result = await uploadTikTokDraft({
-              accountId: target.accountId,
-              filePath: outputPath,
-              title,
-              description,
-            });
+            try {
+              const result = await uploadTikTokDraft({
+                accountId: target.accountId,
+                filePath: outputPath,
+                title,
+                description,
+              });
 
-            await prisma.factoryPublish.update({
-              where: {
-                id: publish.id,
-              },
-              data: {
-                status: "PUBLISHED",
-                platformPostId: result.id,
-                platformUrl: result.url,
-                error: result.message,
-              },
-            });
-          } catch (error) {
-            await prisma.factoryPublish.update({
-              where: {
-                id: publish.id,
-              },
-              data: {
-                status: "FAILED",
-                error:
-                  error instanceof Error
-                    ? error.message
-                    : "TikTok draft upload failed",
-              },
-            });
+              await db(() =>
+                prisma.factoryPublish.update({
+                  where: {
+                    id: publish.id,
+                  },
+                  data: {
+                    status: "PUBLISHED",
+                    platformPostId: result.id,
+                    platformUrl: result.url,
+                    error: result.message,
+                  },
+                }),
+              );
+            } catch (error) {
+              await safeDb(() =>
+                prisma.factoryPublish.update({
+                  where: {
+                    id: publish.id,
+                  },
+                  data: {
+                    status: "FAILED",
+                    error:
+                      error instanceof Error
+                        ? error.message
+                        : "TikTok draft upload failed",
+                  },
+                }),
+              );
+            }
           }
+
+          completedRenders += 1;
+        } finally {
+          await rm(outputPath, { force: true });
         }
-
-        completedRenders += 1;
-
-        await rm(outputPath, { force: true });
       }
     }
 
-    await prisma.factoryJob.update({
-      where: {
-        id: job.id,
-      },
-      data: {
-        status: "DONE",
-        progress: 100,
-        progressLabel: "Готово",
-      },
-    });
+    await db(() =>
+      prisma.factoryJob.update({
+        where: {
+          id: job.id,
+        },
+        data: {
+          status: "DONE",
+          progress: 100,
+          progressLabel: "Готово",
+        },
+      }),
+    );
 
     if (sourcePath) {
       await rm(sourcePath, { force: true });
@@ -526,16 +597,7 @@ async function processOneJob() {
     if (isCanceledError) {
       await markJobCanceled(job.id);
     } else {
-      await prisma.factoryJob.update({
-        where: {
-          id: job.id,
-        },
-        data: {
-          status: "FAILED",
-          error: error instanceof Error ? error.message : "Unknown error",
-          progressLabel: "Ошибка",
-        },
-      });
+      await markJobFailed(job.id, error);
     }
 
     if (sourcePath) {
@@ -547,17 +609,19 @@ async function processOneJob() {
 }
 
 async function resetInterruptedJobs() {
-  await prisma.factoryJob.updateMany({
-    where: {
-      status: {
-        in: ["DOWNLOADING", "RENDERING", "PUBLISHING"],
+  await db(() =>
+    prisma.factoryJob.updateMany({
+      where: {
+        status: {
+          in: ["DOWNLOADING", "RENDERING", "PUBLISHING"],
+        },
       },
-    },
-    data: {
-      status: "QUEUED",
-      progressLabel: "Задача восстановлена после перезапуска worker",
-    },
-  });
+      data: {
+        status: "QUEUED",
+        progressLabel: "Задача восстановлена после перезапуска worker",
+      },
+    }),
+  );
 }
 
 async function main() {
