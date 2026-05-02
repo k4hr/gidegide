@@ -334,13 +334,18 @@ async function processOneJob() {
       for (const target of targets) {
         await assertNotCanceled(job.id);
 
+        const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
+
         const title = buildClipTitle({
           game: job.game,
           clipIndex,
-          customPrefix: target.titlePrefix || job.titlePrefix,
+          customPrefix: titlePrefixForTarget,
         });
 
-        const description = buildClipDescription(job.game);
+        const description = buildClipDescription({
+          game: job.game,
+          customPrefix: titlePrefixForTarget,
+        });
 
         const renderProgress =
           30 + Math.round((completedRenders / Math.max(1, totalRenders)) * 45);
