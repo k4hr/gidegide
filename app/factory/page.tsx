@@ -15,6 +15,8 @@ type FactoryGame =
   | "DOTA2"
   | "OTHER";
 
+type FactoryPublishTiming = "NOW" | "NY_14" | "NY_17" | "NY_20" | "NY_22";
+
 type FactoryTemplate = {
   id: string;
   name: string;
@@ -33,6 +35,7 @@ type TargetState = {
   enabled: boolean;
   templateId: string;
   titlePrefix: string;
+  maxClips: number;
 };
 
 type FactoryJob = {
@@ -49,12 +52,15 @@ type FactoryJob = {
   totalClips: number;
   progress: number;
   progressLabel: string | null;
+  publishTiming: FactoryPublishTiming;
+  scheduledAt: string | null;
   cancelRequested: boolean;
   createdAt: string;
   targets: {
     id: string;
     platform: FactoryPlatform;
     titlePrefix: string | null;
+    maxClips: number;
     account: FactoryAccount;
     template: FactoryTemplate | null;
   }[];
@@ -89,6 +95,38 @@ const gameOptions: Array<{
   { value: "OTHER", label: "Other", titlePrefix: "Lana watches games" },
 ];
 
+const publishTimingOptions: Array<{
+  value: FactoryPublishTiming;
+  title: string;
+  description: string;
+}> = [
+  {
+    value: "NOW",
+    title: "Загрузить сейчас",
+    description: "Worker начнет обработку и публикацию сразу после создания задачи.",
+  },
+  {
+    value: "NY_14",
+    title: "14:00 New York = 21:00 МСК",
+    description: "Задача будет ждать ближайшее 14:00 по New York time.",
+  },
+  {
+    value: "NY_17",
+    title: "17:00 New York = 00:00 МСК",
+    description: "Задача будет ждать ближайшее 17:00 по New York time.",
+  },
+  {
+    value: "NY_20",
+    title: "20:00 New York = 03:00 МСК",
+    description: "Основное вечернее окно для USA-аудитории.",
+  },
+  {
+    value: "NY_22",
+    title: "22:00 New York = 05:00 МСК",
+    description: "Позднее вечернее окно для USA-аудитории.",
+  },
+];
+
 function canCancel(job: FactoryJob) {
   return !["DONE", "FAILED", "CANCELED"].includes(job.status);
 }
@@ -107,6 +145,22 @@ function getDefaultTemplateId(templates: FactoryTemplate[]) {
   );
 }
 
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+
+  return new Date(value).toLocaleString("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+function getPublishTimingLabel(value: FactoryPublishTiming) {
+  return (
+    publishTimingOptions.find((option) => option.value === value)?.title ??
+    "Загрузить сейчас"
+  );
+}
+
 export default function FactoryPage() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
   const [sourceUrl, setSourceUrl] = useState("");
@@ -114,6 +168,8 @@ export default function FactoryPage() {
   const [clipSeconds, setClipSeconds] = useState("45");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
   const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
+  const [publishTiming, setPublishTiming] =
+    useState<FactoryPublishTiming>("NOW");
   const [templateId, setTemplateId] = useState("");
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
@@ -203,6 +259,7 @@ export default function FactoryPage() {
             enabled: false,
             templateId,
             titlePrefix,
+            maxClips: 10,
           };
         }
       }
@@ -254,6 +311,7 @@ export default function FactoryPage() {
           templateId ||
           getDefaultTemplateId(templates),
         titlePrefix: current[accountId]?.titlePrefix || titlePrefix,
+        maxClips: current[accountId]?.maxClips ?? 10,
         ...patch,
       },
     }));
@@ -269,6 +327,7 @@ export default function FactoryPage() {
           templateId ||
           getDefaultTemplateId(templates),
         titlePrefix: targets[account.id]?.titlePrefix || titlePrefix,
+        maxClips: targets[account.id]?.maxClips ?? 10,
       }));
   }
 
@@ -284,6 +343,7 @@ export default function FactoryPage() {
         game,
         titlePrefix,
         templateId: templateId || null,
+        publishTiming,
         targets: getSelectedTargets(),
       }),
     });
@@ -309,6 +369,7 @@ export default function FactoryPage() {
     formData.set("game", game);
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
+    formData.set("publishTiming", publishTiming);
     formData.set("targets", JSON.stringify(getSelectedTargets()));
 
     await new Promise<void>((resolve, reject) => {
@@ -356,7 +417,9 @@ export default function FactoryPage() {
 
     try {
       if (templates.length === 0) {
-        throw new Error("Сначала создай хотя бы один шаблон на странице /factory/templates");
+        throw new Error(
+          "Сначала создай хотя бы один шаблон на странице /factory/templates",
+        );
       }
 
       if (getSelectedTargets().length === 0) {
@@ -411,9 +474,9 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Выбираешь игру, источник и конкретные аккаунты. Для каждого
-            YouTube/TikTok аккаунта можно выбрать свой шаблон: Lana, Mia,
-            Amelia или любой другой.
+            Выбираешь игру, источник, время публикации и конкретные аккаунты.
+            Для каждого YouTube/TikTok аккаунта можно выбрать свой шаблон и
+            количество роликов.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -421,7 +484,9 @@ export default function FactoryPage() {
               Источник
               <select
                 value={sourceMode}
-                onChange={(event) => setSourceMode(event.target.value as SourceMode)}
+                onChange={(event) =>
+                  setSourceMode(event.target.value as SourceMode)
+                }
               >
                 <option value="YOUTUBE">YouTube URL → RIP auto downloader</option>
                 <option value="UPLOAD">Загрузить MP4 вручную</option>
@@ -533,9 +598,36 @@ export default function FactoryPage() {
             </div>
 
             <section className="target-panel">
+              <h2>Когда публиковать</h2>
+              <p className="muted">
+                Если выбираешь время New York, задача создастся сразу, но worker
+                начнет обработку и публикацию только когда наступит выбранное
+                время.
+              </p>
+
+              <div className="schedule-options">
+                {publishTimingOptions.map((option) => (
+                  <label className="target-checkbox schedule-option" key={option.value}>
+                    <input
+                      type="checkbox"
+                      checked={publishTiming === option.value}
+                      onChange={() => setPublishTiming(option.value)}
+                    />
+
+                    <span>
+                      <b>{option.title}</b>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="target-panel">
               <h2>Куда публиковать</h2>
               <p className="muted">
-                Отметь аккаунты и выбери отдельный шаблон под каждый канал.
+                Отметь аккаунты, выбери отдельный шаблон под каждый канал и
+                укажи количество роликов для каждого аккаунта.
               </p>
 
               <div className="target-list">
@@ -544,6 +636,7 @@ export default function FactoryPage() {
                     enabled: false,
                     templateId: templateId || getDefaultTemplateId(templates),
                     titlePrefix,
+                    maxClips: 10,
                   };
 
                   return (
@@ -562,7 +655,7 @@ export default function FactoryPage() {
                         <b>{account.name}</b>
                       </label>
 
-                      <div className="grid grid-2">
+                      <div className="target-settings-grid">
                         <label>
                           Шаблон
                           <select
@@ -597,6 +690,24 @@ export default function FactoryPage() {
                             placeholder={titlePrefix}
                           />
                         </label>
+
+                        <label>
+                          Кол-во видео
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={state.maxClips}
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                maxClips: Math.max(
+                                  1,
+                                  Math.min(100, Number(event.target.value) || 1),
+                                ),
+                              })
+                            }
+                          />
+                        </label>
                       </div>
                     </div>
                   );
@@ -612,7 +723,8 @@ export default function FactoryPage() {
             </section>
 
             <p className="muted">
-              Для {selectedGame.label} описание будет с 5 хэштегами автоматически.
+              Для {selectedGame.label} описание будет с 5 хэштегами
+              автоматически.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
@@ -675,6 +787,12 @@ export default function FactoryPage() {
 
                         <p className="muted">{job.progressLabel ?? "Ожидание"}</p>
 
+                        {job.scheduledAt ? (
+                          <p className="muted">
+                            Запланировано: {formatDateTime(job.scheduledAt)}
+                          </p>
+                        ) : null}
+
                         {job.error ? <p className="error">{job.error}</p> : null}
                       </div>
                     </div>
@@ -689,13 +807,18 @@ export default function FactoryPage() {
                       {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
                       {job.clipSeconds} сек
                     </p>
+
+                    <p className="muted">
+                      {getPublishTimingLabel(job.publishTiming)}
+                    </p>
                   </td>
 
                   <td>
                     {job.targets.map((target) => (
                       <p key={target.id} className="muted">
                         <span className="badge">{target.platform}</span>{" "}
-                        {target.account.name} · {target.template?.name ?? "Default"}
+                        {target.account.name} · {target.template?.name ?? "Default"} ·{" "}
+                        {target.maxClips} видео
                       </p>
                     ))}
                   </td>
