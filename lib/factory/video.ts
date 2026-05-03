@@ -172,3 +172,36 @@ export async function getVideoDurationSeconds(filePath: string) {
 
   return Math.floor(duration);
 }
+
+export async function hasAudioStream(filePath: string) {
+  try {
+    const output = await readCommand("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "a:0",
+      "-show_entries",
+      "stream=codec_type",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ]);
+
+    return output
+      .split("\n")
+      .map((line) => line.trim().toLowerCase())
+      .includes("audio");
+  } catch {
+    return false;
+  }
+}
+
+export async function assertVideoHasAudio(filePath: string) {
+  const hasAudio = await hasAudioStream(filePath);
+
+  if (!hasAudio) {
+    throw new Error(
+      "В скачанном видео нет звука. Дай другое видео или ссылку, где доступен 720p MP4 со звуком.",
+    );
+  }
+}
