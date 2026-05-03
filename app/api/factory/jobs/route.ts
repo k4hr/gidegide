@@ -47,6 +47,8 @@ const jsonCreateJobSchema = z.object({
   targets: z.array(targetSchema).min(1),
 });
 
+type ParsedTarget = z.infer<typeof targetSchema>;
+
 function parseClipSeconds(value: FormDataEntryValue | null) {
   const numberValue = Number(value);
 
@@ -75,12 +77,45 @@ function parsePublishTiming(value: FormDataEntryValue | null) {
 
 function parseTargets(value: FormDataEntryValue | null) {
   if (!value || typeof value !== "string") {
-    throw new Error("Выбери хотя бы один аккаунт для публикации");
+    throw new Error("Выбери хотя бы один аккаунт публикации");
   }
 
-  const parsed = JSON.parse(value) as unknown;
+  let parsed: unknown;
 
-  return z.array(targetSchema).min(1).parse(parsed);
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    throw new Error("Не получилось прочитать выбранные аккаунты публикации");
+  }
+
+  const targets = z.array(targetSchema).min(1).parse(parsed);
+
+  return normalizeTargets(targets);
+}
+
+function normalizeTargets(targets: ParsedTarget[]) {
+  const byAccountId = new Map<string, ParsedTarget>();
+
+  for (const target of targets) {
+    const accountId = target.accountId.trim();
+
+    if (!accountId) continue;
+
+    byAccountId.set(accountId, {
+      accountId,
+      templateId: target.templateId?.trim() || null,
+      titlePrefix: target.titlePrefix?.trim() || null,
+      maxClips: Math.max(1, Math.min(100, Number(target.maxClips || 10))),
+    });
+  }
+
+  const normalized = Array.from(byAccountId.values());
+
+  if (normalized.length === 0) {
+    throw new Error("Выбери хотя бы один аккаунт публикации");
+  }
+
+  return normalized;
 }
 
 function buildSchedule(publishTiming: z.infer<typeof publishTimingSchema>) {
@@ -102,63 +137,155 @@ function buildSchedule(publishTiming: z.infer<typeof publishTimingSchema>) {
 }
 
 async function resolveTemplateId(templateId?: string | null) {
-  if (templateId) {
-    return templateId;
+  if (templateId?.trim()) {
+    return templateId.trim();
   }
 
-  const defaultTemplate = await prisma.factoryTemplate.findFirst({
-    where: {
-      isDefault: true,
-    },
-  });
+  const defaultTemplate = await withDbRetry(() =>
+    prisma.factoryTemplate.findFirst({
+      where: {
+        isDefault: true,
+      },
+      select: {
+        id: true,
+      },
+    }),
+  );
 
   return defaultTemplate?.id ?? null;
 }
 
-async function createTargetsForJob(input: {
-  jobId: string;
+async function createJobWithTargets(input: {
+  sourceUrl: string | null;
+  sourceFilePath?: string | null;
+  sourceStorageKey?: string | null;
+  sourceOriginalName?: string | null;
+  sourceSizeBytes?: number | null;
+  clipSeconds: number;
+  titlePrefix: string;
+  game: z.infer<typeof gameSchema>;
   globalTemplateId: string | null;
-  globalTitlePrefix: string;
-  targets: Array<z.infer<typeof targetSchema>>;
+  publishTiming: z.infer<typeof publishTimingSchema>;
+  scheduledAt: Date | null;
+  progressLabel: string;
+  targets: ParsedTarget[];
 }) {
-  const accountIds = Array.from(
-    new Set(input.targets.map((target) => target.accountId)),
-  );
+  const normalizedTargets = normalizeTargets(input.targets);
+  const accountIds = normalizedTargets.map((target) => target.accountId);
 
-  const accounts = await prisma.factoryAccount.findMany({
-    where: {
-      id: {
-        in: accountIds,
-      },
-    },
-  });
+  return withDbRetry(() =>
+    prisma.$transaction(async (tx) => {
+      const accounts = await tx.factoryAccount.findMany({
+        where: {
+          id: {
+            in: accountIds,
+          },
+        },
+        select: {
+          id: true,
+          platform: true,
+          name: true,
+        },
+      });
 
-  if (accounts.length !== accountIds.length) {
-    throw new Error("Один или несколько аккаунтов не найдены");
-  }
-
-  const accountById = new Map(accounts.map((account) => [account.id, account]));
-
-  await prisma.factoryJobTarget.createMany({
-    data: input.targets.map((target) => {
-      const account = accountById.get(target.accountId);
-
-      if (!account) {
-        throw new Error("Аккаунт не найден");
+      if (accounts.length !== accountIds.length) {
+        throw new Error("Один или несколько аккаунтов публикации не найдены");
       }
 
-      return {
-        jobId: input.jobId,
-        accountId: account.id,
-        platform: account.platform,
-        templateId: target.templateId || input.globalTemplateId,
-        titlePrefix: target.titlePrefix?.trim() || input.globalTitlePrefix,
-        maxClips: target.maxClips,
-      };
-    }),
-  });
+      const accountById = new Map(accounts.map((account) => [account.id, account]));
 
-  return Array.from(new Set(accounts.map((account) => account.platform)));
+      const templateIds = Array.from(
+        new Set(
+          normalizedTargets
+            .map((target) => target.templateId || input.globalTemplateId)
+            .filter(Boolean) as string[],
+        ),
+      );
+
+      if (templateIds.length === 0) {
+        throw new Error(
+          "Не выбран шаблон публикации. Создай шаблон и выбери его для аккаунта.",
+        );
+      }
+
+      const templates = await tx.factoryTemplate.findMany({
+        where: {
+          id: {
+            in: templateIds,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (templates.length !== templateIds.length) {
+        throw new Error("Один или несколько шаблонов публикации не найдены");
+      }
+
+      const platforms = Array.from(
+        new Set(accounts.map((account) => account.platform)),
+      );
+
+      const job = await tx.factoryJob.create({
+        data: {
+          sourceUrl: input.sourceUrl,
+          sourceFilePath: input.sourceFilePath ?? null,
+          sourceStorageKey: input.sourceStorageKey ?? null,
+          sourceOriginalName: input.sourceOriginalName ?? null,
+          sourceSizeBytes: input.sourceSizeBytes ?? null,
+          clipSeconds: input.clipSeconds,
+          titlePrefix: input.titlePrefix,
+          game: input.game,
+          templateId: input.globalTemplateId,
+          platforms,
+          publishTiming: input.publishTiming,
+          scheduledAt: input.scheduledAt,
+          progress: 0,
+          progressLabel: input.progressLabel,
+          cancelRequested: false,
+          targets: {
+            create: normalizedTargets.map((target) => {
+              const account = accountById.get(target.accountId);
+              const targetTemplateId = target.templateId || input.globalTemplateId;
+
+              if (!account) {
+                throw new Error("Аккаунт публикации не найден");
+              }
+
+              if (!targetTemplateId) {
+                throw new Error(
+                  `Для аккаунта "${account.name}" не выбран шаблон публикации`,
+                );
+              }
+
+              return {
+                accountId: account.id,
+                platform: account.platform,
+                templateId: targetTemplateId,
+                titlePrefix: target.titlePrefix || input.titlePrefix,
+                maxClips: target.maxClips,
+              };
+            }),
+          },
+        },
+        include: {
+          targets: {
+            include: {
+              account: true,
+              template: true,
+            },
+          },
+        },
+      });
+
+      if (job.targets.length === 0) {
+        throw new Error("Задача не создана: аккаунты публикации не сохранились");
+      }
+
+      return job;
+    }),
+  );
 }
 
 export async function GET() {
@@ -240,6 +367,7 @@ export async function POST(request: Request) {
         .parse(formData.get("titlePrefix") || undefined);
 
       const titlePrefix = rawTitlePrefix?.trim() || gameMeta.titlePrefix;
+
       const templateId = await resolveTemplateId(
         z
           .string()
@@ -263,48 +391,15 @@ export async function POST(request: Request) {
         );
       }
 
-      const job = await prisma.factoryJob.create({
-        data: {
-          sourceUrl: null,
-          clipSeconds,
-          titlePrefix,
-          game,
-          templateId,
-          platforms: [],
-          publishTiming,
-          scheduledAt: schedule.scheduledAt,
-          progress: 0,
-          progressLabel:
-            publishTiming === "NOW"
-              ? "Загружаю исходный файл"
-              : schedule.progressLabel,
-          cancelRequested: false,
-        },
-      });
-
-      const platforms = await createTargetsForJob({
-        jobId: job.id,
-        globalTemplateId: templateId,
-        globalTitlePrefix: titlePrefix,
-        targets,
-      });
-
-      await prisma.factoryJob.update({
-        where: {
-          id: job.id,
-        },
-        data: {
-          platforms,
-        },
-      });
-
       const buffer = Buffer.from(await file.arrayBuffer());
       const ext = extFromName(file.name);
-      const fileName = `${job.id}-${safeFileName(file.name)}${ext}`;
+      const tempId = crypto.randomUUID();
+      const fileName = `${tempId}-${safeFileName(file.name)}${ext}`;
       const filePath = path.join(FACTORY_SOURCE_DIR, fileName);
-      const storageKey = `${getR2Prefix()}/jobs/${job.id}/source/${fileName}`;
 
       await writeFile(filePath, buffer);
+
+      const storageKey = `${getR2Prefix()}/jobs/${tempId}/source/${fileName}`;
 
       const uploadedKey = await uploadBufferToR2({
         key: storageKey,
@@ -312,22 +407,24 @@ export async function POST(request: Request) {
         contentType: file.type || "video/mp4",
       });
 
-      const updatedJob = await prisma.factoryJob.update({
-        where: {
-          id: job.id,
-        },
-        data: {
-          sourceFilePath: filePath,
-          sourceStorageKey: uploadedKey,
-          sourceOriginalName: file.name,
-          sourceSizeBytes: buffer.byteLength,
-          progress: 0,
-          progressLabel: schedule.progressLabel,
-        },
+      const job = await createJobWithTargets({
+        sourceUrl: null,
+        sourceFilePath: filePath,
+        sourceStorageKey: uploadedKey,
+        sourceOriginalName: file.name,
+        sourceSizeBytes: buffer.byteLength,
+        clipSeconds,
+        titlePrefix,
+        game,
+        globalTemplateId: templateId,
+        publishTiming,
+        scheduledAt: schedule.scheduledAt,
+        progressLabel: schedule.progressLabel,
+        targets,
       });
 
       return NextResponse.json({
-        job: updatedJob,
+        job,
       });
     }
 
@@ -337,41 +434,22 @@ export async function POST(request: Request) {
     const templateId = await resolveTemplateId(data.templateId);
     const titlePrefix = data.titlePrefix?.trim() || gameMeta.titlePrefix;
     const schedule = buildSchedule(data.publishTiming);
+    const targets = normalizeTargets(data.targets);
 
-    const job = await prisma.factoryJob.create({
-      data: {
-        sourceUrl: data.sourceUrl,
-        clipSeconds: data.clipSeconds,
-        titlePrefix,
-        game: data.game,
-        templateId,
-        platforms: [],
-        publishTiming: data.publishTiming,
-        scheduledAt: schedule.scheduledAt,
-        progress: 0,
-        progressLabel: schedule.progressLabel,
-        cancelRequested: false,
-      },
-    });
-
-    const platforms = await createTargetsForJob({
-      jobId: job.id,
+    const job = await createJobWithTargets({
+      sourceUrl: data.sourceUrl,
+      clipSeconds: data.clipSeconds,
+      titlePrefix,
+      game: data.game,
       globalTemplateId: templateId,
-      globalTitlePrefix: titlePrefix,
-      targets: data.targets,
-    });
-
-    const updatedJob = await prisma.factoryJob.update({
-      where: {
-        id: job.id,
-      },
-      data: {
-        platforms,
-      },
+      publishTiming: data.publishTiming,
+      scheduledAt: schedule.scheduledAt,
+      progressLabel: schedule.progressLabel,
+      targets,
     });
 
     return NextResponse.json({
-      job: updatedJob,
+      job,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
