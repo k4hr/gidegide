@@ -1,8 +1,9 @@
 import path from "node:path";
+import { rm } from "node:fs/promises";
 import { chromium, type Page } from "playwright";
 
 import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { runCommand } from "@/lib/factory/video";
+import { hasAudioStream, runCommand } from "@/lib/factory/video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -101,47 +102,108 @@ function scoreDownloadLink(text: string, href: string) {
   let score = 0;
 
   if (value.includes("download")) score += 40;
-  if (value.includes("mp4")) score += 35;
-  if (value.includes("720")) score += 30;
-  if (value.includes("480")) score += 20;
-  if (value.includes("360")) score += 10;
+  if (value.includes("скачать")) score += 40;
+  if (value.includes("mp4")) score += 40;
+  if (value.includes("avc1")) score += 10;
   if (value.includes("video")) score += 8;
   if (value.includes("genyoutube")) score += 8;
   if (value.includes("/mates/")) score += 8;
   if (value.includes("quality")) score += 6;
 
-  if (value.includes("mp3")) score -= 70;
-  if (value.includes("audio")) score -= 30;
-  if (value.includes("advert")) score -= 40;
-  if (value.includes("adclick")) score -= 40;
+  if (value.includes("720p60")) score += 120;
+  else if (value.includes("720p")) score += 115;
+  else if (value.includes("720")) score += 110;
+
+  if (value.includes("1080p60")) score += 20;
+  else if (value.includes("1080p")) score += 15;
+  else if (value.includes("1080")) score += 10;
+
+  if (value.includes("480p")) score -= 10;
+  if (value.includes("360p")) score -= 25;
+  if (value.includes("240p")) score -= 50;
+  if (value.includes("144p")) score -= 60;
+
+  if (value.includes("mp3")) score -= 120;
+  if (value.includes("audio only")) score -= 120;
+  if (value.includes("audio-only")) score -= 120;
+  if (value.includes("advert")) score -= 80;
+  if (value.includes("adclick")) score -= 80;
+
+  if (value.includes("🔇")) score -= 250;
+  if (value.includes("muted")) score -= 250;
+  if (value.includes("no audio")) score -= 250;
+  if (value.includes("without audio")) score -= 250;
+  if (value.includes("без звука")) score -= 250;
+
+  if (value.includes("🔊")) score += 80;
+  if (value.includes("sound")) score += 35;
+  if (value.includes("audio")) score += 20;
+  if (value.includes("with audio")) score += 80;
+  if (value.includes("со звуком")) score += 80;
 
   return score;
 }
 
-async function getBestDownloadLink(page: Page) {
+async function getDownloadLinks(page: Page) {
   const candidates = await page.evaluate(() => {
+    function getRowText(element: Element) {
+      const row =
+        element.closest("tr") ||
+        element.closest("li") ||
+        element.closest(".row") ||
+        element.closest(".download") ||
+        element.closest(".format");
+
+      return row?.textContent || "";
+    }
+
     return Array.from(document.querySelectorAll("a"))
       .map((link) => {
         const anchor = link as HTMLAnchorElement;
+        const rowText = getRowText(anchor);
 
         return {
           href: anchor.href,
-          text: anchor.innerText || anchor.textContent || "",
+          text: [
+            anchor.innerText || anchor.textContent || "",
+            anchor.getAttribute("title") || "",
+            anchor.getAttribute("aria-label") || "",
+            rowText,
+          ]
+            .join(" ")
+            .replace(/\s+/g, " ")
+            .trim(),
         };
       })
       .filter((item) => item.href);
   });
 
-  const scored: LinkCandidate[] = candidates
-    .filter((item) => !isBadHref(item.href))
-    .map((item) => ({
-      ...item,
-      score: scoreDownloadLink(item.text, item.href),
-    }))
-    .filter((item) => item.score > 25)
-    .sort((a, b) => b.score - a.score);
+  const unique = new Map<string, LinkCandidate>();
 
-  return scored[0] ?? null;
+  for (const item of candidates) {
+    if (isBadHref(item.href)) continue;
+
+    const score = scoreDownloadLink(item.text, item.href);
+
+    if (score <= 25) continue;
+
+    const current = unique.get(item.href);
+
+    if (!current || score > current.score) {
+      unique.set(item.href, {
+        ...item,
+        score,
+      });
+    }
+  }
+
+  return Array.from(unique.values()).sort((a, b) => b.score - a.score);
+}
+
+async function getBestDownloadLink(page: Page) {
+  const links = await getDownloadLinks(page);
+
+  return links[0] ?? null;
 }
 
 async function clickBestButton(page: Page) {
@@ -154,7 +216,7 @@ async function clickBestButton(page: Page) {
     score: number;
   }> = [];
 
-  for (let index = 0; index < Math.min(count, 120); index += 1) {
+  for (let index = 0; index < Math.min(count, 140); index += 1) {
     const item = clickable.nth(index);
 
     try {
@@ -230,6 +292,101 @@ async function downloadHrefToFile(input: {
   );
 }
 
+async function downloadAndValidateAudio(input: {
+  href: string;
+  outputPath: string;
+  isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
+  label: string;
+}) {
+  await rm(input.outputPath, {
+    force: true,
+  });
+
+  await input.onProgress?.(22, input.label);
+
+  await downloadHrefToFile({
+    href: input.href,
+    outputPath: input.outputPath,
+    isCanceled: input.isCanceled,
+  });
+
+  const hasAudio = await hasAudioStream(input.outputPath);
+
+  if (!hasAudio) {
+    await rm(input.outputPath, {
+      force: true,
+    });
+
+    throw new Error("RIP-ссылка скачалась без звука");
+  }
+
+  return input.outputPath;
+}
+
+async function tryDownloadLinksWithAudio(input: {
+  links: LinkCandidate[];
+  outputPath: string;
+  isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
+}) {
+  const preferredLinks = input.links
+    .filter((link) => {
+      const value = `${link.text} ${link.href}`.toLowerCase();
+
+      return value.includes("720");
+    })
+    .concat(
+      input.links.filter((link) => {
+        const value = `${link.text} ${link.href}`.toLowerCase();
+
+        return !value.includes("720");
+      }),
+    );
+
+  const attempts = preferredLinks.slice(0, 8);
+  let lastError: unknown = null;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const link = attempts[index];
+
+    await assertNotCanceled(input.isCanceled);
+
+    try {
+      await input.onProgress?.(
+        18 + Math.min(index, 4),
+        `Пробую RIP MP4 со звуком: ${link.text.slice(0, 90) || "download link"}`,
+      );
+
+      return await downloadAndValidateAudio({
+        href: link.href,
+        outputPath: input.outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+        label: "Скачиваю RIP MP4 и проверяю звук",
+      });
+    } catch (error) {
+      lastError = error;
+
+      console.error(
+        `RIP candidate failed or has no audio: ${link.text} ${link.href}`,
+        error,
+      );
+
+      await input.onProgress?.(
+        18 + Math.min(index, 4),
+        "RIP-ссылка без звука, пробую следующую",
+      );
+    }
+  }
+
+  throw new Error(
+    lastError instanceof Error
+      ? `RIP не дал MP4 со звуком: ${lastError.message}`
+      : "RIP не дал MP4 со звуком",
+  );
+}
+
 export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
   await ensureFactoryDirs();
 
@@ -277,23 +434,19 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
     for (let step = 1; step <= 6; step += 1) {
       await assertNotCanceled(input.isCanceled);
 
-      const link = await getBestDownloadLink(page);
+      const links = await getDownloadLinks(page);
 
-      if (link) {
-        await input.onProgress?.(
-          10 + step * 3,
-          `Нашел ссылку скачивания, пробую скачать MP4`,
-        );
-
-        await downloadHrefToFile({
-          href: link.href,
+      if (links.length > 0) {
+        const filePath = await tryDownloadLinksWithAudio({
+          links,
           outputPath,
           isCanceled: input.isCanceled,
+          onProgress: input.onProgress,
         });
 
-        await input.onProgress?.(30, "MP4 скачан через RIP-сервис");
+        await input.onProgress?.(30, "MP4 720p со звуком скачан через RIP");
 
-        return outputPath;
+        return filePath;
       }
 
       await input.onProgress?.(
@@ -316,10 +469,27 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
       const download = await downloadPromise;
 
       if (download) {
-        await download.saveAs(outputPath);
-        await input.onProgress?.(30, "MP4 скачан через RIP-сервис");
+        await rm(outputPath, {
+          force: true,
+        });
 
-        return outputPath;
+        await download.saveAs(outputPath);
+
+        const hasAudio = await hasAudioStream(outputPath);
+
+        if (hasAudio) {
+          await input.onProgress?.(30, "MP4 со звуком скачан через RIP");
+          return outputPath;
+        }
+
+        await rm(outputPath, {
+          force: true,
+        });
+
+        await input.onProgress?.(
+          18 + step,
+          "RIP download был без звука, пробую другой вариант",
+        );
       }
 
       await page.waitForLoadState("domcontentloaded", {
@@ -329,21 +499,37 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
       await page.waitForTimeout(4000);
     }
 
+    const finalLinks = await getDownloadLinks(page);
+
+    if (finalLinks.length > 0) {
+      const filePath = await tryDownloadLinksWithAudio({
+        links: finalLinks,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      await input.onProgress?.(30, "MP4 720p со звуком скачан через RIP");
+
+      return filePath;
+    }
+
     const finalLink = await getBestDownloadLink(page);
 
     if (finalLink) {
-      await downloadHrefToFile({
-        href: finalLink.href,
+      const filePath = await tryDownloadLinksWithAudio({
+        links: [finalLink],
         outputPath,
         isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
       });
 
-      await input.onProgress?.(30, "MP4 скачан через RIP-сервис");
+      await input.onProgress?.(30, "MP4 со звуком скачан через RIP");
 
-      return outputPath;
+      return filePath;
     }
 
-    throw new Error("RIP-сервис не вернул MP4-ссылку");
+    throw new Error("RIP-сервис не вернул MP4-ссылку со звуком");
   } finally {
     await browser.close().catch(() => {});
   }
