@@ -103,16 +103,16 @@ function scoreDownloadLink(text: string, href: string) {
 
   if (value.includes("download")) score += 40;
   if (value.includes("скачать")) score += 40;
-  if (value.includes("mp4")) score += 40;
+  if (value.includes("mp4")) score += 45;
   if (value.includes("avc1")) score += 10;
   if (value.includes("video")) score += 8;
   if (value.includes("genyoutube")) score += 8;
   if (value.includes("/mates/")) score += 8;
   if (value.includes("quality")) score += 6;
 
-  if (value.includes("720p60")) score += 120;
-  else if (value.includes("720p")) score += 115;
-  else if (value.includes("720")) score += 110;
+  if (value.includes("720p60")) score += 140;
+  else if (value.includes("720p")) score += 135;
+  else if (value.includes("720")) score += 125;
 
   if (value.includes("1080p60")) score += 20;
   else if (value.includes("1080p")) score += 15;
@@ -129,54 +129,57 @@ function scoreDownloadLink(text: string, href: string) {
   if (value.includes("advert")) score -= 80;
   if (value.includes("adclick")) score -= 80;
 
-  if (value.includes("🔇")) score -= 250;
-  if (value.includes("muted")) score -= 250;
-  if (value.includes("no audio")) score -= 250;
-  if (value.includes("without audio")) score -= 250;
-  if (value.includes("без звука")) score -= 250;
+  if (value.includes("🔇")) score -= 500;
+  if (value.includes("muted")) score -= 500;
+  if (value.includes("no audio")) score -= 500;
+  if (value.includes("without audio")) score -= 500;
+  if (value.includes("без звука")) score -= 500;
 
-  if (value.includes("🔊")) score += 80;
-  if (value.includes("sound")) score += 35;
-  if (value.includes("audio")) score += 20;
-  if (value.includes("with audio")) score += 80;
-  if (value.includes("со звуком")) score += 80;
+  if (value.includes("🔊")) score += 160;
+  if (value.includes("sound")) score += 80;
+  if (value.includes("with audio")) score += 160;
+  if (value.includes("со звуком")) score += 160;
 
   return score;
 }
 
 async function getDownloadLinks(page: Page) {
-  const candidates = await page.evaluate(() => {
-    function getRowText(element: Element) {
-      const row =
-        element.closest("tr") ||
-        element.closest("li") ||
-        element.closest(".row") ||
-        element.closest(".download") ||
-        element.closest(".format");
+  const candidates = (await page.evaluate(`
+    (() => {
+      const getRowText = (element) => {
+        const row =
+          element.closest("tr") ||
+          element.closest("li") ||
+          element.closest(".row") ||
+          element.closest(".download") ||
+          element.closest(".format");
 
-      return row?.textContent || "";
-    }
+        return row && row.textContent ? row.textContent : "";
+      };
 
-    return Array.from(document.querySelectorAll("a"))
-      .map((link) => {
-        const anchor = link as HTMLAnchorElement;
-        const rowText = getRowText(anchor);
+      return Array.from(document.querySelectorAll("a"))
+        .map((link) => {
+          const rowText = getRowText(link);
 
-        return {
-          href: anchor.href,
-          text: [
-            anchor.innerText || anchor.textContent || "",
-            anchor.getAttribute("title") || "",
-            anchor.getAttribute("aria-label") || "",
-            rowText,
-          ]
-            .join(" ")
-            .replace(/\s+/g, " ")
-            .trim(),
-        };
-      })
-      .filter((item) => item.href);
-  });
+          return {
+            href: link.href || "",
+            text: [
+              link.innerText || link.textContent || "",
+              link.getAttribute("title") || "",
+              link.getAttribute("aria-label") || "",
+              rowText
+            ]
+              .join(" ")
+              .replace(/\\s+/g, " ")
+              .trim()
+          };
+        })
+        .filter((item) => item.href);
+    })()
+  `)) as Array<{
+    href: string;
+    text: string;
+  }>;
 
   const unique = new Map<string, LinkCandidate>();
 
@@ -330,21 +333,30 @@ async function tryDownloadLinksWithAudio(input: {
   isCanceled?: CancelCheck;
   onProgress?: ProgressCallback;
 }) {
-  const preferredLinks = input.links
-    .filter((link) => {
-      const value = `${link.text} ${link.href}`.toLowerCase();
+  const sevenTwentyWithSound = input.links.filter((link) => {
+    const value = `${link.text} ${link.href}`.toLowerCase();
 
-      return value.includes("720");
-    })
-    .concat(
-      input.links.filter((link) => {
-        const value = `${link.text} ${link.href}`.toLowerCase();
+    return value.includes("720") && !value.includes("🔇");
+  });
 
-        return !value.includes("720");
-      }),
-    );
+  const otherWithSound = input.links.filter((link) => {
+    const value = `${link.text} ${link.href}`.toLowerCase();
 
-  const attempts = preferredLinks.slice(0, 8);
+    return !value.includes("720") && !value.includes("🔇");
+  });
+
+  const mutedFallback = input.links.filter((link) => {
+    const value = `${link.text} ${link.href}`.toLowerCase();
+
+    return value.includes("720") && value.includes("🔇");
+  });
+
+  const attempts = [
+    ...sevenTwentyWithSound,
+    ...otherWithSound,
+    ...mutedFallback,
+  ].slice(0, 10);
+
   let lastError: unknown = null;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -492,9 +504,11 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
         );
       }
 
-      await page.waitForLoadState("domcontentloaded", {
-        timeout: 20000,
-      }).catch(() => {});
+      await page
+        .waitForLoadState("domcontentloaded", {
+          timeout: 20000,
+        })
+        .catch(() => {});
 
       await page.waitForTimeout(4000);
     }
