@@ -15,7 +15,13 @@ type FactoryGame =
   | "DOTA2"
   | "OTHER";
 
-type FactoryPublishTiming = "NOW" | "NY_14" | "NY_17" | "NY_20" | "NY_22";
+type FactoryPublishTiming =
+  | "NOW"
+  | "NY_14"
+  | "NY_17"
+  | "NY_20"
+  | "NY_22"
+  | "USA_SMART";
 
 type FactoryTemplate = {
   id: string;
@@ -96,7 +102,7 @@ const gameOptions: Array<{
 ];
 
 const publishTimingOptions: Array<{
-  value: FactoryPublishTiming;
+  value: Exclude<FactoryPublishTiming, "USA_SMART">;
   title: string;
   description: string;
 }> = [
@@ -155,10 +161,25 @@ function formatDateTime(value: string | null) {
 }
 
 function getPublishTimingLabel(value: FactoryPublishTiming) {
+  if (value === "USA_SMART") {
+    return "Грамотный залив под USA";
+  }
+
   return (
     publishTimingOptions.find((option) => option.value === value)?.title ??
     "Загрузить сейчас"
   );
+}
+
+function getSubmitPublishTiming(event: React.FormEvent<HTMLFormElement>, fallback: FactoryPublishTiming) {
+  const nativeEvent = event.nativeEvent as SubmitEvent;
+  const submitter = nativeEvent.submitter;
+
+  if (submitter instanceof HTMLButtonElement && submitter.value === "USA_SMART") {
+    return "USA_SMART" as const;
+  }
+
+  return fallback;
 }
 
 export default function FactoryPage() {
@@ -331,7 +352,7 @@ export default function FactoryPage() {
       }));
   }
 
-  async function createYoutubeUrlJob() {
+  async function createYoutubeUrlJob(nextPublishTiming: FactoryPublishTiming) {
     const response = await fetch("/api/factory/jobs", {
       method: "POST",
       headers: {
@@ -343,7 +364,7 @@ export default function FactoryPage() {
         game,
         titlePrefix,
         templateId: templateId || null,
-        publishTiming,
+        publishTiming: nextPublishTiming,
         targets: getSelectedTargets(),
       }),
     });
@@ -357,7 +378,7 @@ export default function FactoryPage() {
     }
   }
 
-  async function createUploadJob() {
+  async function createUploadJob(nextPublishTiming: FactoryPublishTiming) {
     if (!sourceFile) {
       throw new Error("Выбери исходный MP4-файл");
     }
@@ -369,7 +390,7 @@ export default function FactoryPage() {
     formData.set("game", game);
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
-    formData.set("publishTiming", publishTiming);
+    formData.set("publishTiming", nextPublishTiming);
     formData.set("targets", JSON.stringify(getSelectedTargets()));
 
     await new Promise<void>((resolve, reject) => {
@@ -411,6 +432,8 @@ export default function FactoryPage() {
   async function createJob(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
+    const nextPublishTiming = getSubmitPublishTiming(event, publishTiming);
+
     setIsCreating(true);
     setError("");
     setUploadProgress(0);
@@ -427,10 +450,10 @@ export default function FactoryPage() {
       }
 
       if (sourceMode === "UPLOAD") {
-        await createUploadJob();
+        await createUploadJob(nextPublishTiming);
         setSourceFile(null);
       } else {
-        await createYoutubeUrlJob();
+        await createYoutubeUrlJob(nextPublishTiming);
         setSourceUrl("");
       }
 
@@ -605,6 +628,20 @@ export default function FactoryPage() {
                 время.
               </p>
 
+              <button
+                type="button"
+                className={`usa-smart-button ${
+                  publishTiming === "USA_SMART" ? "active" : ""
+                }`}
+                onClick={() => setPublishTiming("USA_SMART")}
+              >
+                <span>Грамотный залив под USA</span>
+                <small>
+                  21:00 МСК — 2 ролика · 23:00 МСК — 2 ролика · 01:00 МСК — 2
+                  ролика · 03:00 МСК — 2 ролика · 05:00 МСК — 2 ролика
+                </small>
+              </button>
+
               <div className="schedule-options">
                 {publishTimingOptions.map((option) => (
                   <label className="target-checkbox schedule-option" key={option.value}>
@@ -729,9 +766,20 @@ export default function FactoryPage() {
 
             {error ? <p className="error">{error}</p> : null}
 
-            <button disabled={isCreating}>
-              {isCreating ? "Создаю задачу..." : "Generate & Publish"}
-            </button>
+            <div className="submit-actions">
+              <button name="publishAction" value="DEFAULT" disabled={isCreating}>
+                {isCreating ? "Создаю задачу..." : "Generate & Publish"}
+              </button>
+
+              <button
+                name="publishAction"
+                value="USA_SMART"
+                className="secondary-button"
+                disabled={isCreating}
+              >
+                {isCreating ? "Создаю USA-пакет..." : "Грамотный залив под USA"}
+              </button>
+            </div>
           </form>
         </section>
 
