@@ -326,8 +326,11 @@ async function processOneJob() {
     const maxClips = Math.min(globalMaxClips, maxTargetClips);
     const clipStarts: number[] = [];
 
+    const clipStartIndex = Math.max(0, job.clipStartIndex ?? 0);
+    const firstStartSec = clipStartIndex * job.clipSeconds;
+
     for (
-      let startSec = 0;
+      let startSec = firstStartSec;
       startSec + job.clipSeconds <= duration && clipStarts.length < maxClips;
       startSec += job.clipSeconds
     ) {
@@ -353,11 +356,11 @@ async function processOneJob() {
     );
 
     const totalRenders = clipStarts.reduce((sum, _startSec, index) => {
-      const clipIndex = index + 1;
+      const localClipNumber = index + 1;
 
       return (
         sum +
-        targets.filter((target) => clipIndex <= (target.maxClips ?? 10)).length
+        targets.filter((target) => localClipNumber <= (target.maxClips ?? 10)).length
       );
     }, 0);
 
@@ -366,7 +369,8 @@ async function processOneJob() {
     for (let i = 0; i < clipStarts.length; i += 1) {
       await assertNotCanceled(job.id);
 
-      const clipIndex = i + 1;
+      const localClipNumber = i + 1;
+      const clipIndex = clipStartIndex + localClipNumber;
       const startSec = clipStarts[i];
       const endSec = startSec + job.clipSeconds;
 
@@ -389,7 +393,7 @@ async function processOneJob() {
       );
 
       for (const target of targets) {
-        if (clipIndex > (target.maxClips ?? 10)) {
+        if (localClipNumber > (target.maxClips ?? 10)) {
           continue;
         }
 
@@ -414,7 +418,7 @@ async function processOneJob() {
         await updateJobProgress(
           job.id,
           renderProgress,
-          `Рендер ${clipIndex}/${clipStarts.length} для ${target.account.name}`,
+          `Рендер ${localClipNumber}/${clipStarts.length} для ${target.account.name}`,
         );
 
         const characterVideoPath = await ensureLocalTemplateAssetFile(target);
@@ -455,7 +459,7 @@ async function processOneJob() {
                   Math.round(
                     (completedRenders / Math.max(1, totalRenders)) * 20,
                   ),
-                progressLabel: `Публикация ${clipIndex}/${clipStarts.length} в ${target.account.name}`,
+                progressLabel: `Публикация ${localClipNumber}/${clipStarts.length} в ${target.account.name}`,
               },
             }),
           );
