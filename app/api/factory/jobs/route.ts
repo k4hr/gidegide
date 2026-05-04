@@ -10,9 +10,12 @@ import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 import { getGameMeta } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
 import {
+  formatMoscowScheduledAtForLabel,
   formatScheduledAtForLabel,
   getNextNewYorkPublishAt,
   getPublishTimingLabel,
+  getUsaSmartUploadSlots,
+  USA_SMART_CLIPS_PER_SLOT,
 } from "@/lib/factory/schedule";
 
 export const runtime = "nodejs";
@@ -27,7 +30,7 @@ const gameSchema = z.enum([
 ]);
 
 const publishTimingSchema = z
-  .enum(["NOW", "NY_14", "NY_17", "NY_20", "NY_22"])
+  .enum(["NOW", "NY_14", "NY_17", "NY_20", "NY_22", "USA_SMART"])
   .default("NOW");
 
 const targetSchema = z.object({
@@ -48,6 +51,8 @@ const jsonCreateJobSchema = z.object({
 });
 
 type ParsedTarget = z.infer<typeof targetSchema>;
+type ParsedPublishTiming = z.infer<typeof publishTimingSchema>;
+type ParsedGame = z.infer<typeof gameSchema>;
 
 function parseClipSeconds(value: FormDataEntryValue | null) {
   const numberValue = Number(value);
@@ -118,7 +123,14 @@ function normalizeTargets(targets: ParsedTarget[]) {
   return normalized;
 }
 
-function buildSchedule(publishTiming: z.infer<typeof publishTimingSchema>) {
+function normalizeTargetsForUsaSmart(targets: ParsedTarget[]) {
+  return normalizeTargets(targets).map((target) => ({
+    ...target,
+    maxClips: USA_SMART_CLIPS_PER_SLOT,
+  }));
+}
+
+function buildSchedule(publishTiming: ParsedPublishTiming) {
   const scheduledAt = getNextNewYorkPublishAt(publishTiming);
 
   if (!scheduledAt) {
@@ -162,10 +174,11 @@ async function createJobWithTargets(input: {
   sourceOriginalName?: string | null;
   sourceSizeBytes?: number | null;
   clipSeconds: number;
+  clipStartIndex?: number;
   titlePrefix: string;
-  game: z.infer<typeof gameSchema>;
+  game: ParsedGame;
   globalTemplateId: string | null;
-  publishTiming: z.infer<typeof publishTimingSchema>;
+  publishTiming: ParsedPublishTiming;
   scheduledAt: Date | null;
   progressLabel: string;
   targets: ParsedTarget[];
@@ -235,6 +248,7 @@ async function createJobWithTargets(input: {
           sourceOriginalName: input.sourceOriginalName ?? null,
           sourceSizeBytes: input.sourceSizeBytes ?? null,
           clipSeconds: input.clipSeconds,
+          clipStartIndex: input.clipStartIndex ?? 0,
           titlePrefix: input.titlePrefix,
           game: input.game,
           templateId: input.globalTemplateId,
@@ -286,6 +300,49 @@ async function createJobWithTargets(input: {
       return job;
     }),
   );
+}
+
+async function createUsaSmartJobs(input: {
+  sourceUrl: string | null;
+  sourceFilePath?: string | null;
+  sourceStorageKey?: string | null;
+  sourceOriginalName?: string | null;
+  sourceSizeBytes?: number | null;
+  clipSeconds: number;
+  clipStartIndex?: number;
+  titlePrefix: string;
+  game: ParsedGame;
+  globalTemplateId: string | null;
+  targets: ParsedTarget[];
+}) {
+  const slots = getUsaSmartUploadSlots();
+  const smartTargets = normalizeTargetsForUsaSmart(input.targets);
+  const jobs = [];
+
+  for (const slot of slots) {
+    const job = await createJobWithTargets({
+      sourceUrl: input.sourceUrl,
+      sourceFilePath: input.sourceFilePath ?? null,
+      sourceStorageKey: input.sourceStorageKey ?? null,
+      sourceOriginalName: input.sourceOriginalName ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? null,
+      clipSeconds: input.clipSeconds,
+      clipStartIndex: (slot.index - 1) * USA_SMART_CLIPS_PER_SLOT,
+      titlePrefix: input.titlePrefix,
+      game: input.game,
+      globalTemplateId: input.globalTemplateId,
+      publishTiming: "USA_SMART",
+      scheduledAt: slot.scheduledAt,
+      progressLabel: `USA smart ${slot.index}/5: ${slot.label}. Старт: ${formatMoscowScheduledAtForLabel(
+        slot.scheduledAt,
+      )}`,
+      targets: smartTargets,
+    });
+
+    jobs.push(job);
+  }
+
+  return jobs;
 }
 
 export async function GET() {
@@ -358,7 +415,6 @@ export async function POST(request: Request) {
       const game = parseGame(formData.get("game"));
       const gameMeta = getGameMeta(game);
       const publishTiming = parsePublishTiming(formData.get("publishTiming"));
-      const schedule = buildSchedule(publishTiming);
 
       const rawTitlePrefix = z
         .string()
@@ -407,6 +463,27 @@ export async function POST(request: Request) {
         contentType: file.type || "video/mp4",
       });
 
+      if (publishTiming === "USA_SMART") {
+        const jobs = await createUsaSmartJobs({
+          sourceUrl: null,
+          sourceFilePath: filePath,
+          sourceStorageKey: uploadedKey,
+          sourceOriginalName: file.name,
+          sourceSizeBytes: buffer.byteLength,
+          clipSeconds,
+          titlePrefix,
+          game,
+          globalTemplateId: templateId,
+          targets,
+        });
+
+        return NextResponse.json({
+          jobs,
+        });
+      }
+
+      const schedule = buildSchedule(publishTiming);
+
       const job = await createJobWithTargets({
         sourceUrl: null,
         sourceFilePath: filePath,
@@ -433,8 +510,24 @@ export async function POST(request: Request) {
     const gameMeta = getGameMeta(data.game);
     const templateId = await resolveTemplateId(data.templateId);
     const titlePrefix = data.titlePrefix?.trim() || gameMeta.titlePrefix;
-    const schedule = buildSchedule(data.publishTiming);
     const targets = normalizeTargets(data.targets);
+
+    if (data.publishTiming === "USA_SMART") {
+      const jobs = await createUsaSmartJobs({
+        sourceUrl: data.sourceUrl,
+        clipSeconds: data.clipSeconds,
+        titlePrefix,
+        game: data.game,
+        globalTemplateId: templateId,
+        targets,
+      });
+
+      return NextResponse.json({
+        jobs,
+      });
+    }
+
+    const schedule = buildSchedule(data.publishTiming);
 
     const job = await createJobWithTargets({
       sourceUrl: data.sourceUrl,
