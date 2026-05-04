@@ -46,6 +46,7 @@ enum FactoryPublishTiming {
   NY_17
   NY_20
   NY_22
+  USA_SMART
 }
 
 model FactoryAsset {
@@ -119,6 +120,7 @@ model FactoryJob {
   sourceSizeBytes    Int?
 
   clipSeconds        Int               @default(45)
+  clipStartIndex     Int               @default(0)
   titlePrefix        String            @default("Lana watches games")
   game               FactoryGame       @default(OTHER)
 
@@ -149,6 +151,7 @@ model FactoryJob {
   @@index([cancelRequested])
   @@index([sourceStorageKey])
   @@index([game])
+  @@index([clipStartIndex])
   @@index([templateId])
   @@index([publishTiming])
   @@index([scheduledAt])
