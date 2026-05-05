@@ -23,20 +23,112 @@ export type FactoryRenderTemplate = {
   mirrorLana: boolean;
 };
 
-function buildRenderFilter(template: FactoryRenderTemplate) {
-  const personFilters = [
-    "scale=1080:960:force_original_aspect_ratio=increase",
-    "crop=1080:960",
-    template.mirrorLana ? "hflip" : null,
+type CropPlacement = {
+  zoom: number;
+  x: number;
+  y: number;
+};
+
+type RenderVariant = {
+  thumbnailSeconds: number;
+  mainGame: CropPlacement;
+  mainPerson: CropPlacement;
+};
+
+function createSeed(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
+function seededUnit(seed: number, salt: number) {
+  const mixed = Math.imul(seed ^ Math.imul(salt + 1, 2246822519), 3266489917) >>> 0;
+  return mixed / 4294967295;
+}
+
+function buildPlacement(seed: number, salt: number, zoomMin: number, zoomMax: number) {
+  return {
+    zoom: Number((zoomMin + seededUnit(seed, salt) * (zoomMax - zoomMin)).toFixed(3)),
+    x: Number((0.08 + seededUnit(seed, salt + 1) * 0.84).toFixed(3)),
+    y: Number((0.1 + seededUnit(seed, salt + 2) * 0.8).toFixed(3)),
+  };
+}
+
+function getRenderVariant(input: {
+  jobId: string;
+  clipIndex: number;
+  clipSeconds: number;
+}) {
+  const seed = createSeed(`${input.jobId}:${input.clipIndex}:${input.clipSeconds}`);
+
+  return {
+    thumbnailSeconds: Number((0.09 + seededUnit(seed, 1) * 0.03).toFixed(3)),
+    mainGame: buildPlacement(seed, 10, 1.02, 1.1),
+    mainPerson: buildPlacement(seed, 20, 1.02, 1.09),
+  } satisfies RenderVariant;
+}
+
+function buildHalfCropChain(input: {
+  placement: CropPlacement;
+  mirror?: boolean;
+}) {
+  const targetWidth = 1080;
+  const targetHeight = 960;
+  const scaledWidth = Math.round(targetWidth * input.placement.zoom);
+  const scaledHeight = Math.round(targetHeight * input.placement.zoom);
+
+  return [
+    `scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=increase`,
+    `crop=${targetWidth}:${targetHeight}:(iw-${targetWidth})*${input.placement.x.toFixed(3)}:(ih-${targetHeight})*${input.placement.y.toFixed(3)}`,
+    input.mirror ? "hflip" : null,
     "setsar=1",
   ]
     .filter(Boolean)
     .join(",");
+}
+
+function buildThumbnailCropChain() {
+  return [
+    "scale=1080:1920:force_original_aspect_ratio=increase",
+    "crop=1080:1920",
+    "setsar=1",
+    "format=yuv420p",
+    "fps=30",
+  ].join(",");
+}
+
+function buildBaseStackFilter(template: FactoryRenderTemplate, variant: RenderVariant) {
+  return [
+    `[0:v]${buildHalfCropChain({ placement: variant.mainGame })}[game]`,
+    `[1:v]${buildHalfCropChain({
+      placement: variant.mainPerson,
+      mirror: template.mirrorLana,
+    })}[person]`,
+    "[game][person]vstack=inputs=2,format=yuv420p,fps=30[stack_raw]",
+  ].join(";");
+}
+
+function buildRenderFilter(input: {
+  template: FactoryRenderTemplate;
+  variant: RenderVariant;
+  hasThumbnail: boolean;
+}) {
+  const baseStackFilter = buildBaseStackFilter(input.template, input.variant);
+
+  if (!input.hasThumbnail) {
+    return `${baseStackFilter};[stack_raw]format=yuv420p[v]`;
+  }
 
   return [
-    "[0:v]scale=1080:960:force_original_aspect_ratio=increase,crop=1080:960,setsar=1[game]",
-    `[1:v]${personFilters}[person]`,
-    "[game][person]vstack=inputs=2,format=yuv420p[v]",
+    baseStackFilter,
+    `[2:v]${buildThumbnailCropChain()},trim=duration=${input.variant.thumbnailSeconds.toFixed(3)},setpts=PTS-STARTPTS[thumb]`,
+    `[stack_raw]trim=start=${input.variant.thumbnailSeconds.toFixed(3)},setpts=PTS-STARTPTS[stack_cut]`,
+    "[thumb][stack_cut]concat=n=2:v=1:a=0,format=yuv420p[v]",
   ].join(";");
 }
 
@@ -212,6 +304,7 @@ type RenderFactoryClipInput = {
   startSec: number;
   clipSeconds: number;
   template: FactoryRenderTemplate;
+  thumbnailPath?: string | null;
   isCanceled?: CancelCheck;
 };
 
@@ -231,58 +324,79 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
   try {
     await assertSourceAudioOrThrow(input.sourcePath);
 
-    await runCommand(
-      "ffmpeg",
-      [
-        "-y",
+    const variant = getRenderVariant({
+      jobId: input.jobId,
+      clipIndex: input.clipIndex,
+      clipSeconds: input.clipSeconds,
+    });
 
-        "-ss",
-        String(input.startSec),
+    const hasThumbnail = Boolean(input.thumbnailPath);
+    const args = [
+      "-y",
+      "-ss",
+      String(input.startSec),
+      "-t",
+      String(input.clipSeconds),
+      "-i",
+      input.sourcePath,
+      "-stream_loop",
+      "-1",
+      "-t",
+      String(input.clipSeconds),
+      "-i",
+      input.lanaPath,
+    ];
+
+    if (input.thumbnailPath) {
+      args.push(
+        "-loop",
+        "1",
         "-t",
-        String(input.clipSeconds),
+        String(variant.thumbnailSeconds),
         "-i",
-        input.sourcePath,
+        input.thumbnailPath,
+      );
+    }
 
-        "-stream_loop",
-        "-1",
-        "-t",
-        String(input.clipSeconds),
-        "-i",
-        input.lanaPath,
-
-        "-filter_complex",
-        buildRenderFilter(input.template),
-
-        "-map",
-        "[v]",
-        "-map",
-        "0:a:0",
-        "-r",
-        "30",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "24",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        "-shortest",
-        outputPath,
-      ],
-      {
-        logPrefix: `ffmpeg-${input.clipIndex}`,
-        isCanceled: input.isCanceled,
-      },
+    args.push(
+      "-filter_complex",
+      buildRenderFilter({
+        template: input.template,
+        variant,
+        hasThumbnail,
+      }),
+      "-map",
+      "[v]",
+      "-map",
+      "0:a:0",
+      "-r",
+      "30",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "24",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "128k",
+      "-ar",
+      "44100",
+      "-ac",
+      "2",
+      "-movflags",
+      "+faststart",
+      "-shortest",
+      outputPath,
     );
+
+    await runCommand("ffmpeg", args, {
+      logPrefix: `ffmpeg-${input.clipIndex}`,
+      isCanceled: input.isCanceled,
+    });
 
     await assertVideoHasAudio(outputPath);
 
