@@ -134,7 +134,8 @@ const publishTimingOptions: Array<{
   {
     value: "NOW",
     title: "Загрузить сейчас",
-    description: "Worker начнет обработку и публикацию сразу после создания задачи.",
+    description:
+      "Worker начнет обработку и публикацию сразу после создания задачи.",
   },
   {
     value: "NY_14",
@@ -519,6 +520,7 @@ export default function FactoryPage() {
           <Link href="/factory">Завод</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
+          <Link href="/factory/thumbnails">Превью</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
@@ -673,7 +675,10 @@ export default function FactoryPage() {
 
               <div className="schedule-options">
                 {publishTimingOptions.map((option) => (
-                  <label className="target-checkbox schedule-option" key={option.value}>
+                  <label
+                    className="target-checkbox schedule-option"
+                    key={option.value}
+                  >
                     <input
                       type="checkbox"
                       checked={publishTiming === option.value}
@@ -791,7 +796,8 @@ export default function FactoryPage() {
             <p className="muted">
               Для {selectedGame.label} title рандомизируется автоматически, имена
               девушек в название не добавляются. Описание будет с 5 хэштегами
-              автоматически.
+              автоматически. Если на странице превью есть активные картинки,
+              worker будет незаметно вставлять одну из них в начало ролика.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
