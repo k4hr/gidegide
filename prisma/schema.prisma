@@ -67,6 +67,26 @@ model FactoryAsset {
   @@index([storageKey])
 }
 
+model FactoryThumbnail {
+  id           String      @id @default(cuid())
+  title        String
+  game         FactoryGame @default(OTHER)
+  filePath     String
+  storageKey   String?
+  originalName String?
+  mimeType     String?
+  sizeBytes    Int?
+  isActive     Boolean     @default(true)
+
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([game])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([storageKey])
+}
+
 model FactoryTemplate {
   id          String   @id @default(cuid())
   name        String
@@ -121,7 +141,7 @@ model FactoryJob {
 
   clipSeconds        Int               @default(45)
   clipStartIndex     Int               @default(0)
-  titlePrefix        String            @default("Lana watches games")
+  titlePrefix        String            @default("crazy gaming moments")
   game               FactoryGame       @default(OTHER)
 
   templateId         String?
@@ -209,30 +229,30 @@ model FactoryClip {
 }
 
 model FactoryPublish {
-  id              String               @id @default(cuid())
+  id               String               @id @default(cuid())
 
-  clipId          String
-  clip            FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
+  clipId           String
+  clip             FactoryClip          @relation(fields: [clipId], references: [id], onDelete: Cascade)
 
-  targetId        String?
-  target          FactoryJobTarget?    @relation(fields: [targetId], references: [id], onDelete: SetNull)
+  targetId         String?
+  target           FactoryJobTarget?    @relation(fields: [targetId], references: [id], onDelete: SetNull)
 
-  accountId       String?
-  account         FactoryAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  accountId        String?
+  account          FactoryAccount?      @relation(fields: [accountId], references: [id], onDelete: SetNull)
 
-  platform        FactoryPlatform
-  status          FactoryPublishStatus @default(QUEUED)
+  platform         FactoryPlatform
+  status           FactoryPublishStatus @default(QUEUED)
 
-  platformPostId  String?
-  platformUrl     String?
+  platformPostId   String?
+  platformUrl      String?
 
-  renderFilePath  String?
+  renderFilePath   String?
   renderStorageKey String?
 
-  error           String?
+  error            String?
 
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
 
   @@index([clipId])
   @@index([targetId])
