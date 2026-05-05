@@ -54,14 +54,19 @@ function getGameLabel(game: FactoryGame) {
   return gameOptions.find((option) => option.value === game)?.label ?? game;
 }
 
+function getTotalSize(files: File[]) {
+  return files.reduce((sum, file) => sum + file.size, 0);
+}
+
 export default function FactoryThumbnailsPage() {
   const [thumbnails, setThumbnails] = useState<FactoryThumbnail[]>([]);
   const [title, setTitle] = useState("");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [file, setFile] = useState<File | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [filterGame, setFilterGame] = useState<FactoryGame | "ALL">("ALL");
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState("");
   const [deletingId, setDeletingId] = useState("");
   const [togglingId, setTogglingId] = useState("");
   const [error, setError] = useState("");
@@ -107,23 +112,39 @@ export default function FactoryThumbnailsPage() {
     loadThumbnails();
   }, []);
 
-  async function uploadThumbnail(event: React.FormEvent<HTMLFormElement>) {
+  function resetFileInput() {
+    setFiles([]);
+
+    const fileInput = document.getElementById(
+      "factory-thumbnail-files",
+    ) as HTMLInputElement | null;
+
+    if (fileInput) {
+      fileInput.value = "";
+    }
+  }
+
+  async function uploadThumbnails(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!file) {
-      setError("Выбери JPG, PNG или WEBP картинку");
+    if (files.length === 0) {
+      setError("Выбери одну или сразу много JPG, PNG или WEBP картинок");
       return;
     }
 
     setIsUploading(true);
     setError("");
+    setUploadProgressText(`Готовлю загрузку: ${files.length} файлов`);
 
     try {
       const formData = new FormData();
 
-      formData.set("title", title.trim() || file.name);
+      formData.set("title", title.trim());
       formData.set("game", game);
-      formData.set("file", file);
+
+      for (const file of files) {
+        formData.append("files", file);
+      }
 
       const response = await fetch("/api/factory/thumbnails", {
         method: "POST",
@@ -132,6 +153,8 @@ export default function FactoryThumbnailsPage() {
 
       const data = (await response.json()) as {
         thumbnail?: FactoryThumbnail;
+        thumbnails?: FactoryThumbnail[];
+        uploadedCount?: number;
         error?: string;
       };
 
@@ -139,16 +162,12 @@ export default function FactoryThumbnailsPage() {
         throw new Error(data.error ?? "Не получилось загрузить превью");
       }
 
+      setUploadProgressText(
+        `Загружено превью: ${data.uploadedCount ?? data.thumbnails?.length ?? files.length}`,
+      );
+
       setTitle("");
-      setFile(null);
-
-      const fileInput = document.getElementById(
-        "factory-thumbnail-file",
-      ) as HTMLInputElement | null;
-
-      if (fileInput) {
-        fileInput.value = "";
-      }
+      resetFileInput();
 
       await loadThumbnails();
     } catch (uploadError) {
@@ -248,20 +267,20 @@ export default function FactoryThumbnailsPage() {
         <section className="card">
           <h1>Превью для Shorts</h1>
           <p>
-            Загружай разные вертикальные картинки 9:16. Завод будет брать
+            Загружай пачкой разные вертикальные картинки 9:16. Завод будет брать
             случайное активное превью под выбранную игру и вставлять его в самое
             начало ролика на 0.09–0.12 секунды. Для глаза почти незаметно, но
             сетка канала будет выглядеть разнообразнее.
           </p>
 
-          <form className="thumbnail-upload-form" onSubmit={uploadThumbnail}>
+          <form className="thumbnail-upload-form" onSubmit={uploadThumbnails}>
             <div className="grid grid-2">
               <label>
-                Название превью
+                Общее название пачки, необязательно
                 <input
                   value={title}
                   onChange={(event) => setTitle(event.target.value)}
-                  placeholder="Roblox bright hook 01"
+                  placeholder="ROBLOX"
                 />
               </label>
 
@@ -281,26 +300,63 @@ export default function FactoryThumbnailsPage() {
             </div>
 
             <label>
-              Картинка превью
+              Картинки превью
               <input
-                id="factory-thumbnail-file"
+                id="factory-thumbnail-files"
                 type="file"
+                multiple
                 accept="image/jpeg,image/png,image/webp,image/*"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                onChange={(event) =>
+                  setFiles(Array.from(event.target.files ?? []))
+                }
               />
             </label>
 
             <div className="thumbnail-rules">
+              <span className="badge">Можно выбрать сразу много файлов</span>
               <span className="badge">Лучший формат: 1080×1920</span>
               <span className="badge">JPG / PNG / WEBP</span>
               <span className="badge">Без мелкого текста</span>
               <span className="badge">Яркий первый кадр</span>
             </div>
 
+            {files.length > 0 ? (
+              <div className="upload-progress">
+                <div className="progress-head">
+                  <span>Выбрано файлов</span>
+                  <span>{files.length}</span>
+                </div>
+
+                <p className="muted">
+                  Общий размер: {formatMb(getTotalSize(files))}
+                </p>
+
+                <div className="thumbnail-rules">
+                  {files.slice(0, 12).map((file) => (
+                    <span className="badge" key={`${file.name}-${file.size}`}>
+                      {file.name}
+                    </span>
+                  ))}
+
+                  {files.length > 12 ? (
+                    <span className="badge">+{files.length - 12} еще</span>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+
+            {uploadProgressText ? (
+              <p className="success">{uploadProgressText}</p>
+            ) : null}
+
             {error ? <p className="error">{error}</p> : null}
 
             <button disabled={isUploading}>
-              {isUploading ? "Загружаю..." : "Загрузить превью"}
+              {isUploading
+                ? `Загружаю ${files.length} файлов...`
+                : files.length > 1
+                  ? `Загрузить ${files.length} превью`
+                  : "Загрузить превью"}
             </button>
           </form>
         </section>
