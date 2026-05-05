@@ -12,13 +12,25 @@ const PUBLISH_SLOTS: Record<FactoryPublishTiming, number | null> = {
   USA_SMART: null,
 };
 
-const USA_SMART_MOSCOW_SLOTS = [21, 23, 1, 3, 5] as const;
+const USA_SMART_MOSCOW_SLOTS = [
+  { hour: 21, minute: 0 },
+  { hour: 21, minute: 15 },
+  { hour: 23, minute: 0 },
+  { hour: 23, minute: 15 },
+  { hour: 1, minute: 0 },
+  { hour: 1, minute: 15 },
+  { hour: 3, minute: 0 },
+  { hour: 3, minute: 15 },
+  { hour: 5, minute: 0 },
+  { hour: 5, minute: 15 },
+] as const;
 
-export const USA_SMART_CLIPS_PER_SLOT = 2;
+export const USA_SMART_CLIPS_PER_SLOT = 1;
 
 export type UsaSmartSlot = {
   index: number;
   moscowHour: number;
+  moscowMinute: number;
   scheduledAt: Date;
   label: string;
 };
@@ -127,26 +139,11 @@ function addOneCalendarDay(input: {
   return addCalendarDays(input, 1);
 }
 
-function getMoscowDateForSmartSlot(input: {
-  baseDate: {
-    year: number;
-    month: number;
-    day: number;
-  };
-  previousHour: number | null;
-  hour: number;
-  dayOffset: number;
-}) {
-  let nextDayOffset = input.dayOffset;
-
-  if (input.previousHour !== null && input.hour <= input.previousHour) {
-    nextDayOffset += 1;
-  }
-
-  return {
-    date: addCalendarDays(input.baseDate, nextDayOffset),
-    dayOffset: nextDayOffset,
-  };
+function formatMoscowTime(hour: number, minute: number) {
+  return `${String(hour).padStart(2, "0")}:${String(minute).padStart(
+    2,
+    "0",
+  )}`;
 }
 
 export function getNextNewYorkPublishAt(
@@ -185,54 +182,53 @@ export function getNextNewYorkPublishAt(
 
 export function getUsaSmartUploadSlots(now = new Date()): UsaSmartSlot[] {
   const moscow = getTimeZoneParts(now, MOSCOW_TIME_ZONE);
-  const currentMoscowMinutes = moscow.hour * 60 + moscow.minute;
-
-  const firstSlotIndex = USA_SMART_MOSCOW_SLOTS.findIndex(
-    (hour) => hour * 60 > currentMoscowMinutes,
-  );
-
-  const startIndex = firstSlotIndex === -1 ? 0 : firstSlotIndex;
   const baseDate = {
     year: moscow.year,
     month: moscow.month,
     day: moscow.day,
   };
 
-  const orderedHours = [
-    ...USA_SMART_MOSCOW_SLOTS.slice(startIndex),
-    ...USA_SMART_MOSCOW_SLOTS.slice(0, startIndex),
-  ];
+  const candidates: Array<{
+    hour: number;
+    minute: number;
+    scheduledAt: Date;
+  }> = [];
 
-  let previousHour: number | null = null;
-  let dayOffset = firstSlotIndex === -1 ? 1 : 0;
+  for (let dayOffset = 0; dayOffset <= 3; dayOffset += 1) {
+    const date = addCalendarDays(baseDate, dayOffset);
 
-  return orderedHours.map((hour, index) => {
-    const slotDate = getMoscowDateForSmartSlot({
-      baseDate,
-      previousHour,
-      hour,
-      dayOffset,
-    });
+    for (const slot of USA_SMART_MOSCOW_SLOTS) {
+      const scheduledAt = zonedTimeToUtc({
+        timeZone: MOSCOW_TIME_ZONE,
+        year: date.year,
+        month: date.month,
+        day: date.day,
+        hour: slot.hour,
+        minute: slot.minute,
+      });
 
-    previousHour = hour;
-    dayOffset = slotDate.dayOffset;
+      if (scheduledAt.getTime() > now.getTime()) {
+        candidates.push({
+          hour: slot.hour,
+          minute: slot.minute,
+          scheduledAt,
+        });
+      }
+    }
+  }
 
-    const scheduledAt = zonedTimeToUtc({
-      timeZone: MOSCOW_TIME_ZONE,
-      year: slotDate.date.year,
-      month: slotDate.date.month,
-      day: slotDate.date.day,
-      hour,
-      minute: 0,
-    });
-
-    return {
+  return candidates
+    .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime())
+    .slice(0, USA_SMART_MOSCOW_SLOTS.length)
+    .map((slot, index) => ({
       index: index + 1,
-      moscowHour: hour,
-      scheduledAt,
-      label: `${String(hour).padStart(2, "0")}:00 МСК — ${USA_SMART_CLIPS_PER_SLOT} ролика`,
-    };
-  });
+      moscowHour: slot.hour,
+      moscowMinute: slot.minute,
+      scheduledAt: slot.scheduledAt,
+      label: `${formatMoscowTime(slot.hour, slot.minute)} МСК — ролик ${
+        index + 1
+      }`,
+    }));
 }
 
 export function getPublishTimingLabel(publishTiming: FactoryPublishTiming) {
@@ -242,7 +238,7 @@ export function getPublishTimingLabel(publishTiming: FactoryPublishTiming) {
   if (publishTiming === "NY_20") return "20:00 New York = 03:00 МСК";
   if (publishTiming === "NY_22") return "22:00 New York = 05:00 МСК";
 
-  return "Грамотный залив под USA: 21/23/01/03/05 МСК по 2 ролика";
+  return "Грамотный залив под USA: 21:00/21:15/23:00/23:15/01:00/01:15/03:00/03:15/05:00/05:15 МСК";
 }
 
 export function formatScheduledAtForLabel(date: Date) {
