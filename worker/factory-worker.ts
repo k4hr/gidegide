@@ -1,9 +1,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { mkdir, rm } from "node:fs/promises";
+import type { FactoryGame } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
-import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "@/lib/factory/paths";
+import {
+  FACTORY_LANA_DIR,
+  FACTORY_SOURCE_DIR,
+  FACTORY_THUMBNAILS_DIR,
+} from "@/lib/factory/paths";
 import {
   downloadSourceFromUrl,
   getSourceDuration,
@@ -234,6 +239,86 @@ async function ensureLocalTemplateAssetFile(target: {
   return localPath;
 }
 
+async function selectFactoryThumbnail(input: {
+  game: string;
+  seed: string;
+}) {
+  const thumbnails = await safeDb(() =>
+    prisma.factoryThumbnail.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          {
+            game: input.game as FactoryGame,
+          },
+          {
+            game: "OTHER",
+          },
+        ],
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    }),
+  );
+
+  if (!thumbnails || thumbnails.length === 0) {
+    return null;
+  }
+
+  const exactGameThumbnails = thumbnails.filter(
+    (thumbnail) => thumbnail.game === input.game,
+  );
+
+  const pool = exactGameThumbnails.length > 0 ? exactGameThumbnails : thumbnails;
+  let hash = 2166136261;
+
+  for (let index = 0; index < input.seed.length; index += 1) {
+    hash ^= input.seed.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return pool[(hash >>> 0) % pool.length];
+}
+
+async function ensureLocalThumbnailFile(input: {
+  game: string;
+  seed: string;
+}) {
+  const thumbnail = await selectFactoryThumbnail(input);
+
+  if (!thumbnail) {
+    return null;
+  }
+
+  if (thumbnail.filePath && fs.existsSync(thumbnail.filePath)) {
+    return thumbnail.filePath;
+  }
+
+  if (!isR2Enabled() || !thumbnail.storageKey) {
+    console.warn(
+      `Thumbnail "${thumbnail.title}" not found locally and R2 is not available`,
+    );
+    return null;
+  }
+
+  await mkdir(FACTORY_THUMBNAILS_DIR, { recursive: true });
+
+  const ext = path.extname(thumbnail.originalName ?? thumbnail.filePath) || ".jpg";
+  const localPath = path.join(FACTORY_THUMBNAILS_DIR, `${thumbnail.id}${ext}`);
+
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
+  await downloadR2ObjectToFile({
+    key: thumbnail.storageKey,
+    filePath: localPath,
+  });
+
+  return localPath;
+}
+
 async function processOneJob() {
   const job = await db(() =>
     prisma.factoryJob.findFirst({
@@ -378,6 +463,7 @@ async function processOneJob() {
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
+        seedHint: job.id,
       });
 
       const clip = await db(() =>
@@ -405,6 +491,7 @@ async function processOneJob() {
           game: job.game,
           clipIndex,
           customPrefix: titlePrefixForTarget,
+          seedHint: target.accountId,
         });
 
         const description = buildClipDescription({
@@ -422,6 +509,10 @@ async function processOneJob() {
         );
 
         const characterVideoPath = await ensureLocalTemplateAssetFile(target);
+        const thumbnailPath = await ensureLocalThumbnailFile({
+          game: job.game,
+          seed: `${job.id}:${target.accountId}:${clipIndex}`,
+        });
 
         const outputPath = await renderFactoryClip({
           jobId: job.id,
@@ -431,6 +522,7 @@ async function processOneJob() {
           startSec,
           clipSeconds: job.clipSeconds,
           template: getTargetTemplate(target),
+          thumbnailPath,
           isCanceled: () => isJobCanceled(job.id),
         });
 
