@@ -30,6 +30,72 @@ function isAllowedImage(file: File) {
   );
 }
 
+function getBaseName(fileName: string) {
+  return fileName.replace(/\.[^.]+$/, "").trim();
+}
+
+function padIndex(index: number) {
+  return String(index).padStart(2, "0");
+}
+
+async function createThumbnail(input: {
+  file: File;
+  title: string;
+  game: z.infer<typeof gameSchema>;
+  index: number;
+  total: number;
+}) {
+  if (!isAllowedImage(input.file)) {
+    throw new Error(
+      `Файл "${input.file.name}" не подходит. Нужен JPG, PNG или WEBP.`,
+    );
+  }
+
+  const buffer = Buffer.from(await input.file.arrayBuffer());
+  const ext = extFromName(input.file.name) || ".jpg";
+
+  const cleanBaseTitle =
+    input.title.trim() ||
+    getBaseName(input.file.name) ||
+    `${input.game.toLowerCase()} thumbnail`;
+
+  const finalTitle =
+    input.total > 1
+      ? `${cleanBaseTitle} ${padIndex(input.index + 1)}`
+      : cleanBaseTitle;
+
+  const fileName = `${Date.now()}-${input.index}-${safeFileName(
+    finalTitle,
+  )}${ext}`;
+
+  const filePath = path.join(FACTORY_THUMBNAILS_DIR, fileName);
+
+  const storageKey = `${getR2Prefix()}/thumbnails/${input.game.toLowerCase()}/${fileName}`;
+
+  await writeFile(filePath, buffer);
+
+  const uploadedKey = await uploadBufferToR2({
+    key: storageKey,
+    buffer,
+    contentType: input.file.type || "image/jpeg",
+  });
+
+  return withDbRetry(() =>
+    prisma.factoryThumbnail.create({
+      data: {
+        title: finalTitle.slice(0, 80),
+        game: input.game,
+        filePath,
+        storageKey: uploadedKey,
+        originalName: input.file.name,
+        mimeType: input.file.type || "image/jpeg",
+        sizeBytes: buffer.byteLength,
+        isActive: true,
+      },
+    }),
+  );
+}
+
 export async function GET() {
   try {
     const thumbnails = await withDbRetry(() =>
@@ -65,14 +131,32 @@ export async function POST(request: Request) {
     await ensureFactoryDirs();
 
     const formData = await request.formData();
-    const title = z.string().min(1).max(80).parse(formData.get("title"));
+
+    const title = z
+      .string()
+      .max(80)
+      .optional()
+      .parse(String(formData.get("title") ?? ""));
+
     const game = gameSchema.parse(formData.get("game") || "OTHER");
-    const file = formData.get("file");
 
-    if (!(file instanceof File)) {
+    const filesFromMultipleInput = formData
+      .getAll("files")
+      .filter((item): item is File => item instanceof File);
+
+    const singleFile = formData.get("file");
+
+    const files =
+      filesFromMultipleInput.length > 0
+        ? filesFromMultipleInput
+        : singleFile instanceof File
+          ? [singleFile]
+          : [];
+
+    if (files.length === 0) {
       return NextResponse.json(
         {
-          error: "Файл превью не найден",
+          error: "Файлы превью не найдены",
         },
         {
           status: 400,
@@ -80,10 +164,10 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!isAllowedImage(file)) {
+    if (files.length > 80) {
       return NextResponse.json(
         {
-          error: "Загрузи JPG, PNG или WEBP картинку",
+          error: "За один раз можно загрузить максимум 80 превью",
         },
         {
           status: 400,
@@ -91,37 +175,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const ext = extFromName(file.name);
-    const fileName = `${Date.now()}-${safeFileName(title)}${ext}`;
-    const filePath = path.join(FACTORY_THUMBNAILS_DIR, fileName);
-    const storageKey = `${getR2Prefix()}/thumbnails/${game.toLowerCase()}/${fileName}`;
+    const invalidFile = files.find((file) => !isAllowedImage(file));
 
-    await writeFile(filePath, buffer);
-
-    const uploadedKey = await uploadBufferToR2({
-      key: storageKey,
-      buffer,
-      contentType: file.type || "image/jpeg",
-    });
-
-    const thumbnail = await withDbRetry(() =>
-      prisma.factoryThumbnail.create({
-        data: {
-          title,
-          game,
-          filePath,
-          storageKey: uploadedKey,
-          originalName: file.name,
-          mimeType: file.type || "image/jpeg",
-          sizeBytes: buffer.byteLength,
-          isActive: true,
+    if (invalidFile) {
+      return NextResponse.json(
+        {
+          error: `Файл "${invalidFile.name}" не подходит. Загрузи JPG, PNG или WEBP.`,
         },
-      }),
-    );
+        {
+          status: 400,
+        },
+      );
+    }
+
+    const thumbnails = [];
+
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index];
+
+      const thumbnail = await createThumbnail({
+        file,
+        title: title || getBaseName(file.name),
+        game,
+        index,
+        total: files.length,
+      });
+
+      thumbnails.push(thumbnail);
+    }
 
     return NextResponse.json({
-      thumbnail,
+      thumbnail: thumbnails[0] ?? null,
+      thumbnails,
+      uploadedCount: thumbnails.length,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
