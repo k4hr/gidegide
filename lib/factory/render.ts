@@ -23,16 +23,8 @@ export type FactoryRenderTemplate = {
   mirrorLana: boolean;
 };
 
-type CropPlacement = {
-  zoom: number;
-  x: number;
-  y: number;
-};
-
 type RenderVariant = {
   thumbnailSeconds: number;
-  mainGame: CropPlacement;
-  mainPerson: CropPlacement;
 };
 
 function createSeed(value: string) {
@@ -47,16 +39,10 @@ function createSeed(value: string) {
 }
 
 function seededUnit(seed: number, salt: number) {
-  const mixed = Math.imul(seed ^ Math.imul(salt + 1, 2246822519), 3266489917) >>> 0;
-  return mixed / 4294967295;
-}
+  const mixed =
+    Math.imul(seed ^ Math.imul(salt + 1, 2246822519), 3266489917) >>> 0;
 
-function buildPlacement(seed: number, salt: number, zoomMin: number, zoomMax: number) {
-  return {
-    zoom: Number((zoomMin + seededUnit(seed, salt) * (zoomMax - zoomMin)).toFixed(3)),
-    x: Number((0.08 + seededUnit(seed, salt + 1) * 0.84).toFixed(3)),
-    y: Number((0.1 + seededUnit(seed, salt + 2) * 0.8).toFixed(3)),
-  };
+  return mixed / 4294967295;
 }
 
 function getRenderVariant(input: {
@@ -68,24 +54,14 @@ function getRenderVariant(input: {
 
   return {
     thumbnailSeconds: Number((0.09 + seededUnit(seed, 1) * 0.03).toFixed(3)),
-    mainGame: buildPlacement(seed, 10, 1.02, 1.1),
-    mainPerson: buildPlacement(seed, 20, 1.02, 1.09),
   } satisfies RenderVariant;
 }
 
-function buildHalfCropChain(input: {
-  placement: CropPlacement;
-  mirror?: boolean;
-}) {
-  const targetWidth = 1080;
-  const targetHeight = 960;
-  const scaledWidth = Math.round(targetWidth * input.placement.zoom);
-  const scaledHeight = Math.round(targetHeight * input.placement.zoom);
-
+function buildCenteredHalfCropChain(input?: { mirror?: boolean }) {
   return [
-    `scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=increase`,
-    `crop=${targetWidth}:${targetHeight}:(iw-${targetWidth})*${input.placement.x.toFixed(3)}:(ih-${targetHeight})*${input.placement.y.toFixed(3)}`,
-    input.mirror ? "hflip" : null,
+    "scale=1080:960:force_original_aspect_ratio=increase",
+    "crop=1080:960:(iw-1080)/2:(ih-960)/2",
+    input?.mirror ? "hflip" : null,
     "setsar=1",
   ]
     .filter(Boolean)
@@ -95,18 +71,17 @@ function buildHalfCropChain(input: {
 function buildThumbnailCropChain() {
   return [
     "scale=1080:1920:force_original_aspect_ratio=increase",
-    "crop=1080:1920",
+    "crop=1080:1920:(iw-1080)/2:(ih-1920)/2",
     "setsar=1",
     "format=yuv420p",
     "fps=30",
   ].join(",");
 }
 
-function buildBaseStackFilter(template: FactoryRenderTemplate, variant: RenderVariant) {
+function buildBaseStackFilter(template: FactoryRenderTemplate) {
   return [
-    `[0:v]${buildHalfCropChain({ placement: variant.mainGame })}[game]`,
-    `[1:v]${buildHalfCropChain({
-      placement: variant.mainPerson,
+    `[0:v]${buildCenteredHalfCropChain()}[game]`,
+    `[1:v]${buildCenteredHalfCropChain({
       mirror: template.mirrorLana,
     })}[person]`,
     "[game][person]vstack=inputs=2,format=yuv420p,fps=30[stack_raw]",
@@ -118,7 +93,7 @@ function buildRenderFilter(input: {
   variant: RenderVariant;
   hasThumbnail: boolean;
 }) {
-  const baseStackFilter = buildBaseStackFilter(input.template, input.variant);
+  const baseStackFilter = buildBaseStackFilter(input.template);
 
   if (!input.hasThumbnail) {
     return `${baseStackFilter};[stack_raw]format=yuv420p[v]`;
@@ -126,8 +101,12 @@ function buildRenderFilter(input: {
 
   return [
     baseStackFilter,
-    `[2:v]${buildThumbnailCropChain()},trim=duration=${input.variant.thumbnailSeconds.toFixed(3)},setpts=PTS-STARTPTS[thumb]`,
-    `[stack_raw]trim=start=${input.variant.thumbnailSeconds.toFixed(3)},setpts=PTS-STARTPTS[stack_cut]`,
+    `[2:v]${buildThumbnailCropChain()},trim=duration=${input.variant.thumbnailSeconds.toFixed(
+      3,
+    )},setpts=PTS-STARTPTS[thumb]`,
+    `[stack_raw]trim=start=${input.variant.thumbnailSeconds.toFixed(
+      3,
+    )},setpts=PTS-STARTPTS[stack_cut]`,
     "[thumb][stack_cut]concat=n=2:v=1:a=0,format=yuv420p[v]",
   ].join(";");
 }
@@ -331,6 +310,7 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
     });
 
     const hasThumbnail = Boolean(input.thumbnailPath);
+
     const args = [
       "-y",
       "-ss",
