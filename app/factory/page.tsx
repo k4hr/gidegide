@@ -1,5 +1,6 @@
 "use client";
 
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -93,12 +94,36 @@ const gameOptions: Array<{
   label: string;
   titlePrefix: string;
 }> = [
-  { value: "ROBLOX", label: "Roblox", titlePrefix: "Lana watches Roblox" },
-  { value: "FORTNITE", label: "Fortnite", titlePrefix: "Lana watches Fortnite" },
-  { value: "MINECRAFT", label: "Minecraft", titlePrefix: "Lana watches Minecraft" },
-  { value: "BRAWL_STARS", label: "Brawl Stars", titlePrefix: "Lana watches Brawl Stars" },
-  { value: "DOTA2", label: "Dota 2", titlePrefix: "Lana watches Dota 2" },
-  { value: "OTHER", label: "Other", titlePrefix: "Lana watches games" },
+  {
+    value: "ROBLOX",
+    label: "Roblox",
+    titlePrefix: "crazy roblox moments",
+  },
+  {
+    value: "FORTNITE",
+    label: "Fortnite",
+    titlePrefix: "fortnite highlights",
+  },
+  {
+    value: "MINECRAFT",
+    label: "Minecraft",
+    titlePrefix: "minecraft moments",
+  },
+  {
+    value: "BRAWL_STARS",
+    label: "Brawl Stars",
+    titlePrefix: "brawl stars clips",
+  },
+  {
+    value: "DOTA2",
+    label: "Dota 2",
+    titlePrefix: "dota 2 highlights",
+  },
+  {
+    value: "OTHER",
+    label: "Other",
+    titlePrefix: "gaming highlights",
+  },
 ];
 
 const publishTimingOptions: Array<{
@@ -171,7 +196,10 @@ function getPublishTimingLabel(value: FactoryPublishTiming) {
   );
 }
 
-function getSubmitPublishTiming(event: React.FormEvent<HTMLFormElement>, fallback: FactoryPublishTiming) {
+function getSubmitPublishTiming(
+  event: FormEvent<HTMLFormElement>,
+  fallback: FactoryPublishTiming,
+) {
   const nativeEvent = event.nativeEvent as SubmitEvent;
   const submitter = nativeEvent.submitter;
 
@@ -188,7 +216,7 @@ export default function FactoryPage() {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
+  const [titlePrefix, setTitlePrefix] = useState("crazy roblox moments");
   const [publishTiming, setPublishTiming] =
     useState<FactoryPublishTiming>("NOW");
   const [templateId, setTemplateId] = useState("");
@@ -429,7 +457,7 @@ export default function FactoryPage() {
     });
   }
 
-  async function createJob(event: React.FormEvent<HTMLFormElement>) {
+  async function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const nextPublishTiming = getSubmitPublishTiming(event, publishTiming);
@@ -499,7 +527,8 @@ export default function FactoryPage() {
           <p>
             Выбираешь игру, источник, время публикации и конкретные аккаунты.
             Для каждого YouTube/TikTok аккаунта можно выбрать свой шаблон и
-            количество роликов.
+            количество роликов. Названия роликов генерируются автоматически без
+            имен девушек, чтобы канал не выглядел как копипаста.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -611,7 +640,7 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Название по умолчанию
+                Тема title, опционально
                 <input
                   value={titlePrefix}
                   onChange={(event) => setTitlePrefix(event.target.value)}
@@ -716,7 +745,7 @@ export default function FactoryPage() {
                         </label>
 
                         <label>
-                          Название для этого аккаунта
+                          Тема title для аккаунта
                           <input
                             value={state.titlePrefix || ""}
                             onChange={(event) =>
@@ -760,7 +789,8 @@ export default function FactoryPage() {
             </section>
 
             <p className="muted">
-              Для {selectedGame.label} описание будет с 5 хэштегами
+              Для {selectedGame.label} title рандомизируется автоматически, имена
+              девушек в название не добавляются. Описание будет с 5 хэштегами
               автоматически.
             </p>
 
