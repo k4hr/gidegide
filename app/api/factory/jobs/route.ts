@@ -333,7 +333,7 @@ async function createUsaSmartJobs(input: {
       globalTemplateId: input.globalTemplateId,
       publishTiming: "USA_SMART",
       scheduledAt: slot.scheduledAt,
-      progressLabel: `USA smart ${slot.index}/5: ${slot.label}. Старт: ${formatMoscowScheduledAtForLabel(
+      progressLabel: `USA smart ${slot.index}/${slots.length}: ${slot.label}. Старт: ${formatMoscowScheduledAtForLabel(
         slot.scheduledAt,
       )}`,
       targets: smartTargets,
