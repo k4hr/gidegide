@@ -25,6 +25,10 @@ import {
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
+import {
+  buildSequentialClipStarts,
+  buildSmartClipCandidates,
+} from "@/lib/factory/smart-cut";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -239,17 +243,30 @@ async function ensureLocalTemplateAssetFile(target: {
   return localPath;
 }
 
+function hashString(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return hash >>> 0;
+}
+
 async function selectFactoryThumbnail(input: {
   game: string;
   seed: string;
 }) {
-  const thumbnails = await safeDb(() =>
+  const game = input.game as FactoryGame;
+
+  const thumbnails = await db(() =>
     prisma.factoryThumbnail.findMany({
       where: {
         isActive: true,
         OR: [
           {
-            game: input.game as FactoryGame,
+            game,
           },
           {
             game: "OTHER",
@@ -262,21 +279,13 @@ async function selectFactoryThumbnail(input: {
     }),
   );
 
-  if (!thumbnails || thumbnails.length === 0) {
+  if (thumbnails.length === 0) {
     return null;
   }
 
-  const exactGameThumbnails = thumbnails.filter(
-    (thumbnail) => thumbnail.game === input.game,
-  );
-
-  const pool = exactGameThumbnails.length > 0 ? exactGameThumbnails : thumbnails;
-  let hash = 2166136261;
-
-  for (let index = 0; index < input.seed.length; index += 1) {
-    hash ^= input.seed.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
+  const exactGame = thumbnails.filter((thumbnail) => thumbnail.game === game);
+  const pool = exactGame.length > 0 ? exactGame : thumbnails;
+  const hash = hashString(input.seed);
 
   return pool[(hash >>> 0) % pool.length];
 }
@@ -409,21 +418,80 @@ async function processOneJob() {
     );
 
     const maxClips = Math.min(globalMaxClips, maxTargetClips);
-    const clipStarts: number[] = [];
-
     const clipStartIndex = Math.max(0, job.clipStartIndex ?? 0);
-    const firstStartSec = clipStartIndex * job.clipSeconds;
+    let clipStarts: number[] = [];
 
-    for (
-      let startSec = firstStartSec;
-      startSec + job.clipSeconds <= duration && clipStarts.length < maxClips;
-      startSec += job.clipSeconds
-    ) {
-      clipStarts.push(startSec);
+    if (job.cutMode === "SMART_LITE") {
+      await updateJobProgress(
+        job.id,
+        31,
+        "Smart Cut Lite: анализирую движение, звук и стартовые кадры",
+      );
+
+      await safeDb(() =>
+        prisma.factoryClipCandidate.deleteMany({
+          where: {
+            jobId: job.id,
+          },
+        }),
+      );
+
+      const candidates = await buildSmartClipCandidates({
+        sourcePath,
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        stepSeconds: job.smartStepSeconds ?? 10,
+        maxCandidates: job.smartCandidates ?? 80,
+        minGapSeconds: job.smartMinGapSeconds ?? 30,
+        clipStartIndex,
+        isCanceled: () => isJobCanceled(job.id),
+        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+      });
+
+      if (candidates.length > 0) {
+        await safeDb(() =>
+          prisma.factoryClipCandidate.createMany({
+            data: candidates.map((candidate) => ({
+              jobId: job.id,
+              startSec: candidate.startSec,
+              endSec: candidate.endSec,
+              durationSec: candidate.durationSec,
+              motionScore: candidate.motionScore,
+              audioScore: candidate.audioScore,
+              firstFrameScore: candidate.firstFrameScore,
+              sceneScore: candidate.sceneScore,
+              finalScore: candidate.finalScore,
+              selected: candidate.selected,
+              reason: candidate.reason,
+            })),
+          }),
+        );
+      }
+
+      clipStarts = candidates
+        .filter((candidate) => candidate.selected)
+        .sort((a, b) => a.startSec - b.startSec)
+        .map((candidate) => candidate.startSec);
+
+      await updateJobProgress(
+        job.id,
+        55,
+        `Smart Cut Lite: выбрано лучших клипов ${clipStarts.length}`,
+      );
+    } else {
+      clipStarts = buildSequentialClipStarts({
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        clipStartIndex,
+      });
     }
 
     if (clipStarts.length === 0) {
-      throw new Error("Видео слишком короткое для выбранной длины клипа");
+      throw new Error(
+        "Видео слишком короткое или Smart Cut Lite не нашел подходящие куски",
+      );
     }
 
     await db(() =>
@@ -441,11 +509,11 @@ async function processOneJob() {
     );
 
     const totalRenders = clipStarts.reduce((sum, _startSec, index) => {
-      const localClipNumber = index + 1;
+      const clipNumber = index + 1;
 
       return (
         sum +
-        targets.filter((target) => localClipNumber <= (target.maxClips ?? 10)).length
+        targets.filter((target) => clipNumber <= (target.maxClips ?? 10)).length
       );
     }, 0);
 
@@ -463,7 +531,7 @@ async function processOneJob() {
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
-        seedHint: job.id,
+        seedHint: `${job.id}:${clipIndex}:base`,
       });
 
       const clip = await db(() =>
@@ -479,11 +547,11 @@ async function processOneJob() {
       );
 
       for (const target of targets) {
+        await assertNotCanceled(job.id);
+
         if (localClipNumber > (target.maxClips ?? 10)) {
           continue;
         }
-
-        await assertNotCanceled(job.id);
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
 
@@ -491,7 +559,7 @@ async function processOneJob() {
           game: job.game,
           clipIndex,
           customPrefix: titlePrefixForTarget,
-          seedHint: target.accountId,
+          seedHint: `${job.id}:${target.accountId}:${clipIndex}`,
         });
 
         const description = buildClipDescription({
@@ -509,6 +577,7 @@ async function processOneJob() {
         );
 
         const characterVideoPath = await ensureLocalTemplateAssetFile(target);
+
         const thumbnailPath = await ensureLocalThumbnailFile({
           game: job.game,
           seed: `${job.id}:${target.accountId}:${clipIndex}`,
@@ -676,7 +745,9 @@ async function processOneJob() {
 
           completedRenders += 1;
         } finally {
-          await rm(outputPath, { force: true });
+          await rm(outputPath, {
+            force: true,
+          });
         }
       }
     }
@@ -695,7 +766,9 @@ async function processOneJob() {
     );
 
     if (sourcePath) {
-      await rm(sourcePath, { force: true });
+      await rm(sourcePath, {
+        force: true,
+      });
     }
 
     console.log(`Job ${job.id} done`);
@@ -713,7 +786,9 @@ async function processOneJob() {
     }
 
     if (sourcePath) {
-      await rm(sourcePath, { force: true });
+      await rm(sourcePath, {
+        force: true,
+      });
     }
 
     return true;
@@ -739,7 +814,10 @@ async function resetInterruptedJobs() {
 async function main() {
   console.log("Factory worker started");
 
-  await mkdir(FACTORY_SOURCE_DIR, { recursive: true });
+  await mkdir(FACTORY_SOURCE_DIR, {
+    recursive: true,
+  });
+
   await resetInterruptedJobs();
 
   while (true) {
