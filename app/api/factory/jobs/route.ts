@@ -33,6 +33,8 @@ const publishTimingSchema = z
   .enum(["NOW", "NY_14", "NY_17", "NY_20", "NY_22", "USA_SMART"])
   .default("NOW");
 
+const cutModeSchema = z.enum(["SEQUENTIAL", "SMART_LITE"]).default("SEQUENTIAL");
+
 const targetSchema = z.object({
   accountId: z.string().min(1),
   templateId: z.string().optional().nullable(),
@@ -40,19 +42,29 @@ const targetSchema = z.object({
   maxClips: z.coerce.number().int().min(1).max(100).default(10),
 });
 
-const jsonCreateJobSchema = z.object({
-  sourceUrl: z.string().url(),
-  clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]),
-  game: gameSchema.default("OTHER"),
-  titlePrefix: z.string().max(80).optional(),
-  templateId: z.string().optional().nullable(),
-  publishTiming: publishTimingSchema,
-  targets: z.array(targetSchema).min(1),
+const smartSettingsSchema = z.object({
+  cutMode: cutModeSchema,
+  smartStepSeconds: z.coerce.number().int().min(5).max(30).default(10),
+  smartCandidates: z.coerce.number().int().min(10).max(200).default(80),
+  smartMinGapSeconds: z.coerce.number().int().min(10).max(120).default(30),
 });
+
+const jsonCreateJobSchema = z
+  .object({
+    sourceUrl: z.string().url(),
+    clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]),
+    game: gameSchema.default("OTHER"),
+    titlePrefix: z.string().max(80).optional(),
+    templateId: z.string().optional().nullable(),
+    publishTiming: publishTimingSchema,
+    targets: z.array(targetSchema).min(1),
+  })
+  .merge(smartSettingsSchema);
 
 type ParsedTarget = z.infer<typeof targetSchema>;
 type ParsedPublishTiming = z.infer<typeof publishTimingSchema>;
 type ParsedGame = z.infer<typeof gameSchema>;
+type ParsedCutMode = z.infer<typeof cutModeSchema>;
 
 function parseClipSeconds(value: FormDataEntryValue | null) {
   const numberValue = Number(value);
@@ -78,6 +90,15 @@ function parsePublishTiming(value: FormDataEntryValue | null) {
   }
 
   return publishTimingSchema.parse(value);
+}
+
+function parseSmartSettings(formData: FormData) {
+  return smartSettingsSchema.parse({
+    cutMode: formData.get("cutMode") || "SEQUENTIAL",
+    smartStepSeconds: formData.get("smartStepSeconds") || 10,
+    smartCandidates: formData.get("smartCandidates") || 80,
+    smartMinGapSeconds: formData.get("smartMinGapSeconds") || 30,
+  });
 }
 
 function parseTargets(value: FormDataEntryValue | null) {
@@ -182,6 +203,10 @@ async function createJobWithTargets(input: {
   scheduledAt: Date | null;
   progressLabel: string;
   targets: ParsedTarget[];
+  cutMode: ParsedCutMode;
+  smartStepSeconds: number;
+  smartCandidates: number;
+  smartMinGapSeconds: number;
 }) {
   const normalizedTargets = normalizeTargets(input.targets);
   const accountIds = normalizedTargets.map((target) => target.accountId);
@@ -255,6 +280,10 @@ async function createJobWithTargets(input: {
           platforms,
           publishTiming: input.publishTiming,
           scheduledAt: input.scheduledAt,
+          cutMode: input.cutMode,
+          smartStepSeconds: input.smartStepSeconds,
+          smartCandidates: input.smartCandidates,
+          smartMinGapSeconds: input.smartMinGapSeconds,
           progress: 0,
           progressLabel: input.progressLabel,
           cancelRequested: false,
@@ -309,11 +338,14 @@ async function createUsaSmartJobs(input: {
   sourceOriginalName?: string | null;
   sourceSizeBytes?: number | null;
   clipSeconds: number;
-  clipStartIndex?: number;
   titlePrefix: string;
   game: ParsedGame;
   globalTemplateId: string | null;
   targets: ParsedTarget[];
+  cutMode: ParsedCutMode;
+  smartStepSeconds: number;
+  smartCandidates: number;
+  smartMinGapSeconds: number;
 }) {
   const slots = getUsaSmartUploadSlots();
   const smartTargets = normalizeTargetsForUsaSmart(input.targets);
@@ -327,7 +359,7 @@ async function createUsaSmartJobs(input: {
       sourceOriginalName: input.sourceOriginalName ?? null,
       sourceSizeBytes: input.sourceSizeBytes ?? null,
       clipSeconds: input.clipSeconds,
-      clipStartIndex: (slot.index - 1) * USA_SMART_CLIPS_PER_SLOT,
+      clipStartIndex: slot.index - 1,
       titlePrefix: input.titlePrefix,
       game: input.game,
       globalTemplateId: input.globalTemplateId,
@@ -337,6 +369,10 @@ async function createUsaSmartJobs(input: {
         slot.scheduledAt,
       )}`,
       targets: smartTargets,
+      cutMode: input.cutMode,
+      smartStepSeconds: input.smartStepSeconds,
+      smartCandidates: input.smartCandidates,
+      smartMinGapSeconds: input.smartMinGapSeconds,
     });
 
     jobs.push(job);
@@ -415,6 +451,7 @@ export async function POST(request: Request) {
       const game = parseGame(formData.get("game"));
       const gameMeta = getGameMeta(game);
       const publishTiming = parsePublishTiming(formData.get("publishTiming"));
+      const smartSettings = parseSmartSettings(formData);
 
       const rawTitlePrefix = z
         .string()
@@ -475,6 +512,7 @@ export async function POST(request: Request) {
           game,
           globalTemplateId: templateId,
           targets,
+          ...smartSettings,
         });
 
         return NextResponse.json({
@@ -498,6 +536,7 @@ export async function POST(request: Request) {
         scheduledAt: schedule.scheduledAt,
         progressLabel: schedule.progressLabel,
         targets,
+        ...smartSettings,
       });
 
       return NextResponse.json({
@@ -520,6 +559,10 @@ export async function POST(request: Request) {
         game: data.game,
         globalTemplateId: templateId,
         targets,
+        cutMode: data.cutMode,
+        smartStepSeconds: data.smartStepSeconds,
+        smartCandidates: data.smartCandidates,
+        smartMinGapSeconds: data.smartMinGapSeconds,
       });
 
       return NextResponse.json({
@@ -539,6 +582,10 @@ export async function POST(request: Request) {
       scheduledAt: schedule.scheduledAt,
       progressLabel: schedule.progressLabel,
       targets,
+      cutMode: data.cutMode,
+      smartStepSeconds: data.smartStepSeconds,
+      smartCandidates: data.smartCandidates,
+      smartMinGapSeconds: data.smartMinGapSeconds,
     });
 
     return NextResponse.json({
