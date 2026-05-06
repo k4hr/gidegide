@@ -24,6 +24,8 @@ type FactoryPublishTiming =
   | "NY_22"
   | "USA_SMART";
 
+type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE";
+
 type FactoryTemplate = {
   id: string;
   name: string;
@@ -51,6 +53,7 @@ type FactoryJob = {
   sourceOriginalName: string | null;
   sourceSizeBytes: number | null;
   clipSeconds: number;
+  clipStartIndex: number;
   titlePrefix: string;
   game: FactoryGame;
   platforms: string[];
@@ -61,6 +64,10 @@ type FactoryJob = {
   progressLabel: string | null;
   publishTiming: FactoryPublishTiming;
   scheduledAt: string | null;
+  cutMode: FactoryCutMode;
+  smartStepSeconds: number;
+  smartCandidates: number;
+  smartMinGapSeconds: number;
   cancelRequested: boolean;
   createdAt: string;
   targets: {
@@ -134,8 +141,7 @@ const publishTimingOptions: Array<{
   {
     value: "NOW",
     title: "Загрузить сейчас",
-    description:
-      "Worker начнет обработку и публикацию сразу после создания задачи.",
+    description: "Worker начнет обработку и публикацию сразу после создания задачи.",
   },
   {
     value: "NY_14",
@@ -220,6 +226,12 @@ export default function FactoryPage() {
   const [titlePrefix, setTitlePrefix] = useState("crazy roblox moments");
   const [publishTiming, setPublishTiming] =
     useState<FactoryPublishTiming>("NOW");
+
+  const [cutMode, setCutMode] = useState<FactoryCutMode>("SMART_LITE");
+  const [smartStepSeconds, setSmartStepSeconds] = useState("10");
+  const [smartCandidates, setSmartCandidates] = useState("80");
+  const [smartMinGapSeconds, setSmartMinGapSeconds] = useState("30");
+
   const [templateId, setTemplateId] = useState("");
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
@@ -257,65 +269,74 @@ export default function FactoryPage() {
   }
 
   async function loadTemplates() {
-    const response = await fetch("/api/factory/templates", {
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch("/api/factory/templates", {
+        cache: "no-store",
+      });
 
-    const data = (await response.json()) as {
-      templates: FactoryTemplate[];
-    };
+      const data = (await response.json()) as {
+        templates: FactoryTemplate[];
+      };
 
-    setTemplates(data.templates);
+      setTemplates(data.templates);
 
-    const defaultTemplateId = getDefaultTemplateId(data.templates);
+      const defaultTemplateId = getDefaultTemplateId(data.templates);
 
-    if (!templateId && defaultTemplateId) {
-      setTemplateId(defaultTemplateId);
-    }
-
-    setTargets((current) => {
-      const next = { ...current };
-
-      for (const accountId of Object.keys(next)) {
-        if (!next[accountId].templateId && defaultTemplateId) {
-          next[accountId] = {
-            ...next[accountId],
-            templateId: defaultTemplateId,
-          };
-        }
+      if (!templateId && defaultTemplateId) {
+        setTemplateId(defaultTemplateId);
       }
 
-      return next;
-    });
+      setTargets((current) => {
+        const next = { ...current };
+
+        for (const accountId of Object.keys(next)) {
+          if (!next[accountId].templateId && defaultTemplateId) {
+            next[accountId] = {
+              ...next[accountId],
+              templateId: defaultTemplateId,
+            };
+          }
+        }
+
+        return next;
+      });
+    } catch (templatesError) {
+      console.error(templatesError);
+    }
   }
 
   async function loadAccounts() {
-    const response = await fetch("/api/factory/accounts", {
-      cache: "no-store",
-    });
+    try {
+      const response = await fetch("/api/factory/accounts", {
+        cache: "no-store",
+      });
 
-    const data = (await response.json()) as {
-      accounts: FactoryAccount[];
-    };
+      const data = (await response.json()) as {
+        accounts: FactoryAccount[];
+      };
 
-    setAccounts(data.accounts);
+      setAccounts(data.accounts);
 
-    setTargets((current) => {
-      const next = { ...current };
+      setTargets((current) => {
+        const next = { ...current };
+        const defaultTemplateId = templateId || getDefaultTemplateId(templates);
 
-      for (const account of data.accounts) {
-        if (!next[account.id]) {
-          next[account.id] = {
-            enabled: false,
-            templateId,
-            titlePrefix,
-            maxClips: 10,
-          };
+        for (const account of data.accounts) {
+          if (!next[account.id]) {
+            next[account.id] = {
+              enabled: false,
+              templateId: defaultTemplateId,
+              titlePrefix,
+              maxClips: 10,
+            };
+          }
         }
-      }
 
-      return next;
-    });
+        return next;
+      });
+    } catch (accountsError) {
+      console.error(accountsError);
+    }
   }
 
   useEffect(() => {
@@ -328,7 +349,36 @@ export default function FactoryPage() {
     }, 5000);
 
     return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const defaultTemplateId = templateId || getDefaultTemplateId(templates);
+
+    if (!defaultTemplateId) return;
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const account of accounts) {
+        if (!next[account.id]) {
+          next[account.id] = {
+            enabled: false,
+            templateId: defaultTemplateId,
+            titlePrefix,
+            maxClips: 10,
+          };
+        } else if (!next[account.id].templateId) {
+          next[account.id] = {
+            ...next[account.id],
+            templateId: defaultTemplateId,
+          };
+        }
+      }
+
+      return next;
+    });
+  }, [accounts, templateId, templates, titlePrefix]);
 
   function handleGameChange(nextGame: FactoryGame) {
     const nextGameMeta =
@@ -381,6 +431,15 @@ export default function FactoryPage() {
       }));
   }
 
+  function getSmartSettingsPayload() {
+    return {
+      cutMode,
+      smartStepSeconds: Number(smartStepSeconds),
+      smartCandidates: Number(smartCandidates),
+      smartMinGapSeconds: Number(smartMinGapSeconds),
+    };
+  }
+
   async function createYoutubeUrlJob(nextPublishTiming: FactoryPublishTiming) {
     const response = await fetch("/api/factory/jobs", {
       method: "POST",
@@ -394,6 +453,7 @@ export default function FactoryPage() {
         titlePrefix,
         templateId: templateId || null,
         publishTiming: nextPublishTiming,
+        ...getSmartSettingsPayload(),
         targets: getSelectedTargets(),
       }),
     });
@@ -420,6 +480,10 @@ export default function FactoryPage() {
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
     formData.set("publishTiming", nextPublishTiming);
+    formData.set("cutMode", cutMode);
+    formData.set("smartStepSeconds", smartStepSeconds);
+    formData.set("smartCandidates", smartCandidates);
+    formData.set("smartMinGapSeconds", smartMinGapSeconds);
     formData.set("targets", JSON.stringify(getSelectedTargets()));
 
     await new Promise<void>((resolve, reject) => {
@@ -478,6 +542,24 @@ export default function FactoryPage() {
         throw new Error("Выбери хотя бы один YouTube или TikTok аккаунт");
       }
 
+      if (cutMode === "SMART_LITE") {
+        const step = Number(smartStepSeconds);
+        const candidates = Number(smartCandidates);
+        const minGap = Number(smartMinGapSeconds);
+
+        if (!Number.isFinite(step) || step < 5 || step > 30) {
+          throw new Error("Шаг анализа должен быть от 5 до 30 секунд");
+        }
+
+        if (!Number.isFinite(candidates) || candidates < 10 || candidates > 200) {
+          throw new Error("Количество кандидатов должно быть от 10 до 200");
+        }
+
+        if (!Number.isFinite(minGap) || minGap < 10 || minGap > 120) {
+          throw new Error("Минимальная дистанция должна быть от 10 до 120 секунд");
+        }
+      }
+
       if (sourceMode === "UPLOAD") {
         await createUploadJob(nextPublishTiming);
         setSourceFile(null);
@@ -527,10 +609,9 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Выбираешь игру, источник, время публикации и конкретные аккаунты.
-            Для каждого YouTube/TikTok аккаунта можно выбрать свой шаблон и
-            количество роликов. Названия роликов генерируются автоматически без
-            имен девушек, чтобы канал не выглядел как копипаста.
+            Выбираешь игру, источник, режим нарезки, время публикации и
+            конкретные аккаунты. Smart Cut Lite выбирает лучшие цельные фрагменты
+            без вырезания середины и без поломки звука.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -551,6 +632,7 @@ export default function FactoryPage() {
               <label>
                 Исходный MP4
                 <input
+                  key={sourceFile?.name ?? "empty"}
                   type="file"
                   accept="video/mp4,video/quicktime,video/*"
                   onChange={(event) =>
@@ -652,6 +734,87 @@ export default function FactoryPage() {
             </div>
 
             <section className="target-panel">
+              <h2>Режим нарезки</h2>
+              <p className="muted">
+                Smart Cut Lite не вырезает лица и не режет середину клипа. Он
+                только выбирает лучшие цельные стартовые точки по движению,
+                звуку и нормальному стартовому кадру.
+              </p>
+
+              <div className="schedule-options">
+                <label className="target-checkbox schedule-option">
+                  <input
+                    type="checkbox"
+                    checked={cutMode === "SEQUENTIAL"}
+                    onChange={() => setCutMode("SEQUENTIAL")}
+                  />
+
+                  <span>
+                    <b>Обычная нарезка подряд</b>
+                    <small>
+                      0–45, 45–90, 90–135. Быстро, но может брать слабые старты.
+                    </small>
+                  </span>
+                </label>
+
+                <label className="target-checkbox schedule-option">
+                  <input
+                    type="checkbox"
+                    checked={cutMode === "SMART_LITE"}
+                    onChange={() => setCutMode("SMART_LITE")}
+                  />
+
+                  <span>
+                    <b>Умная нарезка Lite</b>
+                    <small>
+                      Проверяет много стартов каждые 10 секунд и выбирает лучшие
+                      цельные куски. Внутри клипа ничего не вырезается.
+                    </small>
+                  </span>
+                </label>
+              </div>
+
+              {cutMode === "SMART_LITE" ? (
+                <div className="target-settings-grid smart-cut-grid">
+                  <label>
+                    Шаг анализа, сек
+                    <input
+                      type="number"
+                      min={5}
+                      max={30}
+                      value={smartStepSeconds}
+                      onChange={(event) => setSmartStepSeconds(event.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    Кандидатов проверить
+                    <input
+                      type="number"
+                      min={10}
+                      max={200}
+                      value={smartCandidates}
+                      onChange={(event) => setSmartCandidates(event.target.value)}
+                    />
+                  </label>
+
+                  <label>
+                    Мин. дистанция, сек
+                    <input
+                      type="number"
+                      min={10}
+                      max={120}
+                      value={smartMinGapSeconds}
+                      onChange={(event) =>
+                        setSmartMinGapSeconds(event.target.value)
+                      }
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="target-panel">
               <h2>Когда публиковать</h2>
               <p className="muted">
                 Если выбираешь время New York, задача создастся сразу, но worker
@@ -668,8 +831,10 @@ export default function FactoryPage() {
               >
                 <span>Грамотный залив под USA</span>
                 <small>
-                  21:00 МСК — 2 ролика · 23:00 МСК — 2 ролика · 01:00 МСК — 2
-                  ролика · 03:00 МСК — 2 ролика · 05:00 МСК — 2 ролика
+                  21:00 МСК — ролик 1 · 21:15 МСК — ролик 2 · 23:00 МСК — ролик
+                  3 · 23:15 МСК — ролик 4 · 01:00 МСК — ролик 5 · 01:15 МСК —
+                  ролик 6 · 03:00 МСК — ролик 7 · 03:15 МСК — ролик 8 · 05:00
+                  МСК — ролик 9 · 05:15 МСК — ролик 10
                 </small>
               </button>
 
@@ -796,8 +961,7 @@ export default function FactoryPage() {
             <p className="muted">
               Для {selectedGame.label} title рандомизируется автоматически, имена
               девушек в название не добавляются. Описание будет с 5 хэштегами
-              автоматически. Если на странице превью есть активные картинки,
-              worker будет незаметно вставлять одну из них в начало ролика.
+              автоматически.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
@@ -888,13 +1052,25 @@ export default function FactoryPage() {
                     </div>
 
                     <p className="muted">
-                      {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
+                      {job.sourceSizeBytes
+                        ? `${formatMb(job.sourceSizeBytes)} · `
+                        : ""}
                       {job.clipSeconds} сек
                     </p>
 
                     <p className="muted">
                       {getPublishTimingLabel(job.publishTiming)}
                     </p>
+
+                    <p className="muted">
+                      {job.cutMode === "SMART_LITE"
+                        ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
+                        : "Обычная нарезка подряд"}
+                    </p>
+
+                    {job.clipStartIndex > 0 ? (
+                      <p className="muted">Смещение: ролик #{job.clipStartIndex + 1}</p>
+                    ) : null}
                   </td>
 
                   <td>
