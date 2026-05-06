@@ -49,6 +49,11 @@ enum FactoryPublishTiming {
   USA_SMART
 }
 
+enum FactoryCutMode {
+  SEQUENTIAL
+  SMART_LITE
+}
+
 model FactoryAsset {
   id           String   @id @default(cuid())
   title        String
@@ -157,11 +162,18 @@ model FactoryJob {
   progressLabel      String?
   publishTiming      FactoryPublishTiming @default(NOW)
   scheduledAt        DateTime?
+
+  cutMode            FactoryCutMode    @default(SEQUENTIAL)
+  smartStepSeconds   Int               @default(10)
+  smartCandidates    Int               @default(80)
+  smartMinGapSeconds Int               @default(30)
+
   cancelRequested    Boolean           @default(false)
   canceledAt         DateTime?
 
   targets            FactoryJobTarget[]
   clips              FactoryClip[]
+  candidates         FactoryClipCandidate[]
 
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
@@ -175,6 +187,7 @@ model FactoryJob {
   @@index([templateId])
   @@index([publishTiming])
   @@index([scheduledAt])
+  @@index([cutMode])
 }
 
 model FactoryJobTarget {
@@ -226,6 +239,32 @@ model FactoryClip {
   @@index([jobId])
   @@index([createdAt])
   @@index([storageKey])
+}
+
+model FactoryClipCandidate {
+  id              String     @id @default(cuid())
+
+  jobId           String
+  job             FactoryJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  startSec        Int
+  endSec          Int
+  durationSec     Int
+
+  motionScore     Int        @default(0)
+  audioScore      Int        @default(0)
+  firstFrameScore Int        @default(0)
+  sceneScore      Int        @default(0)
+  finalScore      Int        @default(0)
+
+  selected        Boolean    @default(false)
+  reason          String?
+
+  createdAt       DateTime   @default(now())
+
+  @@index([jobId])
+  @@index([finalScore])
+  @@index([selected])
 }
 
 model FactoryPublish {
