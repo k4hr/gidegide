@@ -1,7 +1,12 @@
 "use client";
 
+import type { FormEvent } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+
+type SourceMode = "UPLOAD" | "YOUTUBE";
+
+type FactoryPlatform = "YOUTUBE" | "TIKTOK";
 
 type FactoryGame =
   | "ROBLOX"
@@ -11,245 +16,614 @@ type FactoryGame =
   | "DOTA2"
   | "OTHER";
 
-type FactoryThumbnail = {
+type FactoryPublishTiming =
+  | "NOW"
+  | "NY_14"
+  | "NY_17"
+  | "NY_20"
+  | "NY_22"
+  | "USA_SMART";
+
+type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE";
+type PublishAction = "DEFAULT" | "USA_SMART" | "LONG_USA_DAILY";
+
+type FactoryTemplate = {
   id: string;
-  title: string;
-  game: FactoryGame;
-  filePath: string;
-  storageKey: string | null;
-  originalName: string | null;
-  mimeType: string | null;
-  sizeBytes: number | null;
-  isActive: boolean;
+  name: string;
+  isDefault: boolean;
+};
+
+type FactoryAccount = {
+  id: string;
+  platform: FactoryPlatform;
+  name: string;
+  expiresAt: string | null;
   createdAt: string;
-  updatedAt: string;
+};
+
+type TargetState = {
+  enabled: boolean;
+  templateId: string;
+  titlePrefix: string;
+  maxClips: number;
+};
+
+type FactoryJob = {
+  id: string;
+  sourceUrl: string | null;
+  sourceOriginalName: string | null;
+  sourceSizeBytes: number | null;
+  clipSeconds: number;
+  clipStartIndex: number;
+  titlePrefix: string;
+  game: FactoryGame;
+  platforms: string[];
+  status: string;
+  error: string | null;
+  totalClips: number;
+  progress: number;
+  progressLabel: string | null;
+  publishTiming: FactoryPublishTiming;
+  scheduledAt: string | null;
+  cutMode: FactoryCutMode;
+  smartStepSeconds: number;
+  smartCandidates: number;
+  smartMinGapSeconds: number;
+  cancelRequested: boolean;
+  createdAt: string;
+  targets: {
+    id: string;
+    platform: FactoryPlatform;
+    titlePrefix: string | null;
+    maxClips: number;
+    account: FactoryAccount;
+    template: FactoryTemplate | null;
+  }[];
+  clips: {
+    id: string;
+    index: number;
+    title: string;
+    publishes: {
+      id: string;
+      platform: FactoryPlatform;
+      status: string;
+      platformUrl: string | null;
+      error: string | null;
+      account: FactoryAccount | null;
+      target: {
+        template: FactoryTemplate | null;
+      } | null;
+    }[];
+  }[];
 };
 
 const gameOptions: Array<{
   value: FactoryGame;
   label: string;
+  titlePrefix: string;
 }> = [
-  { value: "ROBLOX", label: "Roblox" },
-  { value: "FORTNITE", label: "Fortnite" },
-  { value: "MINECRAFT", label: "Minecraft" },
-  { value: "BRAWL_STARS", label: "Brawl Stars" },
-  { value: "DOTA2", label: "Dota 2" },
-  { value: "OTHER", label: "Other" },
+  {
+    value: "ROBLOX",
+    label: "Roblox",
+    titlePrefix: "crazy roblox moments",
+  },
+  {
+    value: "FORTNITE",
+    label: "Fortnite",
+    titlePrefix: "fortnite highlights",
+  },
+  {
+    value: "MINECRAFT",
+    label: "Minecraft",
+    titlePrefix: "minecraft moments",
+  },
+  {
+    value: "BRAWL_STARS",
+    label: "Brawl Stars",
+    titlePrefix: "brawl stars clips",
+  },
+  {
+    value: "DOTA2",
+    label: "Dota 2",
+    titlePrefix: "dota 2 highlights",
+  },
+  {
+    value: "OTHER",
+    label: "Other",
+    titlePrefix: "gaming highlights",
+  },
 ];
 
-function formatMb(bytes: number | null) {
-  if (!bytes) return "—";
+const publishTimingOptions: Array<{
+  value: Exclude<FactoryPublishTiming, "USA_SMART">;
+  title: string;
+  description: string;
+}> = [
+  {
+    value: "NOW",
+    title: "Загрузить сейчас",
+    description:
+      "Worker начнет обработку и публикацию сразу после создания задачи.",
+  },
+  {
+    value: "NY_14",
+    title: "14:00 New York = 21:00 МСК",
+    description: "Задача будет ждать ближайшее 14:00 по New York time.",
+  },
+  {
+    value: "NY_17",
+    title: "17:00 New York = 00:00 МСК",
+    description: "Задача будет ждать ближайшее 17:00 по New York time.",
+  },
+  {
+    value: "NY_20",
+    title: "20:00 New York = 03:00 МСК",
+    description: "Основное вечернее окно для USA-аудитории.",
+  },
+  {
+    value: "NY_22",
+    title: "22:00 New York = 05:00 МСК",
+    description: "Позднее вечернее окно для USA-аудитории.",
+  },
+];
 
-  return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
+function canCancel(job: FactoryJob) {
+  return !["DONE", "FAILED", "CANCELED"].includes(job.status);
 }
 
-function formatDateTime(value: string) {
+function formatMb(bytes: number | null) {
+  if (!bytes) return "";
+
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getDefaultTemplateId(templates: FactoryTemplate[]) {
+  return (
+    templates.find((template) => template.isDefault)?.id ??
+    templates[0]?.id ??
+    ""
+  );
+}
+
+function formatDateTime(value: string | null) {
+  if (!value) return "—";
+
   return new Date(value).toLocaleString("ru-RU", {
     dateStyle: "medium",
     timeStyle: "short",
   });
 }
 
-function getGameLabel(game: FactoryGame) {
-  return gameOptions.find((option) => option.value === game)?.label ?? game;
+function getPublishTimingLabel(value: FactoryPublishTiming) {
+  if (value === "USA_SMART") {
+    return "Грамотный залив под USA";
+  }
+
+  return (
+    publishTimingOptions.find((option) => option.value === value)?.title ??
+    "Загрузить сейчас"
+  );
 }
 
-function getTotalSize(files: File[]) {
-  return files.reduce((sum, file) => sum + file.size, 0);
+function getSubmitAction(event: FormEvent<HTMLFormElement>): PublishAction {
+  const nativeEvent = event.nativeEvent as SubmitEvent;
+  const submitter = nativeEvent.submitter;
+
+  if (submitter instanceof HTMLButtonElement) {
+    if (submitter.value === "USA_SMART") return "USA_SMART";
+    if (submitter.value === "LONG_USA_DAILY") return "LONG_USA_DAILY";
+  }
+
+  return "DEFAULT";
 }
 
-export default function FactoryThumbnailsPage() {
-  const [thumbnails, setThumbnails] = useState<FactoryThumbnail[]>([]);
-  const [title, setTitle] = useState("");
+function getSubmitPublishTiming(
+  action: PublishAction,
+  fallback: FactoryPublishTiming,
+) {
+  if (action === "USA_SMART" || action === "LONG_USA_DAILY") {
+    return "USA_SMART" as const;
+  }
+
+  return fallback;
+}
+
+export default function FactoryPage() {
+  const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceFile, setSourceFile] = useState<File | null>(null);
+  const [clipSeconds, setClipSeconds] = useState("45");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [files, setFiles] = useState<File[]>([]);
-  const [filterGame, setFilterGame] = useState<FactoryGame | "ALL">("ALL");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgressText, setUploadProgressText] = useState("");
-  const [deletingId, setDeletingId] = useState("");
-  const [togglingId, setTogglingId] = useState("");
+  const [titlePrefix, setTitlePrefix] = useState("crazy roblox moments");
+  const [publishTiming, setPublishTiming] =
+    useState<FactoryPublishTiming>("NOW");
+
+  const [cutMode, setCutMode] = useState<FactoryCutMode>("SMART_LITE");
+  const [smartStepSeconds, setSmartStepSeconds] = useState("10");
+  const [smartCandidates, setSmartCandidates] = useState("80");
+  const [smartMinGapSeconds, setSmartMinGapSeconds] = useState("30");
+
+  const [templateId, setTemplateId] = useState("");
+  const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
+  const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
+  const [targets, setTargets] = useState<Record<string, TargetState>>({});
+  const [jobs, setJobs] = useState<FactoryJob[]>([]);
+  const [isCreating, setIsCreating] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [cancelingJobId, setCancelingJobId] = useState("");
   const [error, setError] = useState("");
 
-  const filteredThumbnails = useMemo(() => {
-    if (filterGame === "ALL") {
-      return thumbnails;
-    }
+  const selectedGame = useMemo(
+    () => gameOptions.find((option) => option.value === game) ?? gameOptions[5],
+    [game],
+  );
 
-    return thumbnails.filter((thumbnail) => thumbnail.game === filterGame);
-  }, [filterGame, thumbnails]);
-
-  async function loadThumbnails() {
+  async function loadJobs() {
     try {
-      setError("");
-
-      const response = await fetch("/api/factory/thumbnails", {
+      const response = await fetch("/api/factory/jobs", {
         cache: "no-store",
       });
 
       const data = (await response.json()) as {
-        thumbnails?: FactoryThumbnail[];
+        jobs?: FactoryJob[];
         error?: string;
       };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось загрузить превью");
+        throw new Error(data.error ?? "Не получилось загрузить задачи");
       }
 
-      setThumbnails(data.thumbnails ?? []);
-    } catch (loadError) {
-      setError(
-        loadError instanceof Error
-          ? loadError.message
-          : "Не получилось загрузить превью",
-      );
-    } finally {
-      setIsLoading(false);
+      setJobs(data.jobs ?? []);
+    } catch (jobsError) {
+      console.error(jobsError);
+    }
+  }
+
+  async function loadTemplates() {
+    try {
+      const response = await fetch("/api/factory/templates", {
+        cache: "no-store",
+      });
+
+      const data = (await response.json()) as {
+        templates: FactoryTemplate[];
+      };
+
+      setTemplates(data.templates);
+
+      const defaultTemplateId = getDefaultTemplateId(data.templates);
+
+      if (!templateId && defaultTemplateId) {
+        setTemplateId(defaultTemplateId);
+      }
+
+      setTargets((current) => {
+        const next = { ...current };
+
+        for (const accountId of Object.keys(next)) {
+          if (!next[accountId].templateId && defaultTemplateId) {
+            next[accountId] = {
+              ...next[accountId],
+              templateId: defaultTemplateId,
+            };
+          }
+        }
+
+        return next;
+      });
+    } catch (templatesError) {
+      console.error(templatesError);
+    }
+  }
+
+  async function loadAccounts() {
+    try {
+      const response = await fetch("/api/factory/accounts", {
+        cache: "no-store",
+      });
+
+      const data = (await response.json()) as {
+        accounts: FactoryAccount[];
+      };
+
+      setAccounts(data.accounts);
+
+      setTargets((current) => {
+        const next = { ...current };
+        const defaultTemplateId = templateId || getDefaultTemplateId(templates);
+
+        for (const account of data.accounts) {
+          if (!next[account.id]) {
+            next[account.id] = {
+              enabled: false,
+              templateId: defaultTemplateId,
+              titlePrefix,
+              maxClips: 10,
+            };
+          }
+        }
+
+        return next;
+      });
+    } catch (accountsError) {
+      console.error(accountsError);
     }
   }
 
   useEffect(() => {
-    loadThumbnails();
+    loadJobs();
+    loadTemplates();
+    loadAccounts();
+
+    const timer = window.setInterval(() => {
+      loadJobs();
+    }, 5000);
+
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function resetFileInput() {
-    setFiles([]);
+  useEffect(() => {
+    const defaultTemplateId = templateId || getDefaultTemplateId(templates);
 
-    const fileInput = document.getElementById(
-      "factory-thumbnail-files",
-    ) as HTMLInputElement | null;
+    if (!defaultTemplateId) return;
 
-    if (fileInput) {
-      fileInput.value = "";
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const account of accounts) {
+        if (!next[account.id]) {
+          next[account.id] = {
+            enabled: false,
+            templateId: defaultTemplateId,
+            titlePrefix,
+            maxClips: 10,
+          };
+        } else if (!next[account.id].templateId) {
+          next[account.id] = {
+            ...next[account.id],
+            templateId: defaultTemplateId,
+          };
+        }
+      }
+
+      return next;
+    });
+  }, [accounts, templateId, templates, titlePrefix]);
+
+  function handleGameChange(nextGame: FactoryGame) {
+    const nextGameMeta =
+      gameOptions.find((option) => option.value === nextGame) ?? gameOptions[5];
+
+    setGame(nextGame);
+    setTitlePrefix(nextGameMeta.titlePrefix);
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const accountId of Object.keys(next)) {
+        next[accountId] = {
+          ...next[accountId],
+          titlePrefix: nextGameMeta.titlePrefix,
+        };
+      }
+
+      return next;
+    });
+  }
+
+  function updateTarget(accountId: string, patch: Partial<TargetState>) {
+    setTargets((current) => ({
+      ...current,
+      [accountId]: {
+        enabled: current[accountId]?.enabled ?? false,
+        templateId:
+          current[accountId]?.templateId ||
+          templateId ||
+          getDefaultTemplateId(templates),
+        titlePrefix: current[accountId]?.titlePrefix || titlePrefix,
+        maxClips: current[accountId]?.maxClips ?? 10,
+        ...patch,
+      },
+    }));
+  }
+
+  function getSelectedTargets() {
+    return accounts
+      .filter((account) => targets[account.id]?.enabled)
+      .map((account) => ({
+        accountId: account.id,
+        templateId:
+          targets[account.id]?.templateId ||
+          templateId ||
+          getDefaultTemplateId(templates),
+        titlePrefix: targets[account.id]?.titlePrefix || titlePrefix,
+        maxClips: targets[account.id]?.maxClips ?? 10,
+      }));
+  }
+
+  function getSmartSettingsPayload() {
+    return {
+      cutMode,
+      smartStepSeconds: Number(smartStepSeconds),
+      smartCandidates: Number(smartCandidates),
+      smartMinGapSeconds: Number(smartMinGapSeconds),
+    };
+  }
+
+  async function createYoutubeUrlJob(
+    nextPublishTiming: FactoryPublishTiming,
+    action: PublishAction,
+  ) {
+    const response = await fetch("/api/factory/jobs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        sourceUrl,
+        clipSeconds: Number(clipSeconds),
+        game,
+        titlePrefix,
+        templateId: templateId || null,
+        publishTiming: nextPublishTiming,
+        packageMode: action === "LONG_USA_DAILY" ? "LONG_USA_DAILY" : "NORMAL",
+        ...getSmartSettingsPayload(),
+        targets: getSelectedTargets(),
+      }),
+    });
+
+    const data = (await response.json()) as {
+      error?: string;
+    };
+
+    if (!response.ok) {
+      throw new Error(data.error ?? "Не получилось создать задачу");
     }
   }
 
-  async function uploadThumbnails(event: React.FormEvent<HTMLFormElement>) {
+  async function createUploadJob(
+    nextPublishTiming: FactoryPublishTiming,
+    action: PublishAction,
+  ) {
+    if (!sourceFile) {
+      throw new Error("Выбери исходный MP4-файл");
+    }
+
+    const formData = new FormData();
+
+    formData.set("sourceFile", sourceFile);
+    formData.set("clipSeconds", clipSeconds);
+    formData.set("game", game);
+    formData.set("titlePrefix", titlePrefix);
+    formData.set("templateId", templateId);
+    formData.set("publishTiming", nextPublishTiming);
+    formData.set(
+      "packageMode",
+      action === "LONG_USA_DAILY" ? "LONG_USA_DAILY" : "NORMAL",
+    );
+    formData.set("cutMode", cutMode);
+    formData.set("smartStepSeconds", smartStepSeconds);
+    formData.set("smartCandidates", smartCandidates);
+    formData.set("smartMinGapSeconds", smartMinGapSeconds);
+    formData.set("targets", JSON.stringify(getSelectedTargets()));
+
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.open("POST", "/api/factory/jobs");
+
+      xhr.upload.onprogress = (event) => {
+        if (!event.lengthComputable) return;
+
+        setUploadProgress(Math.round((event.loaded / event.total) * 100));
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+          return;
+        }
+
+        try {
+          const data = JSON.parse(xhr.responseText) as {
+            error?: string;
+          };
+
+          reject(new Error(data.error ?? "Не получилось создать задачу"));
+        } catch {
+          reject(new Error("Не получилось создать задачу"));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error("Ошибка загрузки файла"));
+      };
+
+      xhr.send(formData);
+    });
+  }
+
+  async function createJob(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (files.length === 0) {
-      setError("Выбери одну или сразу много JPG, PNG или WEBP картинок");
-      return;
-    }
+    const submitAction = getSubmitAction(event);
+    const nextPublishTiming = getSubmitPublishTiming(
+      submitAction,
+      publishTiming,
+    );
 
-    setIsUploading(true);
+    setIsCreating(true);
     setError("");
-    setUploadProgressText(`Готовлю загрузку: ${files.length} файлов`);
+    setUploadProgress(0);
 
     try {
-      const formData = new FormData();
-
-      formData.set("title", title.trim());
-      formData.set("game", game);
-
-      for (const file of files) {
-        formData.append("files", file);
+      if (templates.length === 0) {
+        throw new Error(
+          "Сначала создай хотя бы один шаблон на странице /factory/templates",
+        );
       }
 
-      const response = await fetch("/api/factory/thumbnails", {
+      if (getSelectedTargets().length === 0) {
+        throw new Error("Выбери хотя бы один YouTube или TikTok аккаунт");
+      }
+
+      if (cutMode === "SMART_LITE") {
+        const step = Number(smartStepSeconds);
+        const candidates = Number(smartCandidates);
+        const minGap = Number(smartMinGapSeconds);
+
+        if (!Number.isFinite(step) || step < 5 || step > 30) {
+          throw new Error("Шаг анализа должен быть от 5 до 30 секунд");
+        }
+
+        if (
+          !Number.isFinite(candidates) ||
+          candidates < 10 ||
+          candidates > 200
+        ) {
+          throw new Error("Количество кандидатов должно быть от 10 до 200");
+        }
+
+        if (!Number.isFinite(minGap) || minGap < 10 || minGap > 120) {
+          throw new Error(
+            "Минимальная дистанция должна быть от 10 до 120 секунд",
+          );
+        }
+      }
+
+      if (sourceMode === "UPLOAD") {
+        await createUploadJob(nextPublishTiming, submitAction);
+        setSourceFile(null);
+      } else {
+        await createYoutubeUrlJob(nextPublishTiming, submitAction);
+        setSourceUrl("");
+      }
+
+      setUploadProgress(100);
+      await loadJobs();
+    } catch (createError) {
+      setError(
+        createError instanceof Error
+          ? createError.message
+          : "Не получилось создать задачу",
+      );
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  async function cancelJob(jobId: string) {
+    setCancelingJobId(jobId);
+
+    try {
+      await fetch(`/api/factory/jobs/${jobId}/cancel`, {
         method: "POST",
-        body: formData,
       });
 
-      const data = (await response.json()) as {
-        thumbnail?: FactoryThumbnail;
-        thumbnails?: FactoryThumbnail[];
-        uploadedCount?: number;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось загрузить превью");
-      }
-
-      setUploadProgressText(
-        `Загружено превью: ${data.uploadedCount ?? data.thumbnails?.length ?? files.length}`,
-      );
-
-      setTitle("");
-      resetFileInput();
-
-      await loadThumbnails();
-    } catch (uploadError) {
-      setError(
-        uploadError instanceof Error
-          ? uploadError.message
-          : "Не получилось загрузить превью",
-      );
+      await loadJobs();
     } finally {
-      setIsUploading(false);
-    }
-  }
-
-  async function toggleThumbnail(thumbnail: FactoryThumbnail) {
-    setTogglingId(thumbnail.id);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/factory/thumbnails/${thumbnail.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          isActive: !thumbnail.isActive,
-        }),
-      });
-
-      const data = (await response.json()) as {
-        thumbnail?: FactoryThumbnail;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось обновить превью");
-      }
-
-      await loadThumbnails();
-    } catch (toggleError) {
-      setError(
-        toggleError instanceof Error
-          ? toggleError.message
-          : "Не получилось обновить превью",
-      );
-    } finally {
-      setTogglingId("");
-    }
-  }
-
-  async function deleteThumbnail(thumbnailId: string) {
-    const confirmed = window.confirm("Удалить это превью?");
-
-    if (!confirmed) {
-      return;
-    }
-
-    setDeletingId(thumbnailId);
-    setError("");
-
-    try {
-      const response = await fetch(`/api/factory/thumbnails/${thumbnailId}`, {
-        method: "DELETE",
-      });
-
-      const data = (await response.json()) as {
-        ok?: boolean;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось удалить превью");
-      }
-
-      await loadThumbnails();
-    } catch (deleteError) {
-      setError(
-        deleteError instanceof Error
-          ? deleteError.message
-          : "Не получилось удалить превью",
-      );
-    } finally {
-      setDeletingId("");
+      setCancelingJobId("");
     }
   }
 
@@ -265,30 +639,80 @@ export default function FactoryThumbnailsPage() {
         </nav>
 
         <section className="card">
-          <h1>Превью для Shorts</h1>
+          <h1>Lana Content Factory</h1>
           <p>
-            Загружай пачкой разные вертикальные картинки 9:16. Завод будет брать
-            случайное активное превью под выбранную игру и вставлять его в самое
-            начало ролика на 0.09–0.12 секунды. Для глаза почти незаметно, но
-            сетка канала будет выглядеть разнообразнее.
+            Выбираешь игру, источник, режим нарезки, время публикации и
+            конкретные аккаунты. Smart Cut Lite выбирает лучшие цельные
+            фрагменты без вырезания середины и без поломки звука.
           </p>
 
-          <form className="thumbnail-upload-form" onSubmit={uploadThumbnails}>
-            <div className="grid grid-2">
+          <form className="grid" onSubmit={createJob}>
+            <label>
+              Источник
+              <select
+                value={sourceMode}
+                onChange={(event) =>
+                  setSourceMode(event.target.value as SourceMode)
+                }
+              >
+                <option value="YOUTUBE">
+                  YouTube URL → RIP auto downloader
+                </option>
+                <option value="UPLOAD">Загрузить MP4 вручную</option>
+              </select>
+            </label>
+
+            {sourceMode === "UPLOAD" ? (
               <label>
-                Общее название пачки, необязательно
+                Исходный MP4
                 <input
-                  value={title}
-                  onChange={(event) => setTitle(event.target.value)}
-                  placeholder="ROBLOX"
+                  key={sourceFile?.name ?? "empty"}
+                  type="file"
+                  accept="video/mp4,video/quicktime,video/*"
+                  onChange={(event) =>
+                    setSourceFile(event.target.files?.[0] ?? null)
+                  }
+                  required
                 />
               </label>
+            ) : (
+              <label>
+                YouTube URL
+                <input
+                  value={sourceUrl}
+                  onChange={(event) => setSourceUrl(event.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  required
+                />
+              </label>
+            )}
 
+            {isCreating && sourceMode === "UPLOAD" ? (
+              <div className="upload-progress">
+                <div className="progress-head">
+                  <span>Загрузка исходника</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+
+                <div className="progress-track">
+                  <div
+                    className="progress-fill"
+                    style={{
+                      width: `${uploadProgress}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
+            <div className="grid grid-2">
               <label>
                 Игра
                 <select
                   value={game}
-                  onChange={(event) => setGame(event.target.value as FactoryGame)}
+                  onChange={(event) =>
+                    handleGameChange(event.target.value as FactoryGame)
+                  }
                 >
                   {gameOptions.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -297,173 +721,486 @@ export default function FactoryThumbnailsPage() {
                   ))}
                 </select>
               </label>
-            </div>
 
-            <label>
-              Картинки превью
-              <input
-                id="factory-thumbnail-files"
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp,image/*"
-                onChange={(event) =>
-                  setFiles(Array.from(event.target.files ?? []))
-                }
-              />
-            </label>
-
-            <div className="thumbnail-rules">
-              <span className="badge">Можно выбрать сразу много файлов</span>
-              <span className="badge">Лучший формат: 1080×1920</span>
-              <span className="badge">JPG / PNG / WEBP</span>
-              <span className="badge">Без мелкого текста</span>
-              <span className="badge">Яркий первый кадр</span>
-            </div>
-
-            {files.length > 0 ? (
-              <div className="upload-progress">
-                <div className="progress-head">
-                  <span>Выбрано файлов</span>
-                  <span>{files.length}</span>
-                </div>
-
-                <p className="muted">
-                  Общий размер: {formatMb(getTotalSize(files))}
-                </p>
-
-                <div className="thumbnail-rules">
-                  {files.slice(0, 12).map((file) => (
-                    <span className="badge" key={`${file.name}-${file.size}`}>
-                      {file.name}
-                    </span>
-                  ))}
-
-                  {files.length > 12 ? (
-                    <span className="badge">+{files.length - 12} еще</span>
+              <label>
+                Шаблон по умолчанию
+                <select
+                  value={templateId}
+                  onChange={(event) => {
+                    setTemplateId(event.target.value);
+                  }}
+                >
+                  {templates.length === 0 ? (
+                    <option value="">Сначала создай шаблон</option>
                   ) : null}
-                </div>
-              </div>
-            ) : null}
 
-            {uploadProgressText ? (
-              <p className="success">{uploadProgressText}</p>
-            ) : null}
+                  {templates.map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                      {template.isDefault ? " — default" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="grid grid-2">
+              <label>
+                Длина клипа
+                <select
+                  value={clipSeconds}
+                  onChange={(event) => setClipSeconds(event.target.value)}
+                >
+                  <option value="30">30 секунд</option>
+                  <option value="45">45 секунд</option>
+                  <option value="60">60 секунд</option>
+                </select>
+              </label>
+
+              <label>
+                Тема title, опционально
+                <input
+                  value={titlePrefix}
+                  onChange={(event) => setTitlePrefix(event.target.value)}
+                  placeholder={selectedGame.titlePrefix}
+                />
+              </label>
+            </div>
+
+            <section className="target-panel">
+              <h2>Режим нарезки</h2>
+              <p className="muted">
+                Smart Cut Lite не вырезает лица и не режет середину клипа. Он
+                только выбирает лучшие цельные стартовые точки по движению,
+                звуку и нормальному стартовому кадру.
+              </p>
+
+              <div className="schedule-options">
+                <label className="target-checkbox schedule-option">
+                  <input
+                    type="checkbox"
+                    checked={cutMode === "SEQUENTIAL"}
+                    onChange={() => setCutMode("SEQUENTIAL")}
+                  />
+
+                  <span>
+                    <b>Обычная нарезка подряд</b>
+                    <small>
+                      0–45, 45–90, 90–135. Быстро, но может брать слабые старты.
+                    </small>
+                  </span>
+                </label>
+
+                <label className="target-checkbox schedule-option">
+                  <input
+                    type="checkbox"
+                    checked={cutMode === "SMART_LITE"}
+                    onChange={() => setCutMode("SMART_LITE")}
+                  />
+
+                  <span>
+                    <b>Умная нарезка Lite</b>
+                    <small>
+                      Проверяет много стартов каждые 10 секунд и выбирает лучшие
+                      цельные куски. Внутри клипа ничего не вырезается.
+                    </small>
+                  </span>
+                </label>
+              </div>
+
+              {cutMode === "SMART_LITE" ? (
+                <div className="target-settings-grid smart-cut-grid">
+                  <label>
+                    Шаг анализа, сек
+                    <input
+                      type="number"
+                      min={5}
+                      max={30}
+                      value={smartStepSeconds}
+                      onChange={(event) =>
+                        setSmartStepSeconds(event.target.value)
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Кандидатов проверить
+                    <input
+                      type="number"
+                      min={10}
+                      max={200}
+                      value={smartCandidates}
+                      onChange={(event) =>
+                        setSmartCandidates(event.target.value)
+                      }
+                    />
+                  </label>
+
+                  <label>
+                    Мин. дистанция, сек
+                    <input
+                      type="number"
+                      min={10}
+                      max={120}
+                      value={smartMinGapSeconds}
+                      onChange={(event) =>
+                        setSmartMinGapSeconds(event.target.value)
+                      }
+                    />
+                  </label>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="target-panel">
+              <h2>Когда публиковать</h2>
+              <p className="muted">
+                Если выбираешь время New York, задача создастся сразу, но worker
+                начнет обработку и публикацию только когда наступит выбранное
+                время.
+              </p>
+
+              <button
+                type="button"
+                className={`usa-smart-button ${
+                  publishTiming === "USA_SMART" ? "active" : ""
+                }`}
+                onClick={() => setPublishTiming("USA_SMART")}
+              >
+                <span>Грамотный залив под USA</span>
+                <small>
+                  21:00 МСК — ролик 1 · 21:15 МСК — ролик 2 · 23:00 МСК — ролик
+                  3 · 23:15 МСК — ролик 4 · 01:00 МСК — ролик 5 · 01:15 МСК —
+                  ролик 6 · 03:00 МСК — ролик 7 · 03:15 МСК — ролик 8 · 05:00
+                  МСК — ролик 9 · 05:15 МСК — ролик 10
+                </small>
+              </button>
+
+              <div className="long-video-note">
+                <b>Новая отдельная кнопка для длинных видео</b>
+                <span>
+                  Вставляешь часовой YouTube-ролик и жмешь “Длинное видео → USA
+                  пакет каждый день”. Система создаст несколько дневных задач:
+                  по 10 роликов в день, со смещением 0/10/20/30... чтобы не
+                  заливать одно и то же.
+                </span>
+              </div>
+
+              <div className="schedule-options">
+                {publishTimingOptions.map((option) => (
+                  <label
+                    className="target-checkbox schedule-option"
+                    key={option.value}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={publishTiming === option.value}
+                      onChange={() => setPublishTiming(option.value)}
+                    />
+
+                    <span>
+                      <b>{option.title}</b>
+                      <small>{option.description}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <section className="target-panel">
+              <h2>Куда публиковать</h2>
+              <p className="muted">
+                Отметь аккаунты, выбери отдельный шаблон под каждый канал и
+                укажи количество роликов для каждого аккаунта.
+              </p>
+
+              <div className="target-list">
+                {accounts.map((account) => {
+                  const state = targets[account.id] ?? {
+                    enabled: false,
+                    templateId: templateId || getDefaultTemplateId(templates),
+                    titlePrefix,
+                    maxClips: 10,
+                  };
+
+                  return (
+                    <div className="target-card" key={account.id}>
+                      <label className="target-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={state.enabled}
+                          onChange={(event) =>
+                            updateTarget(account.id, {
+                              enabled: event.target.checked,
+                            })
+                          }
+                        />
+                        <span className="badge">{account.platform}</span>
+                        <b>{account.name}</b>
+                      </label>
+
+                      <div className="target-settings-grid">
+                        <label>
+                          Шаблон
+                          <select
+                            value={
+                              state.templateId ||
+                              templateId ||
+                              getDefaultTemplateId(templates)
+                            }
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                templateId: event.target.value,
+                              })
+                            }
+                          >
+                            {templates.map((template) => (
+                              <option key={template.id} value={template.id}>
+                                {template.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label>
+                          Тема title для аккаунта
+                          <input
+                            value={state.titlePrefix || ""}
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                titlePrefix: event.target.value,
+                              })
+                            }
+                            placeholder={titlePrefix}
+                          />
+                        </label>
+
+                        <label>
+                          Кол-во видео
+                          <input
+                            type="number"
+                            min={1}
+                            max={100}
+                            value={state.maxClips}
+                            onChange={(event) =>
+                              updateTarget(account.id, {
+                                maxClips: Math.max(
+                                  1,
+                                  Math.min(
+                                    100,
+                                    Number(event.target.value) || 1,
+                                  ),
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {accounts.length === 0 ? (
+                  <p className="muted">
+                    Пока нет подключенных аккаунтов. Перейди в /factory/accounts
+                    и подключи YouTube или TikTok.
+                  </p>
+                ) : null}
+              </div>
+            </section>
+
+            <p className="muted">
+              Для {selectedGame.label} title рандомизируется автоматически,
+              имена девушек в название не добавляются. Описание будет с 5
+              хэштегами автоматически.
+            </p>
 
             {error ? <p className="error">{error}</p> : null}
 
-            <button disabled={isUploading}>
-              {isUploading
-                ? `Загружаю ${files.length} файлов...`
-                : files.length > 1
-                  ? `Загрузить ${files.length} превью`
-                  : "Загрузить превью"}
-            </button>
+            <div className="submit-actions">
+              <button
+                name="publishAction"
+                value="DEFAULT"
+                disabled={isCreating}
+              >
+                {isCreating ? "Создаю задачу..." : "Generate & Publish"}
+              </button>
+
+              <button
+                name="publishAction"
+                value="USA_SMART"
+                className="secondary-button"
+                disabled={isCreating}
+              >
+                {isCreating ? "Создаю USA-пакет..." : "Грамотный залив под USA"}
+              </button>
+
+              <button
+                name="publishAction"
+                value="LONG_USA_DAILY"
+                className="long-video-button"
+                disabled={isCreating}
+              >
+                {isCreating
+                  ? "Создаю daily USA пакет..."
+                  : "Длинное видео → USA пакет каждый день"}
+              </button>
+            </div>
           </form>
         </section>
 
         <section style={{ height: 24 }} />
 
         <section className="card">
-          <div className="thumbnail-list-head">
-            <div>
-              <h2>Библиотека превью</h2>
-              <p className="muted">
-                Активные превью участвуют в рандомной подстановке. Если для
-                игры нет активных превью, worker попробует взять превью из
-                категории Other.
-              </p>
-            </div>
+          <h2>Задачи</h2>
 
-            <label className="thumbnail-filter">
-              Фильтр
-              <select
-                value={filterGame}
-                onChange={(event) =>
-                  setFilterGame(event.target.value as FactoryGame | "ALL")
-                }
-              >
-                <option value="ALL">Все игры</option>
-                {gameOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Прогресс</th>
+                <th>Источник</th>
+                <th>Аккаунты</th>
+                <th>Клипы</th>
+                <th>Публикации</th>
+              </tr>
+            </thead>
 
-          {isLoading ? <p className="muted">Загружаю превью...</p> : null}
+            <tbody>
+              {jobs.map((job) => (
+                <tr key={job.id}>
+                  <td>
+                    <div className="progress-row">
+                      <button
+                        type="button"
+                        className="cancel-button"
+                        disabled={!canCancel(job) || cancelingJobId === job.id}
+                        onClick={() => cancelJob(job.id)}
+                      >
+                        {job.cancelRequested || cancelingJobId === job.id
+                          ? "Отмена..."
+                          : "Отменить"}
+                      </button>
 
-          {!isLoading && filteredThumbnails.length === 0 ? (
-            <p className="muted">
-              Пока превью нет. Загрузи хотя бы несколько картинок под Roblox /
-              Fortnite / Minecraft.
-            </p>
-          ) : null}
+                      <div className="progress-block">
+                        <div className="progress-head">
+                          <span className="badge">{job.status}</span>
+                          <span>{Math.round(job.progress ?? 0)}%</span>
+                        </div>
 
-          <div className="thumbnail-grid">
-            {filteredThumbnails.map((thumbnail) => (
-              <article
-                className={`thumbnail-card ${
-                  thumbnail.isActive ? "" : "inactive"
-                }`}
-                key={thumbnail.id}
-              >
-                <div className="thumbnail-preview">
-                  <div className="thumbnail-preview-placeholder">
-                    <span>{getGameLabel(thumbnail.game)}</span>
-                    <small>R2 / local preview</small>
-                  </div>
-                </div>
+                        <div className="progress-track">
+                          <div
+                            className="progress-fill"
+                            style={{
+                              width: `${Math.max(
+                                0,
+                                Math.min(100, job.progress ?? 0),
+                              )}%`,
+                            }}
+                          />
+                        </div>
 
-                <div className="thumbnail-card-body">
-                  <div className="thumbnail-title-row">
-                    <h3>{thumbnail.title}</h3>
-                    <span
-                      className={`badge ${
-                        thumbnail.isActive ? "success-badge" : "muted-badge"
-                      }`}
-                    >
-                      {thumbnail.isActive ? "active" : "off"}
-                    </span>
-                  </div>
+                        <p className="muted">
+                          {job.progressLabel ?? "Ожидание"}
+                        </p>
 
-                  <p className="muted">
-                    {getGameLabel(thumbnail.game)} · {formatMb(thumbnail.sizeBytes)}
-                  </p>
+                        {job.scheduledAt ? (
+                          <p className="muted">
+                            Запланировано: {formatDateTime(job.scheduledAt)}
+                          </p>
+                        ) : null}
 
-                  <p className="muted">
-                    {thumbnail.originalName ?? "image"} ·{" "}
-                    {formatDateTime(thumbnail.createdAt)}
-                  </p>
+                        {job.error ? (
+                          <p className="error">{job.error}</p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </td>
 
-                  <p className="muted thumbnail-storage-key">
-                    {thumbnail.storageKey ?? "local only"}
-                  </p>
+                  <td>
+                    <div style={{ maxWidth: 360, wordBreak: "break-all" }}>
+                      {job.sourceOriginalName ?? job.sourceUrl ?? "—"}
+                    </div>
 
-                  <div className="inline-actions">
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      disabled={togglingId === thumbnail.id}
-                      onClick={() => toggleThumbnail(thumbnail)}
-                    >
-                      {thumbnail.isActive ? "Выключить" : "Включить"}
-                    </button>
+                    <p className="muted">
+                      {job.sourceSizeBytes
+                        ? `${formatMb(job.sourceSizeBytes)} · `
+                        : ""}
+                      {job.clipSeconds} сек
+                    </p>
 
-                    <button
-                      type="button"
-                      className="danger-button"
-                      disabled={deletingId === thumbnail.id}
-                      onClick={() => deleteThumbnail(thumbnail.id)}
-                    >
-                      {deletingId === thumbnail.id ? "Удаляю..." : "Удалить"}
-                    </button>
-                  </div>
-                </div>
-              </article>
-            ))}
-          </div>
+                    <p className="muted">
+                      {getPublishTimingLabel(job.publishTiming)}
+                    </p>
+
+                    <p className="muted">
+                      {job.cutMode === "SMART_LITE"
+                        ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
+                        : "Обычная нарезка подряд"}
+                    </p>
+
+                    {job.clipStartIndex > 0 ? (
+                      <p className="muted">
+                        Смещение: ролик #{job.clipStartIndex + 1}
+                      </p>
+                    ) : null}
+                  </td>
+
+                  <td>
+                    {job.targets.map((target) => (
+                      <p key={target.id} className="muted">
+                        <span className="badge">{target.platform}</span>{" "}
+                        {target.account.name} ·{" "}
+                        {target.template?.name ?? "Default"} · {target.maxClips}{" "}
+                        видео
+                      </p>
+                    ))}
+                  </td>
+
+                  <td>
+                    {job.clips.length} / {job.totalClips}
+                  </td>
+
+                  <td>
+                    {job.clips.flatMap((clip) =>
+                      clip.publishes.map((publish) => (
+                        <div key={publish.id}>
+                          <b>
+                            {clip.index}.{" "}
+                            {publish.account?.name ?? publish.platform}
+                          </b>{" "}
+                          <span className="badge">{publish.status}</span>
+                          {publish.platformUrl ? (
+                            <>
+                              {" "}
+                              <a
+                                className="success"
+                                href={publish.platformUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                открыть
+                              </a>
+                            </>
+                          ) : null}
+                          {publish.error ? (
+                            <p className="error">{publish.error}</p>
+                          ) : null}
+                        </div>
+                      )),
+                    )}
+                  </td>
+                </tr>
+              ))}
+
+              {jobs.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    Пока задач нет.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </section>
       </div>
     </main>
