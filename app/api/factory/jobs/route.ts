@@ -36,6 +36,7 @@ const publishTimingSchema = z
 const cutModeSchema = z
   .enum(["SEQUENTIAL", "SMART_LITE"])
   .default("SEQUENTIAL");
+
 const packageModeSchema = z
   .enum(["NORMAL", "LONG_USA_DAILY"])
   .default("NORMAL");
@@ -43,9 +44,11 @@ const packageModeSchema = z
 const LONG_USA_DAILY_CLIPS_PER_DAY = Number(
   process.env.FACTORY_LONG_USA_DAILY_CLIPS_PER_DAY ?? 10,
 );
+
 const LONG_USA_DAILY_SOURCE_SECONDS = Number(
   process.env.FACTORY_LONG_USA_DAILY_SOURCE_SECONDS ?? 3600,
 );
+
 const LONG_USA_DAILY_NY_HOUR = Number(
   process.env.FACTORY_LONG_USA_DAILY_NY_HOUR ?? 14,
 );
@@ -174,6 +177,7 @@ function normalizeTargetsForUsaSmart(targets: ParsedTarget[]) {
     maxClips: USA_SMART_CLIPS_PER_SLOT,
   }));
 }
+
 function normalizeTargetsForLongUsaDaily(targets: ParsedTarget[]) {
   const clipsPerDay = Math.max(
     1,
