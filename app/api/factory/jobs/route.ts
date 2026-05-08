@@ -33,7 +33,22 @@ const publishTimingSchema = z
   .enum(["NOW", "NY_14", "NY_17", "NY_20", "NY_22", "USA_SMART"])
   .default("NOW");
 
-const cutModeSchema = z.enum(["SEQUENTIAL", "SMART_LITE"]).default("SEQUENTIAL");
+const cutModeSchema = z
+  .enum(["SEQUENTIAL", "SMART_LITE"])
+  .default("SEQUENTIAL");
+const packageModeSchema = z
+  .enum(["NORMAL", "LONG_USA_DAILY"])
+  .default("NORMAL");
+
+const LONG_USA_DAILY_CLIPS_PER_DAY = Number(
+  process.env.FACTORY_LONG_USA_DAILY_CLIPS_PER_DAY ?? 10,
+);
+const LONG_USA_DAILY_SOURCE_SECONDS = Number(
+  process.env.FACTORY_LONG_USA_DAILY_SOURCE_SECONDS ?? 3600,
+);
+const LONG_USA_DAILY_NY_HOUR = Number(
+  process.env.FACTORY_LONG_USA_DAILY_NY_HOUR ?? 14,
+);
 
 const targetSchema = z.object({
   accountId: z.string().min(1),
@@ -57,6 +72,7 @@ const jsonCreateJobSchema = z
     titlePrefix: z.string().max(80).optional(),
     templateId: z.string().optional().nullable(),
     publishTiming: publishTimingSchema,
+    packageMode: packageModeSchema.optional(),
     targets: z.array(targetSchema).min(1),
   })
   .merge(smartSettingsSchema);
@@ -90,6 +106,14 @@ function parsePublishTiming(value: FormDataEntryValue | null) {
   }
 
   return publishTimingSchema.parse(value);
+}
+
+function parsePackageMode(value: FormDataEntryValue | null) {
+  if (!value || typeof value !== "string") {
+    return "NORMAL" as const;
+  }
+
+  return packageModeSchema.parse(value);
 }
 
 function parseSmartSettings(formData: FormData) {
@@ -149,6 +173,52 @@ function normalizeTargetsForUsaSmart(targets: ParsedTarget[]) {
     ...target,
     maxClips: USA_SMART_CLIPS_PER_SLOT,
   }));
+}
+function normalizeTargetsForLongUsaDaily(targets: ParsedTarget[]) {
+  const clipsPerDay = Math.max(
+    1,
+    Math.min(100, Math.round(LONG_USA_DAILY_CLIPS_PER_DAY) || 10),
+  );
+
+  return normalizeTargets(targets).map((target) => ({
+    ...target,
+    maxClips: clipsPerDay,
+  }));
+}
+
+function getLongUsaDailyDays(clipSeconds: number) {
+  const clipsPerDay = Math.max(
+    1,
+    Math.min(100, Math.round(LONG_USA_DAILY_CLIPS_PER_DAY) || 10),
+  );
+  const sourceSeconds = Math.max(
+    clipSeconds,
+    LONG_USA_DAILY_SOURCE_SECONDS || 3600,
+  );
+  const totalClips = Math.max(1, Math.ceil(sourceSeconds / clipSeconds));
+
+  return Math.max(1, Math.ceil(totalClips / clipsPerDay));
+}
+
+function getLongUsaDailyScheduledAt(dayOffset: number, now = new Date()) {
+  const scheduledAt = getNextNewYorkPublishAt("NY_14", now);
+
+  if (!scheduledAt) {
+    throw new Error("Не получилось посчитать расписание USA daily package");
+  }
+
+  const base = new Date(scheduledAt);
+  base.setUTCDate(base.getUTCDate() + dayOffset);
+
+  if (
+    Number.isFinite(LONG_USA_DAILY_NY_HOUR) &&
+    LONG_USA_DAILY_NY_HOUR !== 14
+  ) {
+    const deltaHours = LONG_USA_DAILY_NY_HOUR - 14;
+    base.setUTCHours(base.getUTCHours() + deltaHours);
+  }
+
+  return base;
 }
 
 function buildSchedule(publishTiming: ParsedPublishTiming) {
@@ -230,7 +300,9 @@ async function createJobWithTargets(input: {
         throw new Error("Один или несколько аккаунтов публикации не найдены");
       }
 
-      const accountById = new Map(accounts.map((account) => [account.id, account]));
+      const accountById = new Map(
+        accounts.map((account) => [account.id, account]),
+      );
 
       const templateIds = Array.from(
         new Set(
@@ -290,7 +362,8 @@ async function createJobWithTargets(input: {
           targets: {
             create: normalizedTargets.map((target) => {
               const account = accountById.get(target.accountId);
-              const targetTemplateId = target.templateId || input.globalTemplateId;
+              const targetTemplateId =
+                target.templateId || input.globalTemplateId;
 
               if (!account) {
                 throw new Error("Аккаунт публикации не найден");
@@ -323,12 +396,70 @@ async function createJobWithTargets(input: {
       });
 
       if (job.targets.length === 0) {
-        throw new Error("Задача не создана: аккаунты публикации не сохранились");
+        throw new Error(
+          "Задача не создана: аккаунты публикации не сохранились",
+        );
       }
 
       return job;
     }),
   );
+}
+
+async function createLongUsaDailyJobs(input: {
+  sourceUrl: string | null;
+  sourceFilePath?: string | null;
+  sourceStorageKey?: string | null;
+  sourceOriginalName?: string | null;
+  sourceSizeBytes?: number | null;
+  clipSeconds: number;
+  titlePrefix: string;
+  game: ParsedGame;
+  globalTemplateId: string | null;
+  targets: ParsedTarget[];
+  cutMode: ParsedCutMode;
+  smartStepSeconds: number;
+  smartCandidates: number;
+  smartMinGapSeconds: number;
+}) {
+  const dailyTargets = normalizeTargetsForLongUsaDaily(input.targets);
+  const clipsPerDay = Math.max(
+    1,
+    Math.min(100, Math.round(LONG_USA_DAILY_CLIPS_PER_DAY) || 10),
+  );
+  const days = getLongUsaDailyDays(input.clipSeconds);
+  const jobs = [];
+
+  for (let dayIndex = 0; dayIndex < days; dayIndex += 1) {
+    const scheduledAt = getLongUsaDailyScheduledAt(dayIndex);
+
+    const job = await createJobWithTargets({
+      sourceUrl: input.sourceUrl,
+      sourceFilePath: input.sourceFilePath ?? null,
+      sourceStorageKey: input.sourceStorageKey ?? null,
+      sourceOriginalName: input.sourceOriginalName ?? null,
+      sourceSizeBytes: input.sourceSizeBytes ?? null,
+      clipSeconds: input.clipSeconds,
+      clipStartIndex: dayIndex * clipsPerDay,
+      titlePrefix: input.titlePrefix,
+      game: input.game,
+      globalTemplateId: input.globalTemplateId,
+      publishTiming: "USA_SMART",
+      scheduledAt,
+      progressLabel: `Длинное видео / USA пакет: день ${dayIndex + 1}/${days}, по ${clipsPerDay} роликов. Старт: ${formatScheduledAtForLabel(
+        scheduledAt,
+      )} New York`,
+      targets: dailyTargets,
+      cutMode: input.cutMode,
+      smartStepSeconds: input.smartStepSeconds,
+      smartCandidates: input.smartCandidates,
+      smartMinGapSeconds: input.smartMinGapSeconds,
+    });
+
+    jobs.push(job);
+  }
+
+  return jobs;
 }
 
 async function createUsaSmartJobs(input: {
@@ -430,7 +561,9 @@ export async function GET() {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Не получилось загрузить задачи",
+          error instanceof Error
+            ? error.message
+            : "Не получилось загрузить задачи",
       },
       {
         status: 500,
@@ -451,6 +584,7 @@ export async function POST(request: Request) {
       const game = parseGame(formData.get("game"));
       const gameMeta = getGameMeta(game);
       const publishTiming = parsePublishTiming(formData.get("publishTiming"));
+      const packageMode = parsePackageMode(formData.get("packageMode"));
       const smartSettings = parseSmartSettings(formData);
 
       const rawTitlePrefix = z
@@ -499,6 +633,26 @@ export async function POST(request: Request) {
         buffer,
         contentType: file.type || "video/mp4",
       });
+
+      if (packageMode === "LONG_USA_DAILY") {
+        const jobs = await createLongUsaDailyJobs({
+          sourceUrl: null,
+          sourceFilePath: filePath,
+          sourceStorageKey: uploadedKey,
+          sourceOriginalName: file.name,
+          sourceSizeBytes: buffer.byteLength,
+          clipSeconds,
+          titlePrefix,
+          game,
+          globalTemplateId: templateId,
+          targets,
+          ...smartSettings,
+        });
+
+        return NextResponse.json({
+          jobs,
+        });
+      }
 
       if (publishTiming === "USA_SMART") {
         const jobs = await createUsaSmartJobs({
@@ -550,6 +704,25 @@ export async function POST(request: Request) {
     const templateId = await resolveTemplateId(data.templateId);
     const titlePrefix = data.titlePrefix?.trim() || gameMeta.titlePrefix;
     const targets = normalizeTargets(data.targets);
+
+    if ((data.packageMode ?? "NORMAL") === "LONG_USA_DAILY") {
+      const jobs = await createLongUsaDailyJobs({
+        sourceUrl: data.sourceUrl,
+        clipSeconds: data.clipSeconds,
+        titlePrefix,
+        game: data.game,
+        globalTemplateId: templateId,
+        targets,
+        cutMode: data.cutMode,
+        smartStepSeconds: data.smartStepSeconds,
+        smartCandidates: data.smartCandidates,
+        smartMinGapSeconds: data.smartMinGapSeconds,
+      });
+
+      return NextResponse.json({
+        jobs,
+      });
+    }
 
     if (data.publishTiming === "USA_SMART") {
       const jobs = await createUsaSmartJobs({
@@ -608,7 +781,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Не получилось создать задачу",
+          error instanceof Error
+            ? error.message
+            : "Не получилось создать задачу",
       },
       {
         status: 500,
