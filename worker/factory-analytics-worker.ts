@@ -215,6 +215,7 @@ async function recomputeAnalysis(publishId: string) {
     return;
   }
 
+  const platformVideoId = publish.platformPostId;
   const latest = publish.videoMetrics[publish.videoMetrics.length - 1];
 
   const metric1h = pickClosestMetric(publish.videoMetrics, 60);
@@ -300,7 +301,7 @@ async function recomputeAnalysis(publishId: string) {
         clipId: publish.clipId,
         accountId: publish.accountId,
         platform: publish.platform,
-        platformVideoId: publish.platformPostId,
+        platformVideoId,
         viewsNow: latest.views,
         views1h,
         views3h,
@@ -329,6 +330,7 @@ async function recomputeAnalysis(publishId: string) {
       },
       update: {
         accountId: publish.accountId,
+        platformVideoId,
         viewsNow: latest.views,
         views1h,
         views3h,
@@ -430,7 +432,8 @@ async function collectAnalyticsOnce() {
     for (const publish of accountPublishes) {
       if (!publish.platformPostId) continue;
 
-      const basic = basicStats.get(publish.platformPostId);
+      const platformVideoId = publish.platformPostId;
+      const basic = basicStats.get(platformVideoId);
 
       if (!basic) continue;
 
@@ -439,7 +442,7 @@ async function collectAnalyticsOnce() {
 
       const deep = await fetchYoutubeDeepVideoStats({
         account,
-        videoId: publish.platformPostId,
+        videoId: platformVideoId,
         publishedAt,
       });
 
@@ -463,7 +466,7 @@ async function collectAnalyticsOnce() {
             clipId: publish.clipId,
             accountId: publish.accountId,
             platform: publish.platform,
-            platformVideoId: publish.platformPostId,
+            platformVideoId,
             views: basic.views,
             likes: basic.likes,
             comments: basic.comments,
