@@ -9,6 +9,7 @@ export type SuperUploadVideo = {
   sourceUrl: string;
   channelId: string | null;
   channelTitle: string | null;
+  donorChannelId?: string | null;
   title: string;
   description: string;
   thumbnailUrl: string | null;
@@ -209,19 +210,33 @@ function scoreTitleHook(title: string) {
   return clamp(score, 0, 10);
 }
 
-function getSuggestedHookMode(input: { title: string; description: string }) {
+export function getSuggestedHookMode(input: { title: string; description: string }) {
   const text = `${input.title} ${input.description}`.toLowerCase();
 
-  if (text.includes("obby") || text.includes("parkour") || text.includes("tower")) {
-    return "ENDING_SURVIVAL_IMPOSSIBLE";
+  if (
+    text.includes("doors") ||
+    text.includes("horror") ||
+    text.includes("scary") ||
+    text.includes("monster")
+  ) {
+    return "SUSPENSE_ENDING";
   }
 
-  if (text.includes("escape") || text.includes("survive")) {
-    return "SURVIVAL_SUSPENSE";
-  }
-
-  if (text.includes("funny") || text.includes("fail")) {
+  if (text.includes("funny") || text.includes("fail") || text.includes("fails")) {
     return "FUNNY_FAIL";
+  }
+
+  if (
+    text.includes("escape") ||
+    text.includes("survive") ||
+    text.includes("survival") ||
+    text.includes("runner")
+  ) {
+    return "SURVIVAL_ENDING";
+  }
+
+  if (text.includes("obby") || text.includes("parkour") || text.includes("tower")) {
+    return "IMPOSSIBLE_SUSPENSE";
   }
 
   return "AUTO_BEST_MIX";
@@ -639,6 +654,214 @@ function buildSourceRecommendations(videos: Array<{
   }
 
   return result;
+}
+
+
+export async function listSuperUploadDonors() {
+  return withDbRetry(() =>
+    prisma.factoryDonorChannel.findMany({
+      orderBy: [
+        { isActive: "desc" },
+        { createdAt: "desc" },
+      ],
+    }),
+  );
+}
+
+export async function buildTodayCandidates(input: { limit?: number } = {}) {
+  const limit = input.limit ?? 10;
+  const donorIds = await withDbRetry(() =>
+    prisma.factoryDonorChannel.findMany({
+      where: { isActive: true },
+      select: { id: true, channelId: true },
+    }),
+  );
+
+  const channelIds = donorIds.map((donor) => donor.channelId).filter(Boolean);
+  const donorDbIds = donorIds.map((donor) => donor.id);
+  const since72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
+
+  const whereBase = {
+    isUsed: false,
+    OR: [
+      { donorChannelId: { in: donorDbIds } },
+      { channelId: { in: channelIds } },
+    ],
+  };
+
+  const fresh = await withDbRetry(() =>
+    prisma.factorySourceVideo.findMany({
+      where: {
+        ...whereBase,
+        publishedAt: { gte: since72h },
+      },
+      orderBy: [
+        { viralChance: "desc" },
+        { viewsPerDay: "desc" },
+        { publishedAt: "desc" },
+      ],
+      take: limit,
+    }),
+  );
+
+  if (fresh.length >= limit) return fresh;
+
+  const fallback = await withDbRetry(() =>
+    prisma.factorySourceVideo.findMany({
+      where: whereBase,
+      orderBy: [
+        { viralChance: "desc" },
+        { viewsPerDay: "desc" },
+        { publishedAt: "desc" },
+      ],
+      take: limit,
+    }),
+  );
+
+  return fallback;
+}
+
+export async function addSuperUploadDonor(input: { sourceUrl: string }) {
+  const result = await analyzeYoutubeSource({ sourceUrl: input.sourceUrl });
+
+  const donor = await withDbRetry(() =>
+    prisma.factoryDonorChannel.upsert({
+      where: {
+        channelId: result.channel.id,
+      },
+      create: {
+        channelId: result.channel.id,
+        channelTitle: result.channel.title,
+        sourceUrl: input.sourceUrl,
+        uploadsPlaylistId: result.channel.uploadsPlaylistId,
+        subscriberCount: result.channel.subscriberCount,
+        videoCount: result.channel.videoCount,
+        viewCount: result.channel.viewCount,
+        isActive: true,
+        lastCheckedAt: new Date(),
+        lastError: null,
+      },
+      update: {
+        channelTitle: result.channel.title,
+        sourceUrl: input.sourceUrl,
+        uploadsPlaylistId: result.channel.uploadsPlaylistId,
+        subscriberCount: result.channel.subscriberCount,
+        videoCount: result.channel.videoCount,
+        viewCount: result.channel.viewCount,
+        isActive: true,
+        lastCheckedAt: new Date(),
+        lastError: null,
+      },
+    }),
+  );
+
+  await withDbRetry(() =>
+    prisma.factorySourceVideo.updateMany({
+      where: {
+        channelId: result.channel.id,
+      },
+      data: {
+        donorChannelId: donor.id,
+      },
+    }),
+  );
+
+  return {
+    donor,
+    analysis: result,
+  };
+}
+
+export async function checkSuperUploadDonor(input: { donorId: string }) {
+  const donor = await withDbRetry(() =>
+    prisma.factoryDonorChannel.findUnique({
+      where: { id: input.donorId },
+    }),
+  );
+
+  if (!donor) {
+    throw new Error("Donor channel не найден");
+  }
+
+  try {
+    const result = await analyzeYoutubeSource({ sourceUrl: donor.sourceUrl });
+
+    const updatedDonor = await withDbRetry(() =>
+      prisma.factoryDonorChannel.update({
+        where: { id: donor.id },
+        data: {
+          channelTitle: result.channel.title,
+          uploadsPlaylistId: result.channel.uploadsPlaylistId,
+          subscriberCount: result.channel.subscriberCount,
+          videoCount: result.channel.videoCount,
+          viewCount: result.channel.viewCount,
+          lastCheckedAt: new Date(),
+          lastError: null,
+        },
+      }),
+    );
+
+    await withDbRetry(() =>
+      prisma.factorySourceVideo.updateMany({
+        where: {
+          channelId: result.channel.id,
+        },
+        data: {
+          donorChannelId: donor.id,
+        },
+      }),
+    );
+
+    return {
+      donor: updatedDonor,
+      analysis: result,
+    };
+  } catch (error) {
+    await withDbRetry(() =>
+      prisma.factoryDonorChannel.update({
+        where: { id: donor.id },
+        data: {
+          lastCheckedAt: new Date(),
+          lastError: error instanceof Error ? error.message : "Не удалось проверить донора",
+        },
+      }),
+    );
+
+    throw error;
+  }
+}
+
+export async function checkAllSuperUploadDonors() {
+  const donors = await withDbRetry(() =>
+    prisma.factoryDonorChannel.findMany({
+      where: { isActive: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  );
+
+  let checked = 0;
+  const errors: Array<{ donorId: string; channelTitle: string; message: string }> = [];
+
+  for (const donor of donors) {
+    try {
+      await checkSuperUploadDonor({ donorId: donor.id });
+      checked += 1;
+    } catch (error) {
+      errors.push({
+        donorId: donor.id,
+        channelTitle: donor.channelTitle,
+        message: error instanceof Error ? error.message : "Не удалось проверить донора",
+      });
+    }
+  }
+
+  const candidates = await buildTodayCandidates({ limit: 10 });
+
+  return {
+    checked,
+    errors,
+    candidates,
+  };
 }
 
 function getTimeZoneParts(date: Date, timeZone: string) {

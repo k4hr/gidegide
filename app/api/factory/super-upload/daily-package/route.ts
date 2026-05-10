@@ -1,0 +1,181 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+
+import { prisma } from "@/lib/prisma";
+import { withDbRetry } from "@/lib/factory/db-retry";
+import { buildSuperUploadSchedule, buildTodayCandidates } from "@/lib/factory/super-upload";
+
+export const runtime = "nodejs";
+
+const bodySchema = z.object({
+  accountId: z.string().min(1),
+  templateId: z.string().min(1),
+  candidatesCount: z.coerce.number().int().min(1).max(20).default(10),
+  clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
+  intervalMin: z.coerce.number().int().min(20).max(120).default(45),
+  intervalMax: z.coerce.number().int().min(20).max(180).default(60),
+});
+
+function hookPrefixFromMode(mode: string) {
+  const normalized = mode.trim().toUpperCase();
+
+  if (normalized === "IMPOSSIBLE_SUSPENSE") return "HOOK:IMPOSSIBLE,SUSPENSE";
+  if (normalized === "SURVIVAL_ENDING") return "HOOK:SURVIVAL,ENDING";
+  if (normalized === "FUNNY_FAIL") return "HOOK:FUNNY,FAIL";
+  if (normalized === "SUSPENSE_ENDING") return "HOOK:SUSPENSE,ENDING";
+  if (normalized === "ENDING_SURVIVAL_IMPOSSIBLE") return "HOOK:ENDING,SURVIVAL,IMPOSSIBLE";
+  if (normalized === "SURVIVAL_SUSPENSE") return "HOOK:SURVIVAL,SUSPENSE";
+
+  return "auto mix";
+}
+
+export async function POST(request: Request) {
+  try {
+    const body = bodySchema.parse(await request.json());
+
+    const account = await withDbRetry(() =>
+      prisma.factoryAccount.findUnique({
+        where: { id: body.accountId },
+        select: { id: true, name: true, platform: true },
+      }),
+    );
+
+    if (!account) {
+      return NextResponse.json({ error: "YouTube-аккаунт не найден" }, { status: 404 });
+    }
+
+    const template = await withDbRetry(() =>
+      prisma.factoryTemplate.findUnique({
+        where: { id: body.templateId },
+        select: { id: true, name: true },
+      }),
+    );
+
+    if (!template) {
+      return NextResponse.json({ error: "Amelia-шаблон не найден" }, { status: 404 });
+    }
+
+    const candidates = await buildTodayCandidates({ limit: body.candidatesCount });
+    const selected = candidates.slice(0, body.candidatesCount);
+
+    if (selected.length === 0) {
+      return NextResponse.json(
+        {
+          error: "Нет кандидатов дня. Сначала добавь доноров и нажми “Проверить всех доноров”.",
+        },
+        { status: 400 },
+      );
+    }
+
+    const schedule = await buildSuperUploadSchedule({
+      clipsCount: selected.length,
+      intervalMin: body.intervalMin,
+      intervalMax: body.intervalMax,
+    });
+
+    const result = await withDbRetry(() =>
+      prisma.$transaction(async (tx) => {
+        const packages = [];
+        const jobs = [];
+
+        for (const [index, sourceVideo] of selected.entries()) {
+          const slot = schedule.slots[index];
+          const titlePrefix = hookPrefixFromMode(sourceVideo.suggestedHookMode);
+
+          const pack = await tx.factorySuperUploadPackage.create({
+            data: {
+              sourceVideoId: sourceVideo.id,
+              accountId: account.id,
+              accountName: account.name,
+              game: "ROBLOX",
+              clipsCount: 1,
+              clipSeconds: body.clipSeconds,
+              intervalMin: body.intervalMin,
+              intervalMax: body.intervalMax,
+              scheduleMode: "DAILY_SCOUT_BEST_WINDOW",
+              hookMode: sourceVideo.suggestedHookMode,
+              titlePrefix,
+              status: "CREATED",
+              recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook mode: ${sourceVideo.suggestedHookMode}.`,
+            },
+          });
+
+          const job = await tx.factoryJob.create({
+            data: {
+              sourceUrl: sourceVideo.sourceUrl,
+              sourceFilePath: null,
+              sourceStorageKey: null,
+              sourceOriginalName: sourceVideo.title,
+              sourceSizeBytes: null,
+              clipSeconds: body.clipSeconds,
+              clipStartIndex: 0,
+              titlePrefix,
+              game: "ROBLOX",
+              templateId: template.id,
+              platforms: [account.platform],
+              status: "QUEUED",
+              totalClips: 0,
+              progress: 0,
+              progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100`,
+              publishTiming: "USA_SMART",
+              scheduledAt: slot.scheduledAt,
+              cutMode: "SEQUENTIAL",
+              smartStepSeconds: 10,
+              smartCandidates: 80,
+              smartMinGapSeconds: 30,
+              cancelRequested: false,
+              superUploadPackageId: pack.id,
+              targets: {
+                create: {
+                  accountId: account.id,
+                  platform: account.platform,
+                  templateId: template.id,
+                  titlePrefix,
+                  maxClips: 1,
+                },
+              },
+            },
+          });
+
+          await tx.factorySourceVideo.update({
+            where: { id: sourceVideo.id },
+            data: { isUsed: true, usedAt: new Date() },
+          });
+
+          packages.push(pack);
+          jobs.push(job);
+        }
+
+        return { packages, jobs };
+      }),
+    );
+
+    return NextResponse.json({
+      packages: result.packages,
+      jobs: result.jobs,
+      schedule: schedule.slots,
+      bestHour: schedule.bestHour,
+      candidates: selected,
+      message: `Пакет дня создан: ${result.jobs.length} задач. Окно: вечер/ночь New York.`,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: error.issues[0]?.message ?? "Некорректные данные" },
+        { status: 400 },
+      );
+    }
+
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        error:
+          error instanceof Error
+            ? error.message
+            : "Не получилось собрать пакет дня",
+      },
+      { status: 500 },
+    );
+  }
+}

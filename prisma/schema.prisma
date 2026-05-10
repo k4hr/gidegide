@@ -416,6 +416,32 @@ model FactoryVideoAnalysis {
 }
 
 
+model FactoryDonorChannel {
+  id                String   @id @default(cuid())
+
+  channelId         String   @unique
+  channelTitle      String
+  sourceUrl         String
+  uploadsPlaylistId String?
+
+  subscriberCount   Int      @default(0)
+  videoCount        Int      @default(0)
+  viewCount         Int      @default(0)
+
+  isActive          Boolean  @default(true)
+  lastCheckedAt     DateTime?
+  lastError         String?
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  sourceVideos      FactorySourceVideo[]
+
+  @@index([isActive])
+  @@index([lastCheckedAt])
+  @@index([createdAt])
+}
+
 model FactorySourceVideo {
   id              String   @id @default(cuid())
 
@@ -423,6 +449,8 @@ model FactorySourceVideo {
   sourceUrl       String
   channelId       String?
   channelTitle    String?
+  donorChannelId  String?
+  donorChannel    FactoryDonorChannel? @relation(fields: [donorChannelId], references: [id], onDelete: SetNull)
 
   title           String
   description     String?
@@ -453,6 +481,7 @@ model FactorySourceVideo {
 
   packages        FactorySuperUploadPackage[]
 
+  @@index([donorChannelId])
   @@index([channelId])
   @@index([sourceScore])
   @@index([viralChance])

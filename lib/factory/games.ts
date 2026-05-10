@@ -639,6 +639,51 @@ function normalizeTitle(value: string) {
     .slice(0, 95);
 }
 
+function getHookCategoriesFromPrefix(value: string | null | undefined): HookCategory[] | null {
+  const normalized = (value ?? "").trim().toUpperCase();
+
+  if (!normalized) return null;
+
+  if (normalized.startsWith("HOOK:")) {
+    const categories = normalized
+      .replace(/^HOOK:/, "")
+      .split(/[,|_+\s]+/)
+      .filter(Boolean) as HookCategory[];
+
+    return categories.length > 0 ? categories : null;
+  }
+
+  if (normalized === "IMPOSSIBLE_SUSPENSE" || normalized === "HOOK_IMPOSSIBLE_SUSPENSE") {
+    return ["IMPOSSIBLE", "SUSPENSE"];
+  }
+
+  if (normalized === "SURVIVAL_ENDING" || normalized === "HOOK_SURVIVAL_ENDING") {
+    return ["SURVIVAL", "ENDING"];
+  }
+
+  if (normalized === "FUNNY_FAIL" || normalized === "HOOK_FUNNY_FAIL") {
+    return ["FUNNY", "FAIL"];
+  }
+
+  if (normalized === "SUSPENSE_ENDING" || normalized === "HOOK_SUSPENSE_ENDING") {
+    return ["SUSPENSE", "ENDING"];
+  }
+
+  if (normalized === "ENDING_SURVIVAL_IMPOSSIBLE" || normalized === "HOOK_ENDING_SURVIVAL_IMPOSSIBLE") {
+    return ["ENDING", "SURVIVAL", "IMPOSSIBLE"];
+  }
+
+  if (normalized === "SURVIVAL_SUSPENSE" || normalized === "HOOK_SURVIVAL_SUSPENSE") {
+    return ["SURVIVAL", "SUSPENSE"];
+  }
+
+  if (normalized === "AUTO_BEST_MIX") {
+    return null;
+  }
+
+  return null;
+}
+
 function isAutoMixTitlePrefix(value: string | null | undefined) {
   const normalized = (value ?? "").trim().toLowerCase();
 
@@ -648,7 +693,16 @@ function isAutoMixTitlePrefix(value: string | null | undefined) {
     normalized === "auto mix" ||
     normalized === "automix" ||
     normalized === "random" ||
-    normalized === "mix"
+    normalized === "mix" ||
+    normalized === "auto_best_mix" ||
+    normalized.startsWith("hook:") ||
+    normalized.startsWith("hook_") ||
+    normalized.includes("_survival") ||
+    normalized.includes("_suspense") ||
+    normalized.includes("_impossible") ||
+    normalized.includes("_ending") ||
+    normalized.includes("_fail") ||
+    normalized.includes("_funny")
   );
 }
 
@@ -665,9 +719,14 @@ function buildManualTitle(input: {
 function buildAutoMixTitle(input: {
   game: FactoryGame;
   index: number;
+  titlePrefix?: string | null;
 }) {
   const hookGroups = HOOK_MIX[input.game] ?? HOOK_MIX.OTHER;
-  const group = pickRandom(hookGroups);
+  const preferredCategories = getHookCategoriesFromPrefix(input.titlePrefix);
+  const filteredGroups = preferredCategories
+    ? hookGroups.filter((group) => preferredCategories.includes(group.category))
+    : hookGroups;
+  const group = pickRandom(filteredGroups.length > 0 ? filteredGroups : hookGroups);
   const template = pickRandom(group.templates);
   const suffix = input.game === "ROBLOX" ? pickRandom(TITLE_SUFFIXES) : "";
 
@@ -690,6 +749,7 @@ export function buildFactoryTitle(input: {
     return buildAutoMixTitle({
       game: input.game,
       index: input.index,
+      titlePrefix: input.titlePrefix,
     });
   }
 

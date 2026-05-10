@@ -1287,3 +1287,79 @@ button:disabled {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.super-section-head,
+.super-daily-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.super-section-head p,
+.super-daily-head p {
+  max-width: 760px;
+}
+
+.super-donor-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.super-donor-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.super-donor-card,
+.super-candidate-card {
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(9, 9, 11, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.super-donor-card.used {
+  opacity: 0.58;
+}
+
+.super-donor-card b,
+.super-candidate-card b {
+  color: #fafafa;
+  line-height: 1.35;
+}
+
+.super-donor-card span,
+.super-candidate-card span {
+  color: #a1a1aa;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.45;
+}
+
+.super-candidate-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.super-donors-card {
+  margin-bottom: 20px;
+}
+
+@media (max-width: 760px) {
+  .super-section-head,
+  .super-daily-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .super-donor-add-row {
+    grid-template-columns: 1fr;
+  }
+}

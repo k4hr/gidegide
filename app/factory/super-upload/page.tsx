@@ -56,6 +56,43 @@ type AnalyzeResponse = {
   error?: string;
 };
 
+
+type DonorChannel = {
+  id: string;
+  channelId: string;
+  channelTitle: string;
+  sourceUrl: string;
+  uploadsPlaylistId: string | null;
+  subscriberCount: number;
+  videoCount: number;
+  viewCount: number;
+  isActive: boolean;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+};
+
+type DonorsResponse = {
+  donors: DonorChannel[];
+  candidates: SourceVideo[];
+  summary?: {
+    donors: number;
+    active: number;
+    candidates: number;
+    urgent: number;
+    test: number;
+    weak: number;
+  };
+  error?: string;
+  message?: string;
+};
+
+type DailyPackageResponse = {
+  jobs?: Array<{ id: string; scheduledAt: string | null }>;
+  candidates?: SourceVideo[];
+  message?: string;
+  error?: string;
+};
+
 type PackageResponse = {
   package?: {
     id: string;
@@ -166,7 +203,10 @@ function getPaceSummary(pace: SchedulePace) {
 
 export default function SuperUploadPage() {
   const [sourceUrl, setSourceUrl] = useState("");
+  const [donorInput, setDonorInput] = useState("");
   const [data, setData] = useState<AnalyzeResponse | null>(null);
+  const [donors, setDonors] = useState<DonorChannel[]>([]);
+  const [dailyCandidates, setDailyCandidates] = useState<SourceVideo[]>([]);
   const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -181,6 +221,9 @@ export default function SuperUploadPage() {
   const [onlyUnused, setOnlyUnused] = useState(true);
   const [minChance, setMinChance] = useState(50);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAddingDonor, setIsAddingDonor] = useState(false);
+  const [isCheckingDonors, setIsCheckingDonors] = useState(false);
+  const [isCreatingDayPackage, setIsCreatingDayPackage] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -213,9 +256,24 @@ export default function SuperUploadPage() {
     }
   }
 
+  async function loadDonors() {
+    const response = await fetch("/api/factory/super-upload/donors", {
+      cache: "no-store",
+    });
+    const nextData = (await response.json()) as DonorsResponse;
+
+    if (!response.ok) {
+      throw new Error(nextData.error ?? "Не получилось загрузить доноров");
+    }
+
+    setDonors(nextData.donors ?? []);
+    setDailyCandidates(nextData.candidates ?? []);
+  }
+
   useEffect(() => {
     loadAccounts().catch(console.error);
     loadTemplates().catch(console.error);
+    loadDonors().catch(console.error);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -240,6 +298,149 @@ export default function SuperUploadPage() {
       best,
     };
   }, [data]);
+
+  async function addDonor() {
+    setIsAddingDonor(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/factory/super-upload/donors", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          sourceUrl: donorInput,
+        }),
+      });
+      const nextData = (await response.json()) as DonorsResponse & { donor?: DonorChannel };
+
+      if (!response.ok) {
+        throw new Error(nextData.error ?? "Не получилось добавить донора");
+      }
+
+      setDonorInput("");
+      await loadDonors();
+      setMessage(nextData.message ?? "Донор сохранен и проверен");
+    } catch (donorError) {
+      setError(
+        donorError instanceof Error
+          ? donorError.message
+          : "Не получилось добавить донора",
+      );
+    } finally {
+      setIsAddingDonor(false);
+    }
+  }
+
+  async function removeDonor(donor: DonorChannel) {
+    setError("");
+
+    try {
+      const response = await fetch("/api/factory/super-upload/donors", {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ id: donor.id }),
+      });
+      const nextData = (await response.json()) as DonorsResponse;
+
+      if (!response.ok) {
+        throw new Error(nextData.error ?? "Не получилось выключить донора");
+      }
+
+      await loadDonors();
+      setMessage(`Донор выключен: ${donor.channelTitle}`);
+    } catch (donorError) {
+      setError(
+        donorError instanceof Error
+          ? donorError.message
+          : "Не получилось выключить донора",
+      );
+    }
+  }
+
+  async function checkAllDonors() {
+    setIsCheckingDonors(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const response = await fetch("/api/factory/super-upload/donors/check", {
+        method: "POST",
+      });
+      const nextData = (await response.json()) as DonorsResponse & {
+        checked?: number;
+        errors?: Array<{ message: string }>;
+      };
+
+      if (!response.ok) {
+        throw new Error(nextData.error ?? "Не получилось проверить доноров");
+      }
+
+      await loadDonors();
+      setMessage(
+        `Доноры проверены: ${nextData.checked ?? 0}. Кандидатов дня: ${nextData.candidates?.length ?? 0}.`,
+      );
+    } catch (checkError) {
+      setError(
+        checkError instanceof Error
+          ? checkError.message
+          : "Не получилось проверить доноров",
+      );
+    } finally {
+      setIsCheckingDonors(false);
+    }
+  }
+
+  async function createDayPackage() {
+    setIsCreatingDayPackage(true);
+    setError("");
+    setMessage("");
+
+    try {
+      if (!selectedAccountId) {
+        throw new Error("Выбери YouTube-аккаунт для залива");
+      }
+
+      if (!selectedTemplateId) {
+        throw new Error("Выбери Amelia-шаблон");
+      }
+
+      const response = await fetch("/api/factory/super-upload/daily-package", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          accountId: selectedAccountId,
+          templateId: selectedTemplateId,
+          candidatesCount: 10,
+          clipSeconds: 60,
+          intervalMin: 45,
+          intervalMax: 60,
+        }),
+      });
+      const nextData = (await response.json()) as DailyPackageResponse;
+
+      if (!response.ok) {
+        throw new Error(nextData.error ?? "Не получилось собрать пакет дня");
+      }
+
+      await loadDonors();
+      setMessage(nextData.message ?? `Пакет дня создан: ${nextData.jobs?.length ?? 0} задач.`);
+    } catch (packageError) {
+      setError(
+        packageError instanceof Error
+          ? packageError.message
+          : "Не получилось собрать пакет дня",
+      );
+    } finally {
+      setIsCreatingDayPackage(false);
+    }
+  }
 
   async function analyze() {
     setIsAnalyzing(true);
@@ -418,6 +619,83 @@ export default function SuperUploadPage() {
             <span>Не пачкой сразу. Пакет разбивается на отдельные задачи.</span>
             <span>Дефолт: 45–60 минут между роликами.</span>
             <span>Окно: вечер/ночь New York на основе /factory/analytics.</span>
+          </div>
+        </section>
+
+        <section className="card super-control-card super-donors-card">
+          <div className="super-section-head">
+            <div>
+              <span className="super-eyebrow">Daily Scout</span>
+              <h2>Горячие доноры</h2>
+              <p className="muted">
+                Добавляй сколько угодно Roblox-каналов. Система защищает от дублей по channelId,
+                каждый день проверяет свежие видео и собирает 10 кандидатов дня.
+              </p>
+            </div>
+            <button type="button" onClick={checkAllDonors} disabled={isCheckingDonors || donors.length === 0}>
+              {isCheckingDonors ? "Проверяю доноров..." : "Проверить всех доноров"}
+            </button>
+          </div>
+
+          <div className="super-donor-add-row">
+            <input
+              value={donorInput}
+              onChange={(event) => setDonorInput(event.target.value)}
+              placeholder="https://www.youtube.com/@robloxchannel"
+            />
+            <button type="button" onClick={addDonor} disabled={isAddingDonor || !donorInput.trim()}>
+              {isAddingDonor ? "Добавляю..." : "+ Добавить донора"}
+            </button>
+          </div>
+
+          <div className="super-donor-list">
+            {donors.map((donor) => (
+              <div className={`super-donor-card ${donor.isActive ? "" : "used"}`} key={donor.id}>
+                <div>
+                  <b>{donor.channelTitle}</b>
+                  <span>{formatNumber(donor.subscriberCount)} subs · {formatNumber(donor.videoCount)} videos</span>
+                  <span>last check: {formatDate(donor.lastCheckedAt)}</span>
+                  {donor.lastError ? <span className="error">{donor.lastError}</span> : null}
+                </div>
+                <button type="button" className="secondary-button" onClick={() => removeDonor(donor)}>
+                  Выключить
+                </button>
+              </div>
+            ))}
+
+            {donors.length === 0 ? (
+              <p className="muted">Доноров пока нет. Нажми плюс и добавь первый Roblox-канал.</p>
+            ) : null}
+          </div>
+
+          <div className="super-daily-head">
+            <div>
+              <h2>Сегодня брать это</h2>
+              <p className="muted">
+                10 лучших неиспользованных source videos от горячих доноров. Хук выбирается по названию:
+                obby/parkour → Impossible + Suspense, escape/survive → Survival + Ending,
+                funny/fail → Funny + Fail, doors/horror → Suspense + Ending.
+              </p>
+            </div>
+            <button type="button" onClick={createDayPackage} disabled={isCreatingDayPackage || dailyCandidates.length === 0}>
+              {isCreatingDayPackage ? "Собираю пакет дня..." : "Собрать пакет дня"}
+            </button>
+          </div>
+
+          <div className="super-candidate-strip">
+            {dailyCandidates.slice(0, 10).map((video, index) => (
+              <article className="super-candidate-card" key={video.id}>
+                <span className={scoreClass(video.viralChance)}>{video.viralChance}/100</span>
+                <b>#{index + 1} {video.title}</b>
+                <span>{video.channelTitle ?? "Donor"}</span>
+                <span>{formatNumber(video.viewsPerDay)} views/day · {video.suggestedHookMode}</span>
+                <span>{video.isUsed ? "Уже использовано" : "Свежий кандидат"}</span>
+              </article>
+            ))}
+
+            {dailyCandidates.length === 0 ? (
+              <p className="muted">Кандидатов дня пока нет. Добавь доноров и нажми “Проверить всех доноров”.</p>
+            ) : null}
           </div>
         </section>
 
@@ -687,9 +965,10 @@ export default function SuperUploadPage() {
                 Hook strategy
                 <select value={hookMode} onChange={(event) => setHookMode(event.target.value)}>
                   <option value="AUTO_BEST_MIX">Auto best mix</option>
-                  <option value="ENDING_SURVIVAL_IMPOSSIBLE">Ending + Survival + Impossible</option>
-                  <option value="SURVIVAL_SUSPENSE">Survival + Suspense</option>
-                  <option value="FUNNY_FAIL">Funny + Fail</option>
+                  <option value="IMPOSSIBLE_SUSPENSE">Obby / Parkour → Impossible + Suspense</option>
+                  <option value="SURVIVAL_ENDING">Escape / Survive → Survival + Ending</option>
+                  <option value="FUNNY_FAIL">Funny / Fail → Funny + Fail</option>
+                  <option value="SUSPENSE_ENDING">Doors / Horror → Suspense + Ending</option>
                 </select>
               </label>
 

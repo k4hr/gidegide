@@ -26,9 +26,12 @@ function getHookPrefix(input: { hookMode: string; titlePrefix: string }) {
     return input.titlePrefix.trim() || "auto mix";
   }
 
-  if (mode === "ENDING_SURVIVAL_IMPOSSIBLE") return "auto mix";
-  if (mode === "SURVIVAL_SUSPENSE") return "auto mix";
-  if (mode === "FUNNY_FAIL") return "auto mix";
+  if (mode === "IMPOSSIBLE_SUSPENSE") return "HOOK:IMPOSSIBLE,SUSPENSE";
+  if (mode === "SURVIVAL_ENDING") return "HOOK:SURVIVAL,ENDING";
+  if (mode === "FUNNY_FAIL") return "HOOK:FUNNY,FAIL";
+  if (mode === "SUSPENSE_ENDING") return "HOOK:SUSPENSE,ENDING";
+  if (mode === "ENDING_SURVIVAL_IMPOSSIBLE") return "HOOK:ENDING,SURVIVAL,IMPOSSIBLE";
+  if (mode === "SURVIVAL_SUSPENSE") return "HOOK:SURVIVAL,SUSPENSE";
 
   return input.titlePrefix.trim() || "auto mix";
 }
