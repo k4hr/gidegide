@@ -1,5 +1,20 @@
 import type { FactoryGame } from "@prisma/client";
 
+type HookCategory =
+  | "ENDING"
+  | "SURVIVAL"
+  | "IMPOSSIBLE"
+  | "FAIL"
+  | "SUSPENSE"
+  | "CHALLENGE"
+  | "FUNNY"
+  | "DIRECT";
+
+type HookTemplate = {
+  category: HookCategory;
+  templates: string[];
+};
+
 export const GAME_OPTIONS: Array<{
   value: FactoryGame;
   label: string;
@@ -9,13 +24,13 @@ export const GAME_OPTIONS: Array<{
   {
     value: "ROBLOX",
     label: "Roblox",
-    titlePrefix: "crazy roblox moments",
-    hashtags: ["#roblox", "#robloxclips", "#gaming", "#shorts", "#funny"],
+    titlePrefix: "auto mix",
+    hashtags: ["#roblox", "#robloxshorts", "#robloxobby", "#gaming", "#shorts"],
   },
   {
     value: "FORTNITE",
     label: "Fortnite",
-    titlePrefix: "fortnite highlights",
+    titlePrefix: "auto mix",
     hashtags: [
       "#fortnite",
       "#fortniteclips",
@@ -27,7 +42,7 @@ export const GAME_OPTIONS: Array<{
   {
     value: "MINECRAFT",
     label: "Minecraft",
-    titlePrefix: "minecraft moments",
+    titlePrefix: "auto mix",
     hashtags: [
       "#minecraft",
       "#minecraftclips",
@@ -39,7 +54,7 @@ export const GAME_OPTIONS: Array<{
   {
     value: "BRAWL_STARS",
     label: "Brawl Stars",
-    titlePrefix: "brawl stars clips",
+    titlePrefix: "auto mix",
     hashtags: [
       "#brawlstars",
       "#brawlstarsclips",
@@ -51,528 +66,645 @@ export const GAME_OPTIONS: Array<{
   {
     value: "DOTA2",
     label: "Dota 2",
-    titlePrefix: "dota 2 highlights",
+    titlePrefix: "auto mix",
     hashtags: ["#dota2", "#dotaclips", "#gaming", "#shorts", "#moba"],
   },
   {
     value: "OTHER",
     label: "Other",
-    titlePrefix: "gaming highlights",
-    hashtags: ["#gaming", "#gamingclips", "#shorts", "#funny", "#reaction"],
+    titlePrefix: "auto mix",
+    hashtags: ["#gaming", "#gamingclips", "#shorts", "#funny", "#clips"],
   },
 ];
 
-const GAME_TITLE_VARIANTS: Record<FactoryGame, string[]> = {
+const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
   ROBLOX: [
-    "This Roblox Moment Was Insane",
-    "Roblox Went Completely Wrong",
-    "This Roblox Clip Made No Sense",
-    "The Wildest Roblox Moment Today",
-    "This Roblox Challenge Got Out Of Hand",
-    "Roblox Almost Ended In Disaster",
-    "This Roblox Timing Was Perfect",
-    "The Weirdest Roblox Moment Today",
-    "Roblox Got Crazy Fast",
-    "This Roblox Play Should Not Have Worked",
-    "That Roblox Ending Was Brutal",
-    "This Roblox Escape Was Unbelievable",
-    "Roblox Chaos In Under A Minute",
-    "This Roblox Fail Was Painful",
-    "The Cleanest Roblox Moment Today",
-    "This Roblox Round Turned Instantly",
-    "Nobody Expected This Roblox Ending",
-    "This Roblox Obby Was Actually Impossible",
-    "Roblox Physics Went Too Far",
-    "This Roblox Player Got So Lucky",
-    "The Most Random Roblox Clip Today",
-    "This Roblox Map Was Pure Chaos",
-    "That Roblox Jump Was Way Too Close",
-    "This Roblox Moment Hit Different",
-    "Roblox Players Are Built Different",
-    "This Roblox Game Went Off The Rails",
-    "The Funniest Roblox Fail Today",
-    "This Roblox Run Got Worse Every Second",
-    "That Roblox Trap Was Evil",
-    "This Roblox Clip Is Pure Panic",
-    "Roblox Obby Moments That Make No Sense",
-    "This Roblox Shortcut Was Too Clean",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the ending",
+        "Nobody expected this ending",
+        "The ending changed everything",
+        "The last second was insane",
+        "This ending made no sense",
+        "It all comes down to the end",
+        "The final jump decided everything",
+        "The ending is actually wild",
+        "Watch the ending closely",
+        "The last move saved the run",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he survive that",
+        "He survived with one second left",
+        "This save was way too lucky",
+        "He almost lost everything here",
+        "That survival was actually impossible",
+        "He was one mistake away from losing",
+        "This Roblox player got too lucky",
+        "He somehow stayed alive",
+        "That escape should not have worked",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This Roblox obby looked impossible",
+        "This jump was way too hard",
+        "This level should be illegal",
+        "I would rage quit here",
+        "This Roblox map is actually impossible",
+        "This part breaks most players",
+        "That obstacle was pure evil",
+        "This obby got unfair fast",
+        "This level was made to make people quit",
+        "There is no way this is fair",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "The fail at the end hurts",
+        "One mistake ruined everything",
+        "He lost it at the worst moment",
+        "This was painful to watch",
+        "He threw the easiest win",
+        "That fall was brutal",
+        "This Roblox fail was personal",
+        "He panicked at the worst time",
+        "The run ended in the dumbest way",
+        "This mistake cost him everything",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "There is no way he makes this",
+        "I thought he was done",
+        "This got way too close",
+        "Watch what happens next",
+        "I did not expect that move",
+        "This was closer than it should be",
+        "He almost sold the whole run",
+        "This moment got stressful fast",
+        "The timing here was insane",
+        "This Roblox run had me nervous",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only Roblox pros can beat this",
+        "Most players fail this part",
+        "Can you survive this Roblox obby",
+        "Try not to blink here",
+        "This level tests your patience",
+        "Only one percent beat this part",
+        "This is where most people quit",
+        "Would you make this jump",
+        "This Roblox challenge is too stressful",
+        "This part separates pros from beginners",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "Roblox physics went crazy here",
+        "Bro forgot how to jump",
+        "This was the dumbest way to lose",
+        "He panicked so hard",
+        "This Roblox moment was too random",
+        "That was not supposed to happen",
+        "Roblox chose violence today",
+        "This clip got weird fast",
+        "The timing was accidentally perfect",
+        "This Roblox moment is pure chaos",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Roblox obby got intense",
+        "Roblox parkour got too close",
+        "Roblox escape challenge went wrong",
+        "Roblox lava challenge got stressful",
+        "Roblox tower run got insane",
+        "Roblox gameplay turned into chaos",
+        "Roblox obby moments that make no sense",
+        "Roblox challenge with a wild ending",
+        "Roblox parkour almost ended badly",
+        "Roblox run got harder every second",
+      ],
+    },
   ],
 
   FORTNITE: [
-    "This Fortnite Moment Was Unreal",
-    "Fortnite Got Wild Instantly",
-    "That Fortnite Ending Was Insane",
-    "This Fortnite Clutch Came Out Of Nowhere",
-    "Fortnite Almost Went Very Wrong",
-    "This Fortnite Fight Got Brutal",
-    "That Fortnite Push Actually Worked",
-    "Fortnite Chaos In One Short Clip",
-    "This Fortnite Play Changed Everything",
-    "The Cleanest Fortnite Moment Today",
-    "This Fortnite Fail Hurt To Watch",
-    "Fortnite Turned Around In Seconds",
-    "That Fortnite Edit Was Too Fast",
-    "This Fortnite Clip Makes No Sense",
-    "The Craziest Fortnite Timing",
-    "This Fortnite Recovery Was Impossible",
-    "Nobody Expected This Fortnite Play",
-    "This Fortnite Fight Was Too Close",
-    "Fortnite Players Are Built Different",
-    "This Fortnite Ending Was Perfect",
-    "That Fortnite Shot Was Unreal",
-    "This Fortnite Clip Got Out Of Control",
-    "The Wildest Fortnite Moment Today",
-    "This Fortnite Round Went Completely Wrong",
-    "Fortnite Highlights That Hit Different",
-    "That Fortnite Escape Was Too Clean",
-    "This Fortnite Moment Was Pure Panic",
-    "Fortnite Chaos Got Worse Every Second",
-    "This Fortnite Player Got So Lucky",
-    "The Most Random Fortnite Clip Today",
-    "This Fortnite Play Should Not Have Worked",
-    "That Fortnite Finish Was Brutal",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the final fight",
+        "Nobody expected this ending",
+        "The last shot changed everything",
+        "This ending was too close",
+        "The final move was perfect",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he live through that",
+        "This save was unreal",
+        "He survived with no time left",
+        "That escape was way too clean",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This fight looked impossible",
+        "This clutch should not happen",
+        "There is no way this works",
+        "This Fortnite play was impossible",
+        "That recovery was unreal",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "One mistake ruined everything",
+        "This fail hurt to watch",
+        "He lost it at the worst moment",
+        "This was painful",
+        "That was the worst timing",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "This got way too close",
+        "I thought he was done",
+        "Watch what happens next",
+        "The timing was insane",
+        "This fight got stressful fast",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only Fortnite pros win this",
+        "Most players lose this fight",
+        "Could you clutch this",
+        "This is where most people panic",
+        "This endgame was too intense",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "Fortnite physics went crazy",
+        "Bro panicked instantly",
+        "This was not supposed to happen",
+        "The timing was too funny",
+        "This Fortnite moment was pure chaos",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Fortnite endgame got intense",
+        "Fortnite clutch moment",
+        "Fortnite fight went crazy",
+        "Fortnite gameplay turned into chaos",
+        "Fortnite clip with a wild ending",
+      ],
+    },
   ],
 
   MINECRAFT: [
-    "This Minecraft Moment Was Cursed",
-    "Minecraft Went Wrong Fast",
-    "That Minecraft Save Was Unbelievable",
-    "This Minecraft Clip Was Too Close",
-    "Minecraft Chaos In A Few Seconds",
-    "This Minecraft Move Actually Worked",
-    "That Minecraft Ending Was Perfect",
-    "Minecraft Almost Became A Disaster",
-    "This Minecraft Build Failed Badly",
-    "The Weirdest Minecraft Moment Today",
-    "This Minecraft Escape Was Insane",
-    "Minecraft Turned Around Instantly",
-    "That Minecraft Trap Was Brutal",
-    "This Minecraft Play Was Too Smart",
-    "Minecraft Got Chaotic Fast",
-    "This Minecraft Recovery Was Impossible",
-    "Nobody Expected This Minecraft Ending",
-    "This Minecraft Clip Made No Sense",
-    "Minecraft Players Are Too Creative",
-    "This Minecraft Moment Hit Different",
-    "That Minecraft Jump Was Way Too Close",
-    "This Minecraft World Was Pure Chaos",
-    "The Funniest Minecraft Fail Today",
-    "This Minecraft Run Got Worse Every Second",
-    "Minecraft But Everything Went Wrong",
-    "That Minecraft Shortcut Was Too Clean",
-    "This Minecraft Player Got So Lucky",
-    "The Most Random Minecraft Clip Today",
-    "This Minecraft Trap Was Actually Genius",
-    "Minecraft Moments That Make No Sense",
-    "This Minecraft Ending Was Brutal",
-    "That Minecraft Escape Should Not Work",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the ending",
+        "Nobody expected this ending",
+        "The ending changed everything",
+        "The last second was insane",
+        "This Minecraft ending made no sense",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he survive that",
+        "He survived with one heart",
+        "This save was way too lucky",
+        "That escape should not have worked",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This Minecraft challenge looked impossible",
+        "This jump was way too hard",
+        "There is no way this is fair",
+        "This part breaks most players",
+        "This level was made to make people quit",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "One mistake ruined everything",
+        "The fail at the end hurts",
+        "He lost it at the worst moment",
+        "This was painful to watch",
+        "That fall was brutal",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "There is no way he makes this",
+        "I thought he was done",
+        "This got way too close",
+        "Watch what happens next",
+        "This moment got stressful fast",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only Minecraft pros can beat this",
+        "Most players fail this part",
+        "Could you survive this",
+        "This challenge tests your patience",
+        "This is where most people quit",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "Minecraft physics went crazy",
+        "Bro forgot how to jump",
+        "This was the dumbest way to lose",
+        "This Minecraft moment was too random",
+        "That was not supposed to happen",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Minecraft challenge got intense",
+        "Minecraft parkour got too close",
+        "Minecraft escape went wrong",
+        "Minecraft gameplay turned into chaos",
+        "Minecraft clip with a wild ending",
+      ],
+    },
   ],
 
   BRAWL_STARS: [
-    "This Brawl Stars Clip Was Crazy",
-    "Brawl Stars Turned Instantly",
-    "That Brawl Stars Finish Was Brutal",
-    "This Brawl Stars Push Was Perfect",
-    "Brawl Stars Chaos In One Minute",
-    "This Brawl Stars Comeback Was Insane",
-    "That Brawl Stars Timing Was Unreal",
-    "This Brawl Stars Fail Hurt",
-    "Brawl Stars Went Wrong Fast",
-    "This Brawl Stars Round Made No Sense",
-    "The Cleanest Brawl Stars Moment Today",
-    "That Brawl Stars Clutch Was Wild",
-    "This Brawl Stars Play Changed Everything",
-    "Brawl Stars Got Crazy At The End",
-    "This Brawl Stars Escape Should Not Work",
-    "That Brawl Stars Ending Was Too Close",
-    "Nobody Expected This Brawl Stars Play",
-    "This Brawl Stars Match Was Pure Panic",
-    "Brawl Stars Players Are Built Different",
-    "This Brawl Stars Clip Hit Different",
-    "That Brawl Stars Move Was Too Smart",
-    "This Brawl Stars Fight Got Brutal",
-    "The Wildest Brawl Stars Clip Today",
-    "Brawl Stars Chaos Got Worse Every Second",
-    "This Brawl Stars Player Got So Lucky",
-    "The Most Random Brawl Stars Moment Today",
-    "This Brawl Stars Round Went Completely Wrong",
-    "That Brawl Stars Recovery Was Impossible",
-    "This Brawl Stars Finish Was Perfect",
-    "Brawl Stars Highlights That Hit Different",
-    "This Brawl Stars Clip Is Pure Chaos",
-    "That Brawl Stars Push Should Not Work",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the final fight",
+        "Nobody expected this ending",
+        "The last second changed everything",
+        "This ending was too close",
+        "The final move was perfect",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he survive that",
+        "This save was unreal",
+        "He survived with no health",
+        "That escape was way too clean",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This fight looked impossible",
+        "This clutch should not happen",
+        "There is no way this works",
+        "This Brawl Stars play was impossible",
+        "That recovery was unreal",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "One mistake ruined everything",
+        "This fail hurt to watch",
+        "He lost it at the worst moment",
+        "This was painful",
+        "That was the worst timing",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "This got way too close",
+        "I thought he was done",
+        "Watch what happens next",
+        "The timing was insane",
+        "This fight got stressful fast",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only Brawl Stars pros win this",
+        "Most players lose this fight",
+        "Could you clutch this",
+        "This is where most people panic",
+        "This match was too intense",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "Brawl Stars got chaotic",
+        "Bro panicked instantly",
+        "This was not supposed to happen",
+        "The timing was too funny",
+        "This Brawl Stars moment was pure chaos",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Brawl Stars match got intense",
+        "Brawl Stars clutch moment",
+        "Brawl Stars fight went crazy",
+        "Brawl Stars gameplay turned into chaos",
+        "Brawl Stars clip with a wild ending",
+      ],
+    },
   ],
 
   DOTA2: [
-    "This Dota 2 Fight Was Insane",
-    "Dota 2 Turned Around Instantly",
-    "That Dota 2 Timing Was Perfect",
-    "This Dota 2 Clip Got Brutal Fast",
-    "Dota 2 Chaos In A Short Clip",
-    "This Dota 2 Save Was Unbelievable",
-    "That Dota 2 Fight Made No Sense",
-    "This Dota 2 Comeback Was Wild",
-    "Dota 2 Almost Ended In Disaster",
-    "That Dota 2 Play Was Too Clean",
-    "This Dota 2 Fail Hurt To Watch",
-    "Dota 2 Got Out Of Control Fast",
-    "That Dota 2 Ending Was Crazy",
-    "This Dota 2 Escape Was Impossible",
-    "The Cleanest Dota 2 Moment Today",
-    "This Dota 2 Fight Changed Everything",
-    "Nobody Expected This Dota 2 Play",
-    "This Dota 2 Clip Was Pure Panic",
-    "Dota 2 Players Are Built Different",
-    "This Dota 2 Moment Hit Different",
-    "That Dota 2 Move Was Too Smart",
-    "This Dota 2 Fight Went Completely Wrong",
-    "The Wildest Dota 2 Clip Today",
-    "Dota 2 Chaos Got Worse Every Second",
-    "This Dota 2 Player Got So Lucky",
-    "The Most Random Dota 2 Moment Today",
-    "This Dota 2 Recovery Was Unreal",
-    "That Dota 2 Save Should Not Work",
-    "This Dota 2 Ending Was Brutal",
-    "Dota 2 Highlights That Hit Different",
-    "This Dota 2 Clip Is Pure Chaos",
-    "That Dota 2 Fight Was Way Too Close",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the final fight",
+        "Nobody expected this ending",
+        "The last spell changed everything",
+        "This ending was too close",
+        "The final move was perfect",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he live through that",
+        "This save was unreal",
+        "He survived with no HP",
+        "That escape was way too clean",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This fight looked impossible",
+        "This play should not work",
+        "There is no way this works",
+        "This Dota play was impossible",
+        "That recovery was unreal",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "One mistake ruined everything",
+        "This fail hurt to watch",
+        "He lost it at the worst moment",
+        "This was painful",
+        "That was the worst timing",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "This got way too close",
+        "I thought he was done",
+        "Watch what happens next",
+        "The timing was insane",
+        "This fight got stressful fast",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only Dota players understand this",
+        "Most players lose this fight",
+        "Could you survive this",
+        "This is where most people panic",
+        "This teamfight was too intense",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "Dota chaos in one clip",
+        "Bro panicked instantly",
+        "This was not supposed to happen",
+        "The timing was too funny",
+        "This Dota moment was pure chaos",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Dota fight got intense",
+        "Dota clutch moment",
+        "Dota teamfight went crazy",
+        "Dota gameplay turned into chaos",
+        "Dota clip with a wild ending",
+      ],
+    },
   ],
 
   OTHER: [
-    "This Gaming Clip Was Insane",
-    "That Ending Was Wild",
-    "This Moment Made No Sense",
-    "Gaming Chaos In One Short Clip",
-    "This Play Changed Everything",
-    "That Timing Was Unreal",
-    "This Clip Went Wrong Fast",
-    "The Cleanest Moment Today",
-    "This Comeback Was Unbelievable",
-    "That Finish Was Brutal",
-    "This Play Should Not Have Worked",
-    "Gaming Got Crazy Instantly",
-    "This Clip Was Too Close",
-    "That Recovery Was Impossible",
-    "This Moment Turned Around Fast",
-    "One Of The Wildest Gaming Clips Today",
-    "Nobody Expected This Ending",
-    "This Clip Was Pure Panic",
-    "Gaming Moments That Make No Sense",
-    "This Player Got So Lucky",
-    "The Most Random Gaming Clip Today",
-    "That Move Was Too Smart",
-    "This Round Went Completely Wrong",
-    "The Funniest Gaming Fail Today",
-    "This Moment Hit Different",
-    "Gaming Chaos Got Worse Every Second",
-    "That Escape Should Not Work",
-    "This Clip Got Out Of Control",
-    "The Weirdest Gaming Moment Today",
-    "This Ending Was Perfect",
+    {
+      category: "ENDING",
+      templates: [
+        "Wait for the ending",
+        "Nobody expected this ending",
+        "The ending changed everything",
+        "The last second was insane",
+        "This ending made no sense",
+      ],
+    },
+    {
+      category: "SURVIVAL",
+      templates: [
+        "He should not have survived this",
+        "How did he survive that",
+        "This save was way too lucky",
+        "He almost lost everything here",
+        "That escape should not have worked",
+      ],
+    },
+    {
+      category: "IMPOSSIBLE",
+      templates: [
+        "This looked impossible",
+        "This was way too hard",
+        "This level should be illegal",
+        "I would rage quit here",
+        "There is no way this is fair",
+      ],
+    },
+    {
+      category: "FAIL",
+      templates: [
+        "The fail at the end hurts",
+        "One mistake ruined everything",
+        "He lost it at the worst moment",
+        "This was painful to watch",
+        "That fall was brutal",
+      ],
+    },
+    {
+      category: "SUSPENSE",
+      templates: [
+        "There is no way he makes this",
+        "I thought he was done",
+        "This got way too close",
+        "Watch what happens next",
+        "I did not expect that move",
+      ],
+    },
+    {
+      category: "CHALLENGE",
+      templates: [
+        "Only pros can beat this",
+        "Most players fail this part",
+        "Could you survive this",
+        "Try not to blink here",
+        "This challenge is too stressful",
+      ],
+    },
+    {
+      category: "FUNNY",
+      templates: [
+        "The physics went crazy here",
+        "Bro forgot how to play",
+        "This was the dumbest way to lose",
+        "He panicked so hard",
+        "This moment was pure chaos",
+      ],
+    },
+    {
+      category: "DIRECT",
+      templates: [
+        "Gaming moment got intense",
+        "Gameplay turned into chaos",
+        "Challenge with a wild ending",
+        "This clip got stressful",
+        "Gaming clip with a crazy ending",
+      ],
+    },
   ],
 };
 
-const TOPIC_TITLE_SUFFIXES: Record<FactoryGame, string[]> = {
-  ROBLOX: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Wild Instantly",
-    "Made No Sense",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Was Actually Impossible",
-    "Ended Perfectly",
-    "Got Worse Every Second",
-    "Was Too Funny",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Was Brutal",
-    "Was Unbelievable",
-    "Was Pure Panic",
-  ],
-
-  FORTNITE: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Wild Instantly",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Ended Perfectly",
-    "Was Too Clean",
-    "Got Worse Every Second",
-    "Was Unreal",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Was Brutal",
-    "Changed Everything",
-    "Was Pure Panic",
-    "Came Out Of Nowhere",
-  ],
-
-  MINECRAFT: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Cursed Instantly",
-    "Made No Sense",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Was Actually Impossible",
-    "Ended Perfectly",
-    "Got Worse Every Second",
-    "Was Too Smart",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Was Brutal",
-    "Was Unbelievable",
-    "Was Pure Panic",
-  ],
-
-  BRAWL_STARS: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Wild Instantly",
-    "Made No Sense",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Ended Perfectly",
-    "Was Too Clean",
-    "Got Worse Every Second",
-    "Was Brutal",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Changed Everything",
-    "Was Unbelievable",
-    "Was Pure Panic",
-  ],
-
-  DOTA2: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Wild Instantly",
-    "Made No Sense",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Ended Perfectly",
-    "Was Too Clean",
-    "Got Worse Every Second",
-    "Was Brutal",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Changed Everything",
-    "Was Unbelievable",
-    "Was Pure Panic",
-  ],
-
-  OTHER: [
-    "Went Completely Wrong",
-    "Was Pure Chaos",
-    "Got Wild Instantly",
-    "Made No Sense",
-    "Had The Craziest Ending",
-    "Was Way Too Close",
-    "Turned Into Disaster",
-    "Ended Perfectly",
-    "Was Too Clean",
-    "Got Worse Every Second",
-    "Was Brutal",
-    "Hit Different",
-    "Should Not Have Worked",
-    "Changed Everything",
-    "Was Unbelievable",
-    "Was Pure Panic",
-  ],
-};
-
-const GENERIC_WATCHER_PREFIXES = [
-  "lana watches",
-  "mia watches",
-  "amelia watches",
-  "ember watches",
-  "lana watch",
-  "mia watch",
-  "amelia watch",
-  "ember watch",
-  "watching",
-  "reacts to",
-  "react to",
-  "reaction to",
-  "reaction",
-  "reacts",
+const TITLE_SUFFIXES = [
+  "",
+  "",
+  "",
+  " #shorts",
+  " #gaming",
+  " #roblox",
+  " #robloxshorts",
 ];
 
-const FORBIDDEN_TITLE_WORDS = [
-  "lana",
-  "mia",
-  "amelia",
-  "ember",
-  "girl",
-  "girls",
-  "woman",
-  "women",
-  "watch",
-  "watches",
-  "watching",
-  "reacts",
-  "react",
-  "reaction",
-];
+function pickRandom<T>(items: T[]) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function normalizeTitle(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\s+([?!.,])/g, "$1")
+    .trim()
+    .slice(0, 95);
+}
+
+function isAutoMixTitlePrefix(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLowerCase();
+
+  return (
+    normalized.length === 0 ||
+    normalized === "auto" ||
+    normalized === "auto mix" ||
+    normalized === "automix" ||
+    normalized === "random" ||
+    normalized === "mix"
+  );
+}
+
+function buildManualTitle(input: {
+  titlePrefix: string;
+  game: FactoryGame;
+  index: number;
+}) {
+  const titleNumber = input.index > 1 ? ` #${input.index}` : "";
+  return normalizeTitle(`${input.titlePrefix}${titleNumber}`);
+}
+
+function buildAutoMixTitle(input: {
+  game: FactoryGame;
+  index: number;
+}) {
+  const hookGroups = HOOK_MIX[input.game] ?? HOOK_MIX.OTHER;
+  const group = pickRandom(hookGroups);
+  const template = pickRandom(group.templates);
+  const suffix = input.game === "ROBLOX" ? pickRandom(TITLE_SUFFIXES) : "";
+
+  return normalizeTitle(`${template}${suffix}`);
+}
 
 export function getGameMeta(game: FactoryGame) {
-  return GAME_OPTIONS.find((option) => option.value === game) ?? GAME_OPTIONS[5];
+  return (
+    GAME_OPTIONS.find((option) => option.value === game) ??
+    GAME_OPTIONS.find((option) => option.value === "OTHER")!
+  );
 }
 
-function createSeed(value: string) {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-
-  return hash >>> 0;
-}
-
-function pickVariant<T>(items: T[], seed: number) {
-  return items[seed % items.length];
-}
-
-function normalizeSpaces(value: string) {
-  return value.trim().replace(/\s+/g, " ");
-}
-
-function stripForbiddenTitleWords(value: string) {
-  const parts = value
-    .split(/\s+/)
-    .filter((part) => {
-      const normalized = part
-        .toLowerCase()
-        .replace(/[^a-z0-9а-яё_-]/gi, "");
-
-      return !FORBIDDEN_TITLE_WORDS.includes(normalized);
+export function buildFactoryTitle(input: {
+  game: FactoryGame;
+  titlePrefix: string;
+  index: number;
+}) {
+  if (isAutoMixTitlePrefix(input.titlePrefix)) {
+    return buildAutoMixTitle({
+      game: input.game,
+      index: input.index,
     });
-
-  return normalizeSpaces(parts.join(" "));
-}
-
-function normalizeCustomTheme(value?: string | null) {
-  const clean = normalizeSpaces(value ?? "");
-
-  if (!clean) {
-    return null;
   }
 
-  const normalized = clean.toLowerCase();
-
-  if (GENERIC_WATCHER_PREFIXES.some((prefix) => normalized.startsWith(prefix))) {
-    return null;
-  }
-
-  const withoutForbiddenWords = stripForbiddenTitleWords(clean);
-
-  if (!withoutForbiddenWords) {
-    return null;
-  }
-
-  return withoutForbiddenWords.slice(0, 42);
+  return buildManualTitle({
+    game: input.game,
+    titlePrefix: input.titlePrefix,
+    index: input.index,
+  });
 }
 
-function toTitleCase(value: string) {
-  return value
-    .split(/\s+/)
-    .map((part) => {
-      const lower = part.toLowerCase();
-
-      if (lower.length <= 2) {
-        return lower;
-      }
-
-      return lower.slice(0, 1).toUpperCase() + lower.slice(1);
-    })
-    .join(" ");
-}
-
-function hasThemeMeaning(value: string) {
-  return /[a-zа-яё0-9]/i.test(value);
-}
-
-function buildThemeBasedTitle(input: {
+export function buildFactoryDescription(input: {
   game: FactoryGame;
-  clipIndex: number;
-  customPrefix?: string | null;
-  seedHint?: string | number | null;
-}) {
-  const customTheme = normalizeCustomTheme(input.customPrefix);
-
-  if (!customTheme || !hasThemeMeaning(customTheme)) {
-    return null;
-  }
-
-  const suffixes = TOPIC_TITLE_SUFFIXES[input.game] ?? TOPIC_TITLE_SUFFIXES.OTHER;
-
-  const seed = createSeed(
-    [
-      "theme-title",
-      input.game,
-      input.clipIndex,
-      input.seedHint ?? "",
-      customTheme,
-    ]
-      .join(":")
-      .toLowerCase(),
-  );
-
-  const suffix = pickVariant(suffixes, seed);
-  const theme = toTitleCase(customTheme);
-
-  return `${theme} ${suffix}`;
-}
-
-export function buildClipTitle(input: {
-  game: FactoryGame;
-  clipIndex: number;
-  customPrefix?: string | null;
-  seedHint?: string | number | null;
-}) {
-  const themeTitle = buildThemeBasedTitle(input);
-
-  if (themeTitle) {
-    return themeTitle.slice(0, 95);
-  }
-
-  const variants = GAME_TITLE_VARIANTS[input.game] ?? GAME_TITLE_VARIANTS.OTHER;
-
-  const seed = createSeed(
-    [
-      "variant-title",
-      input.game,
-      input.clipIndex,
-      input.seedHint ?? "",
-      input.customPrefix ?? "",
-    ]
-      .join(":")
-      .toLowerCase(),
-  );
-
-  return pickVariant(variants, seed).slice(0, 95);
-}
-
-export function buildClipDescription(input: {
-  game: FactoryGame;
-  customPrefix?: string | null;
+  title: string;
 }) {
   const meta = getGameMeta(input.game);
-  const customTheme = normalizeCustomTheme(input.customPrefix);
+  const hashtags = meta.hashtags.join(" ");
 
-  return [
-    customTheme
-      ? `${meta.label} short gaming clip. Theme: ${customTheme}.`
-      : `${meta.label} short gaming clip.`,
-    "",
-    meta.hashtags.join(" "),
-  ].join("\n");
+  return `${input.title}\n\n${hashtags}`;
 }
