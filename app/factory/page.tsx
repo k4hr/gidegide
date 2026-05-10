@@ -105,32 +105,32 @@ const gameOptions: Array<{
   {
     value: "ROBLOX",
     label: "Roblox",
-    titlePrefix: "crazy roblox moments",
+    titlePrefix: "auto mix",
   },
   {
     value: "FORTNITE",
     label: "Fortnite",
-    titlePrefix: "fortnite highlights",
+    titlePrefix: "auto mix",
   },
   {
     value: "MINECRAFT",
     label: "Minecraft",
-    titlePrefix: "minecraft moments",
+    titlePrefix: "auto mix",
   },
   {
     value: "BRAWL_STARS",
     label: "Brawl Stars",
-    titlePrefix: "brawl stars clips",
+    titlePrefix: "auto mix",
   },
   {
     value: "DOTA2",
     label: "Dota 2",
-    titlePrefix: "dota 2 highlights",
+    titlePrefix: "auto mix",
   },
   {
     value: "OTHER",
     label: "Other",
-    titlePrefix: "gaming highlights",
+    titlePrefix: "auto mix",
   },
 ];
 
@@ -233,7 +233,7 @@ export default function FactoryPage() {
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [titlePrefix, setTitlePrefix] = useState("crazy roblox moments");
+  const [titlePrefix, setTitlePrefix] = useState("auto mix");
   const [publishTiming, setPublishTiming] =
     useState<FactoryPublishTiming>("NOW");
 
@@ -731,12 +731,16 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Тема title, опционально
+                Title hook
                 <input
                   value={titlePrefix}
                   onChange={(event) => setTitlePrefix(event.target.value)}
-                  placeholder={selectedGame.titlePrefix}
+                  placeholder="auto mix"
                 />
+                <small className="muted">
+                  Оставь auto mix — завод сам подставит разные цепляющие hooks.
+                  Если впишешь свой текст, он будет использоваться вручную.
+                </small>
               </label>
             </div>
 
@@ -841,7 +845,7 @@ export default function FactoryPage() {
                         </label>
 
                         <label>
-                          Тема title для аккаунта
+                          Title hook для аккаунта
                           <input
                             value={state.titlePrefix || ""}
                             onChange={(event) =>
@@ -849,8 +853,11 @@ export default function FactoryPage() {
                                 titlePrefix: event.target.value,
                               })
                             }
-                            placeholder={titlePrefix}
+                            placeholder="auto mix"
                           />
+                          <small className="muted">
+                            auto mix = разные цепляющие hooks автоматически.
+                          </small>
                         </label>
 
                         <label>
@@ -888,9 +895,9 @@ export default function FactoryPage() {
             </section>
 
             <p className="muted">
-              Для {selectedGame.label} title рандомизируется автоматически,
-              имена девушек в название не добавляются. Описание будет с 5
-              хэштегами автоматически.
+              Для {selectedGame.label} title и описание собираются
+              автоматически. Если в title hook стоит auto mix, каждый ролик
+              получит разный цепляющий заголовок.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
