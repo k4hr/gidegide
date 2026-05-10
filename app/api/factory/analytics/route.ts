@@ -29,13 +29,101 @@ function formatHour(date: Date | null | undefined) {
 function getHookType(title: string | null | undefined) {
   const normalized = (title ?? "").toLowerCase();
 
-  if (normalized.includes("wait")) return "Wait for ending";
-  if (normalized.includes("ending")) return "Ending hook";
-  if (normalized.includes("expect")) return "Unexpected moment";
-  if (normalized.includes("safe")) return "He thought safe";
-  if (normalized.includes("insane") || normalized.includes("crazy")) {
-    return "Crazy / insane";
+  if (
+    normalized.includes("wait for the ending") ||
+    normalized.includes("nobody expected") ||
+    normalized.includes("ending") ||
+    normalized.includes("last second") ||
+    normalized.includes("final jump") ||
+    normalized.includes("final move")
+  ) {
+    return "Ending hook";
   }
+
+  if (
+    normalized.includes("survived") ||
+    normalized.includes("survive") ||
+    normalized.includes("stayed alive") ||
+    normalized.includes("escape") ||
+    normalized.includes("one second left") ||
+    normalized.includes("no hp") ||
+    normalized.includes("one heart")
+  ) {
+    return "Survival hook";
+  }
+
+  if (
+    normalized.includes("impossible") ||
+    normalized.includes("too hard") ||
+    normalized.includes("illegal") ||
+    normalized.includes("unfair") ||
+    normalized.includes("rage quit") ||
+    normalized.includes("breaks most players") ||
+    normalized.includes("made to make people quit")
+  ) {
+    return "Impossible hook";
+  }
+
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("mistake") ||
+    normalized.includes("lost it") ||
+    normalized.includes("painful") ||
+    normalized.includes("threw") ||
+    normalized.includes("fall was brutal") ||
+    normalized.includes("worst moment") ||
+    normalized.includes("worst timing")
+  ) {
+    return "Fail hook";
+  }
+
+  if (
+    normalized.includes("no way") ||
+    normalized.includes("i thought") ||
+    normalized.includes("too close") ||
+    normalized.includes("watch what happens") ||
+    normalized.includes("did not expect") ||
+    normalized.includes("stressful") ||
+    normalized.includes("timing here")
+  ) {
+    return "Suspense hook";
+  }
+
+  if (
+    normalized.includes("only roblox pros") ||
+    normalized.includes("only pros") ||
+    normalized.includes("most players") ||
+    normalized.includes("can you") ||
+    normalized.includes("could you") ||
+    normalized.includes("try not to blink") ||
+    normalized.includes("one percent") ||
+    normalized.includes("separates pros")
+  ) {
+    return "Challenge hook";
+  }
+
+  if (
+    normalized.includes("physics") ||
+    normalized.includes("bro ") ||
+    normalized.includes("dumbest") ||
+    normalized.includes("panicked") ||
+    normalized.includes("random") ||
+    normalized.includes("not supposed") ||
+    normalized.includes("chose violence") ||
+    normalized.includes("pure chaos")
+  ) {
+    return "Funny hook";
+  }
+
+  if (
+    normalized.includes("crazy") ||
+    normalized.includes("insane") ||
+    normalized.includes("chaos") ||
+    normalized.includes("wild")
+  ) {
+    return "Crazy / chaos";
+  }
+
   if (normalized.includes("roblox")) return "Roblox direct";
 
   return "Other";
