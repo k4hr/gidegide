@@ -424,9 +424,9 @@ model FactoryDonorChannel {
   sourceUrl         String
   uploadsPlaylistId String?
 
-  subscriberCount   Int      @default(0)
-  videoCount        Int      @default(0)
-  viewCount         Int      @default(0)
+  subscriberCount   BigInt   @default(0)
+  videoCount        BigInt   @default(0)
+  viewCount         BigInt   @default(0)
 
   isActive          Boolean  @default(true)
   lastCheckedAt     DateTime?
