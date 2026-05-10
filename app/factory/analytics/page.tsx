@@ -52,21 +52,26 @@ type AnalyticsVideo = {
   lastCheckedAt: string | null;
 };
 
+type FailedVideo = {
+  id: string;
+  publishId: string;
+  videoId: string;
+  url: string | null;
+  title: string;
+  accountName: string;
+  game: string;
+  templateName: string;
+  clipSeconds: number;
+  uploadTimeNy: string;
+  viewsNow: number;
+  factoryScore: number;
+  recommendation: string | null;
+};
+
 type AnalyticsResponse = {
   summary: Summary;
   topVideos: AnalyticsVideo[];
-  failedVideos: Array<{
-    id: string;
-    url: string | null;
-    title: string;
-    game: string;
-    templateName: string;
-    clipSeconds: number;
-    uploadTimeNy: string;
-    viewsNow: number;
-    factoryScore: number;
-    recommendation: string | null;
-  }>;
+  failedVideos: FailedVideo[];
   groups: {
     byTime: GroupRow[];
     byGame: GroupRow[];
@@ -77,6 +82,8 @@ type AnalyticsResponse = {
   recommendations: string[];
   error?: string;
 };
+
+type AnalyticsTab = "TOP" | "FAILED";
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat("ru-RU").format(Math.round(value || 0));
@@ -146,6 +153,9 @@ export default function FactoryAnalyticsPage() {
   const [data, setData] = useState<AnalyticsResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [activeTab, setActiveTab] = useState<AnalyticsTab>("TOP");
+  const [deletingPublishId, setDeletingPublishId] = useState("");
+  const [deleteMessage, setDeleteMessage] = useState("");
 
   async function loadAnalytics() {
     try {
@@ -170,6 +180,53 @@ export default function FactoryAnalyticsPage() {
       );
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function deleteVideoFromChannel(video: FailedVideo) {
+    const confirmed = window.confirm(
+      `Удалить видео с YouTube-канала?\n\n${video.title}\n\nЭто действие удалит ролик на YouTube и уберет его из аналитики.`,
+    );
+
+    if (!confirmed) return;
+
+    setDeletingPublishId(video.publishId);
+    setDeleteMessage("");
+    setError("");
+
+    try {
+      const response = await fetch("/api/factory/analytics/delete-video", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          publishId: video.publishId,
+        }),
+      });
+
+      const result = (await response.json()) as {
+        ok?: boolean;
+        error?: string;
+        details?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(
+          result.details ? `${result.error}: ${result.details}` : result.error,
+        );
+      }
+
+      setDeleteMessage("Видео удалено с канала и убрано из аналитики.");
+      await loadAnalytics();
+    } catch (deleteError) {
+      setError(
+        deleteError instanceof Error
+          ? deleteError.message
+          : "Не получилось удалить видео с канала",
+      );
+    } finally {
+      setDeletingPublishId("");
     }
   }
 
@@ -243,6 +300,7 @@ export default function FactoryAnalyticsPage() {
         </section>
 
         {error ? <p className="error">{error}</p> : null}
+        {deleteMessage ? <p className="success">{deleteMessage}</p> : null}
 
         <section className="analytics-summary-grid">
           {summaryCards.map((card) => (
@@ -293,155 +351,198 @@ export default function FactoryAnalyticsPage() {
         </section>
 
         <section className="card analytics-table-card">
-          <h2>Топ роликов</h2>
+          <div className="analytics-table-header">
+            <div>
+              <h2>
+                {activeTab === "TOP" ? "Топ роликов" : "Что не зашло"}
+              </h2>
+              <p className="muted">
+                {activeTab === "TOP"
+                  ? "Лучшие ролики по Factory Score и просмотрам."
+                  : "Слабые ролики. Здесь можно удалить явный провал прямо с YouTube-канала."}
+              </p>
+            </div>
 
-          <table className="table analytics-table">
-            <thead>
-              <tr>
-                <th>Ролик</th>
-                <th>Связка</th>
-                <th>Рост</th>
-                <th>Глубокая аналитика</th>
-                <th>Score</th>
-                <th>Решение</th>
-              </tr>
-            </thead>
+            <div className="analytics-tabs">
+              <button
+                type="button"
+                className={activeTab === "TOP" ? "active" : ""}
+                onClick={() => setActiveTab("TOP")}
+              >
+                Топ роликов
+                <span>{data?.topVideos.length ?? 0}</span>
+              </button>
 
-            <tbody>
-              {(data?.topVideos ?? []).map((video) => (
-                <tr key={video.id}>
-                  <td>
-                    <div className="analytics-video-title">
-                      {video.url ? (
-                        <a href={video.url} target="_blank" rel="noreferrer">
-                          {video.title}
-                        </a>
-                      ) : (
-                        <b>{video.title}</b>
-                      )}
-                      <span>{formatDate(video.publishedAt)}</span>
-                      <span>
-                        Последняя проверка: {formatDate(video.lastCheckedAt)}
-                      </span>
-                    </div>
-                  </td>
+              <button
+                type="button"
+                className={activeTab === "FAILED" ? "active" : ""}
+                onClick={() => setActiveTab("FAILED")}
+              >
+                Что не зашло
+                <span>{data?.failedVideos.length ?? 0}</span>
+              </button>
+            </div>
+          </div>
 
-                  <td>
-                    <p className="muted">
-                      <span className="badge">{video.game}</span>{" "}
-                      {video.templateName}
-                    </p>
-                    <p className="muted">
-                      {video.clipSeconds} сек · {video.uploadTimeNy} NY ·{" "}
-                      {video.accountName}
-                    </p>
-                  </td>
-
-                  <td>
-                    <div className="analytics-growth-grid">
-                      <span>1h: {formatNumber(video.views1h)}</span>
-                      <span>3h: {formatNumber(video.views3h)}</span>
-                      <span>6h: {formatNumber(video.views6h)}</span>
-                      <span>24h: {formatNumber(video.views24h)}</span>
-                      <span>48h: {formatNumber(video.views48h)}</span>
-                      <b>now: {formatNumber(video.viewsNow)}</b>
-                    </div>
-                  </td>
-
-                  <td>
-                    <div className="analytics-growth-grid">
-                      <span>likes: {formatNumber(video.likesNow)}</span>
-                      <span>comments: {formatNumber(video.commentsNow)}</span>
-                      <span>shares: {formatNumber(video.sharesNow)}</span>
-                      <span>
-                        watch:{" "}
-                        {formatNumber(video.estimatedMinutesWatched24h)} min
-                      </span>
-                      <span>
-                        avg dur: {Math.round(video.averageViewDuration24h)} sec
-                      </span>
-                      <b>
-                        retention:{" "}
-                        {Math.round(video.averageViewPercentage24h)}%
-                      </b>
-                    </div>
-                  </td>
-
-                  <td>
-                    <ScoreBadge score={video.factoryScore} />
-                    <p className="muted">{video.velocityType}</p>
-                  </td>
-
-                  <td>
-                    <span className={verdictClass(video.verdict)}>
-                      {video.verdict}
-                    </span>
-                    {video.recommendation ? (
-                      <p className="muted">{video.recommendation}</p>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-
-              {!isLoading && (data?.topVideos.length ?? 0) === 0 ? (
+          {activeTab === "TOP" ? (
+            <table className="table analytics-table">
+              <thead>
                 <tr>
-                  <td colSpan={6} className="muted">
-                    Пока нет аналитики. Должны быть опубликованные YouTube-ролики
-                    и запущенный analytics-worker.
-                  </td>
+                  <th>Ролик</th>
+                  <th>Связка</th>
+                  <th>Рост</th>
+                  <th>Глубокая аналитика</th>
+                  <th>Score</th>
+                  <th>Решение</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </section>
+              </thead>
 
-        <section className="card analytics-table-card">
-          <h2>Что не зашло</h2>
+              <tbody>
+                {(data?.topVideos ?? []).map((video) => (
+                  <tr key={video.id}>
+                    <td>
+                      <div className="analytics-video-title">
+                        {video.url ? (
+                          <a href={video.url} target="_blank" rel="noreferrer">
+                            {video.title}
+                          </a>
+                        ) : (
+                          <b>{video.title}</b>
+                        )}
+                        <span>{formatDate(video.publishedAt)}</span>
+                        <span>
+                          Последняя проверка: {formatDate(video.lastCheckedAt)}
+                        </span>
+                      </div>
+                    </td>
 
-          <table className="table analytics-table">
-            <thead>
-              <tr>
-                <th>Ролик</th>
-                <th>Связка</th>
-                <th>Views</th>
-                <th>Score</th>
-                <th>Что делать</th>
-              </tr>
-            </thead>
+                    <td>
+                      <p className="muted">
+                        <span className="badge">{video.game}</span>{" "}
+                        {video.templateName}
+                      </p>
+                      <p className="muted">
+                        {video.clipSeconds} сек · {video.uploadTimeNy} NY ·{" "}
+                        {video.accountName}
+                      </p>
+                    </td>
 
-            <tbody>
-              {(data?.failedVideos ?? []).map((video) => (
-                <tr key={video.id}>
-                  <td>
-                    {video.url ? (
-                      <a href={video.url} target="_blank" rel="noreferrer">
-                        {video.title}
-                      </a>
-                    ) : (
-                      video.title
-                    )}
-                  </td>
-                  <td>
-                    {video.game} · {video.templateName} · {video.clipSeconds}{" "}
-                    сек · {video.uploadTimeNy} NY
-                  </td>
-                  <td>{formatNumber(video.viewsNow)}</td>
-                  <td>
-                    <ScoreBadge score={video.factoryScore} />
-                  </td>
-                  <td className="muted">{video.recommendation}</td>
-                </tr>
-              ))}
+                    <td>
+                      <div className="analytics-growth-grid">
+                        <span>1h: {formatNumber(video.views1h)}</span>
+                        <span>3h: {formatNumber(video.views3h)}</span>
+                        <span>6h: {formatNumber(video.views6h)}</span>
+                        <span>24h: {formatNumber(video.views24h)}</span>
+                        <span>48h: {formatNumber(video.views48h)}</span>
+                        <b>now: {formatNumber(video.viewsNow)}</b>
+                      </div>
+                    </td>
 
-              {!isLoading && (data?.failedVideos.length ?? 0) === 0 ? (
+                    <td>
+                      <div className="analytics-growth-grid">
+                        <span>likes: {formatNumber(video.likesNow)}</span>
+                        <span>comments: {formatNumber(video.commentsNow)}</span>
+                        <span>shares: {formatNumber(video.sharesNow)}</span>
+                        <span>
+                          watch: {formatNumber(video.estimatedMinutesWatched24h)} min
+                        </span>
+                        <span>
+                          avg dur: {Math.round(video.averageViewDuration24h)} sec
+                        </span>
+                        <b>
+                          retention: {Math.round(video.averageViewPercentage24h)}%
+                        </b>
+                      </div>
+                    </td>
+
+                    <td>
+                      <ScoreBadge score={video.factoryScore} />
+                      <p className="muted">{video.velocityType}</p>
+                    </td>
+
+                    <td>
+                      <span className={verdictClass(video.verdict)}>
+                        {video.verdict}
+                      </span>
+                      {video.recommendation ? (
+                        <p className="muted">{video.recommendation}</p>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+
+                {!isLoading && (data?.topVideos.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      Пока нет аналитики. Должны быть опубликованные YouTube-ролики
+                      и запущенный analytics-worker.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          ) : (
+            <table className="table analytics-table failed-video-table">
+              <thead>
                 <tr>
-                  <td colSpan={5} className="muted">
-                    Пока нет явных провалов.
-                  </td>
+                  <th>Ролик</th>
+                  <th>Связка</th>
+                  <th>Views</th>
+                  <th>Score</th>
+                  <th>Что делать</th>
+                  <th>Удаление</th>
                 </tr>
-              ) : null}
-            </tbody>
-          </table>
+              </thead>
+
+              <tbody>
+                {(data?.failedVideos ?? []).map((video) => (
+                  <tr key={video.id}>
+                    <td>
+                      <div className="analytics-video-title">
+                        {video.url ? (
+                          <a href={video.url} target="_blank" rel="noreferrer">
+                            {video.title}
+                          </a>
+                        ) : (
+                          <b>{video.title}</b>
+                        )}
+                        <span>{video.accountName}</span>
+                      </div>
+                    </td>
+                    <td>
+                      {video.game} · {video.templateName} · {video.clipSeconds} сек ·{" "}
+                      {video.uploadTimeNy} NY
+                    </td>
+                    <td>{formatNumber(video.viewsNow)}</td>
+                    <td>
+                      <ScoreBadge score={video.factoryScore} />
+                    </td>
+                    <td className="muted">{video.recommendation}</td>
+                    <td>
+                      <button
+                        type="button"
+                        className="danger-button"
+                        disabled={deletingPublishId === video.publishId}
+                        onClick={() => deleteVideoFromChannel(video)}
+                      >
+                        {deletingPublishId === video.publishId
+                          ? "Удаляю..."
+                          : "Удалить с канала"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {!isLoading && (data?.failedVideos.length ?? 0) === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="muted">
+                      Пока нет явных провалов.
+                    </td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          )}
         </section>
       </div>
     </main>

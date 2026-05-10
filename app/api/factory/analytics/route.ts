@@ -167,6 +167,13 @@ export async function GET() {
   try {
     const analyses = await withDbRetry(() =>
       prisma.factoryVideoAnalysis.findMany({
+        where: {
+          publish: {
+            is: {
+              status: "PUBLISHED",
+            },
+          },
+        },
         orderBy: [
           {
             factoryScore: "desc",
@@ -316,11 +323,14 @@ export async function GET() {
     const failedVideos = analyses
       .filter((item) => item.verdict === "DEAD")
       .sort((a, b) => a.viewsNow - b.viewsNow)
-      .slice(0, 20)
+      .slice(0, 40)
       .map((item) => ({
         id: item.id,
+        publishId: item.publishId,
+        videoId: item.platformVideoId,
         url: item.publish.platformUrl,
         title: item.publish.title ?? item.clip.title,
+        accountName: item.account?.name ?? item.publish.account?.name ?? "—",
         game: item.clip.job.game,
         templateName: item.publish.target?.template?.name ?? "—",
         clipSeconds: item.clip.job.clipSeconds,
