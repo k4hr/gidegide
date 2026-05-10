@@ -743,14 +743,24 @@ export function buildClipTitle(input: {
  * Поддерживает:
  * buildClipDescription({ game, title })
  * buildClipDescription({ game, clipTitle })
+ * buildClipDescription({ game, customPrefix })
  */
 export function buildClipDescription(input: {
   game: FactoryGame;
   title?: string;
   clipTitle?: string;
+  customPrefix?: string | null;
+  titlePrefix?: string | null;
 }) {
+  const title =
+    input.title ??
+    input.clipTitle ??
+    input.customPrefix ??
+    input.titlePrefix ??
+    getGameMeta(input.game).titlePrefix;
+
   return buildFactoryDescription({
     game: input.game,
-    title: input.title ?? input.clipTitle ?? "",
+    title,
   });
 }
