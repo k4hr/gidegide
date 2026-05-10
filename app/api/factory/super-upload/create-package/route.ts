@@ -13,8 +13,8 @@ const bodySchema = z.object({
   templateId: z.string().min(1),
   clipsCount: z.coerce.number().int().min(1).max(30).default(10),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
-  intervalMin: z.coerce.number().int().min(5).max(120).default(20),
-  intervalMax: z.coerce.number().int().min(5).max(180).default(30),
+  intervalMin: z.coerce.number().int().min(5).max(120).default(45),
+  intervalMax: z.coerce.number().int().min(5).max(180).default(60),
   hookMode: z.string().max(80).default("AUTO_BEST_MIX"),
   titlePrefix: z.string().max(80).default("auto mix"),
 });
@@ -130,7 +130,7 @@ export async function POST(request: Request) {
             hookMode: body.hookMode,
             titlePrefix,
             status: "CREATED",
-            recommendation: `Лучшее окно из аналитики: ${schedule.bestHour}:00 New York. Интервал ${body.intervalMin}-${body.intervalMax} минут.`,
+            recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
           },
         });
 
@@ -153,7 +153,7 @@ export async function POST(request: Request) {
               status: "QUEUED",
               totalClips: 0,
               progress: 0,
-              progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York`,
+              progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · день ${slot.dayIndex}`,
               publishTiming: "USA_SMART",
               scheduledAt: slot.scheduledAt,
               cutMode: "SEQUENTIAL",
@@ -199,6 +199,8 @@ export async function POST(request: Request) {
       jobs: result.jobs,
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
+      windowStart: schedule.windowStart,
+      perDay: schedule.perDay,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

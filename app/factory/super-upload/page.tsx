@@ -68,9 +68,41 @@ type PackageResponse = {
     index: number;
     scheduledAt: string;
     label: string;
+    dayIndex?: number;
   }>;
   bestHour?: number;
   error?: string;
+};
+
+type SchedulePace = "SAFE" | "NORMAL" | "AGGRESSIVE";
+
+const schedulePaces: Record<
+  SchedulePace,
+  {
+    title: string;
+    description: string;
+    intervalMin: number;
+    intervalMax: number;
+  }
+> = {
+  SAFE: {
+    title: "Безопасно",
+    description: "60–90 минут между роликами. Лучше для 15–20 клипов и осторожного залива.",
+    intervalMin: 60,
+    intervalMax: 90,
+  },
+  NORMAL: {
+    title: "Нормально",
+    description: "45–60 минут между роликами. Дефолт для 10 клипов: вечер/ночь New York.",
+    intervalMin: 45,
+    intervalMax: 60,
+  },
+  AGGRESSIVE: {
+    title: "Агрессивно",
+    description: "20–30 минут между роликами. Только для маленьких тестовых пакетов 3–5 клипов.",
+    intervalMin: 20,
+    intervalMax: 30,
+  },
 };
 
 function formatNumber(value: number) {
@@ -119,6 +151,19 @@ function getDefaultTemplateId(templates: FactoryTemplate[]) {
   );
 }
 
+function getRecommendedPace(clipsCount: number): SchedulePace {
+  if (clipsCount <= 5) return "AGGRESSIVE";
+  if (clipsCount >= 15) return "SAFE";
+
+  return "NORMAL";
+}
+
+function getPaceSummary(pace: SchedulePace) {
+  const settings = schedulePaces[pace];
+
+  return `${settings.title}: ${settings.intervalMin}–${settings.intervalMax} мин`;
+}
+
 export default function SuperUploadPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [data, setData] = useState<AnalyzeResponse | null>(null);
@@ -129,8 +174,9 @@ export default function SuperUploadPage() {
   const [selectedVideo, setSelectedVideo] = useState<SourceVideo | null>(null);
   const [clipsCount, setClipsCount] = useState(10);
   const [clipSeconds, setClipSeconds] = useState<30 | 45 | 60>(60);
-  const [intervalMin, setIntervalMin] = useState(20);
-  const [intervalMax, setIntervalMax] = useState(30);
+  const [schedulePace, setSchedulePace] = useState<SchedulePace>("NORMAL");
+  const [intervalMin, setIntervalMin] = useState(45);
+  const [intervalMax, setIntervalMax] = useState(60);
   const [hookMode, setHookMode] = useState("AUTO_BEST_MIX");
   const [onlyUnused, setOnlyUnused] = useState(true);
   const [minChance, setMinChance] = useState(50);
@@ -272,12 +318,17 @@ export default function SuperUploadPage() {
   }
 
   function openPackageModal(video: SourceVideo) {
+    const nextClipsCount = video.suggestedClips || 10;
+    const nextPace = getRecommendedPace(nextClipsCount);
+    const paceSettings = schedulePaces[nextPace];
+
     setSelectedVideo(video);
-    setClipsCount(video.suggestedClips || 10);
+    setClipsCount(nextClipsCount);
     setHookMode(video.suggestedHookMode || "AUTO_BEST_MIX");
     setClipSeconds(60);
-    setIntervalMin(20);
-    setIntervalMax(30);
+    setSchedulePace(nextPace);
+    setIntervalMin(paceSettings.intervalMin);
+    setIntervalMax(paceSettings.intervalMax);
     setMessage("");
     setError("");
   }
@@ -365,8 +416,8 @@ export default function SuperUploadPage() {
           <div className="super-hero-card">
             <b>Как льем</b>
             <span>Не пачкой сразу. Пакет разбивается на отдельные задачи.</span>
-            <span>Интервал: 20–30 минут.</span>
-            <span>Окно: лучшее по /factory/analytics.</span>
+            <span>Дефолт: 45–60 минут между роликами.</span>
+            <span>Окно: вечер/ночь New York на основе /factory/analytics.</span>
           </div>
         </section>
 
@@ -477,7 +528,7 @@ export default function SuperUploadPage() {
 
                       <div className="super-plan-box">
                         <b>План</b>
-                        <span>{video.suggestedClips} клипов · {video.suggestedHookMode} · лучшее окно из аналитики · 20–30 мин интервал</span>
+                        <span>{video.suggestedClips} клипов · {video.suggestedHookMode} · вечер/ночь New York · нормальный 45–60 мин интервал</span>
                       </div>
 
                       <div className="inline-actions">
@@ -510,7 +561,7 @@ export default function SuperUploadPage() {
                 <div>
                   <span className="super-eyebrow">Создать умный пакет</span>
                   <h2>{selectedVideo.title}</h2>
-                  <p>Пакет уйдет на завод отдельными задачами с интервалом 20–30 минут в лучшее окно по аналитике.</p>
+                  <p>Пакет уйдет на завод отдельными задачами: не пачкой сразу, а по вечернему/ночному окну New York с выбранным интервалом.</p>
                 </div>
                 <button type="button" className="secondary-button" onClick={() => setSelectedVideo(null)}>
                   Закрыть
@@ -542,7 +593,22 @@ export default function SuperUploadPage() {
 
                 <label>
                   Количество клипов
-                  <input type="number" min={1} max={30} value={clipsCount} onChange={(event) => setClipsCount(Number(event.target.value) || 1)} />
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={clipsCount}
+                    onChange={(event) => {
+                      const value = Math.max(1, Math.min(30, Number(event.target.value) || 1));
+                      const nextPace = getRecommendedPace(value);
+                      const settings = schedulePaces[nextPace];
+
+                      setClipsCount(value);
+                      setSchedulePace(nextPace);
+                      setIntervalMin(settings.intervalMin);
+                      setIntervalMax(settings.intervalMax);
+                    }}
+                  />
                 </label>
 
                 <label>
@@ -555,14 +621,66 @@ export default function SuperUploadPage() {
                 </label>
 
                 <label>
+                  Режим расписания
+                  <select
+                    value={schedulePace}
+                    onChange={(event) => {
+                      const pace = event.target.value as SchedulePace;
+                      const settings = schedulePaces[pace];
+
+                      setSchedulePace(pace);
+                      setIntervalMin(settings.intervalMin);
+                      setIntervalMax(settings.intervalMax);
+                    }}
+                  >
+                    {Object.entries(schedulePaces).map(([value, settings]) => (
+                      <option key={value} value={value}>
+                        {settings.title} — {settings.intervalMin}–{settings.intervalMax} мин
+                      </option>
+                    ))}
+                  </select>
+                  <small className="muted">
+                    {schedulePaces[schedulePace].description}
+                  </small>
+                </label>
+
+                <label>
                   Интервал минимум
-                  <input type="number" min={5} max={120} value={intervalMin} onChange={(event) => setIntervalMin(Number(event.target.value) || 20)} />
+                  <input
+                    type="number"
+                    min={20}
+                    max={120}
+                    value={intervalMin}
+                    onChange={(event) => {
+                      const value = Number(event.target.value) || 45;
+                      setIntervalMin(value);
+                      setIntervalMax((current) => Math.max(current, value));
+                    }}
+                  />
                 </label>
 
                 <label>
                   Интервал максимум
-                  <input type="number" min={5} max={180} value={intervalMax} onChange={(event) => setIntervalMax(Number(event.target.value) || 30)} />
+                  <input
+                    type="number"
+                    min={20}
+                    max={180}
+                    value={intervalMax}
+                    onChange={(event) =>
+                      setIntervalMax(
+                        Math.max(intervalMin, Number(event.target.value) || 60),
+                      )
+                    }
+                  />
                 </label>
+              </div>
+
+              <div className="super-plan-box">
+                <b>Расписание</b>
+                <span>
+                  {getPaceSummary(schedulePace)} · до 10 роликов в одну ночь,
+                  большие пакеты автоматически растягиваются на 2–3 дня.
+                </span>
               </div>
 
               <label>

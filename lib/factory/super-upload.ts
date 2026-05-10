@@ -31,6 +31,9 @@ export type SuperUploadScheduleSlot = {
   index: number;
   scheduledAt: Date;
   label: string;
+  dayIndex: number;
+  localHour: number;
+  localMinute: number;
 };
 
 const MAX_ANALYZE_VIDEOS = 100;
@@ -626,7 +629,7 @@ function buildSourceRecommendations(videos: Array<{
 
   const result = [
     `Лучший кандидат: "${best.title}" — шанс ${best.viralChance}/100.`,
-    `Рекомендация: сделать ${best.suggestedClips} клипов, hook mode ${best.suggestedHookMode}, залив через лучшее окно из аналитики с интервалом 20–30 минут.`,
+    `Рекомендация: сделать ${best.suggestedClips} клипов, hook mode ${best.suggestedHookMode}, залив через вечер/ночь New York по аналитике с нормальным интервалом 45–60 минут.`,
   ];
 
   const hotCount = available.filter((video) => video.viralChance >= 75).length;
@@ -739,6 +742,69 @@ function getBestAnalyticsHour() {
   });
 }
 
+function clampDaySlotsCount(clipsCount: number) {
+  if (clipsCount <= 5) return clipsCount;
+  if (clipsCount <= 10) return clipsCount;
+
+  return 10;
+}
+
+function getWindowStartFromBestHour(bestHour: number) {
+  if (bestHour >= 0 && bestHour <= 2) {
+    return {
+      hour: 18,
+      minute: 30,
+    };
+  }
+
+  if (bestHour >= 18 && bestHour <= 23) {
+    const startHour = clamp(bestHour - 3, 18, 21);
+
+    return {
+      hour: startHour,
+      minute: startHour === 18 ? 30 : 0,
+    };
+  }
+
+  return {
+    hour: 18,
+    minute: 30,
+  };
+}
+
+function getNextNewYorkDateForStart(input: {
+  now: Date;
+  startHour: number;
+  startMinute: number;
+}) {
+  const ny = getTimeZoneParts(input.now, NEW_YORK_TIME_ZONE);
+  const startToday = zonedTimeToUtc({
+    timeZone: NEW_YORK_TIME_ZONE,
+    year: ny.year,
+    month: ny.month,
+    day: ny.day,
+    hour: input.startHour,
+    minute: input.startMinute,
+  });
+
+  if (startToday.getTime() > input.now.getTime() + 10 * 60 * 1000) {
+    return startToday;
+  }
+
+  return zonedTimeToUtc({
+    timeZone: NEW_YORK_TIME_ZONE,
+    year: ny.year,
+    month: ny.month,
+    day: ny.day + 1,
+    hour: input.startHour,
+    minute: input.startMinute,
+  });
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + minutes * 60 * 1000);
+}
+
 export async function buildSuperUploadSchedule(input: {
   clipsCount: number;
   intervalMin: number;
@@ -746,47 +812,50 @@ export async function buildSuperUploadSchedule(input: {
 }) {
   const bestHour = await getBestAnalyticsHour();
   const now = new Date();
-  const ny = getTimeZoneParts(now, NEW_YORK_TIME_ZONE);
-
-  let dayOffset = 0;
-  let minute = 0;
-
-  if (ny.hour > bestHour || (ny.hour === bestHour && ny.minute >= 0)) {
-    dayOffset = 1;
-  }
-
-  const baseDate = addCalendarDays(now, dayOffset);
-  const baseNy = getTimeZoneParts(baseDate, NEW_YORK_TIME_ZONE);
-  const intervalMin = clamp(Math.round(input.intervalMin), 5, 120);
+  const clipsCount = clamp(Math.round(input.clipsCount), 1, 30);
+  const intervalMin = clamp(Math.round(input.intervalMin), 20, 120);
   const intervalMax = clamp(Math.round(input.intervalMax), intervalMin, 180);
+  const perDay = clampDaySlotsCount(clipsCount);
+  const windowStart = getWindowStartFromBestHour(bestHour);
+  const firstStart = getNextNewYorkDateForStart({
+    now,
+    startHour: windowStart.hour,
+    startMinute: windowStart.minute,
+  });
   const slots: SuperUploadScheduleSlot[] = [];
 
-  for (let index = 0; index < input.clipsCount; index += 1) {
-    const scheduledAt = zonedTimeToUtc({
-      timeZone: NEW_YORK_TIME_ZONE,
-      year: baseNy.year,
-      month: baseNy.month,
-      day: baseNy.day,
-      hour: bestHour,
-      minute,
-    });
+  for (let index = 0; index < clipsCount; index += 1) {
+    const dayIndex = Math.floor(index / perDay);
+    const indexInDay = index % perDay;
+    const dayStart = addCalendarDays(firstStart, dayIndex);
+    let minutesFromStart = 0;
+
+    for (let stepIndex = 0; stepIndex < indexInDay; stepIndex += 1) {
+      const range = Math.max(1, intervalMax - intervalMin + 1);
+      minutesFromStart += intervalMin + (((index + stepIndex) * 11) % range);
+    }
+
+    const scheduledAt = addMinutes(dayStart, minutesFromStart);
+    const nySlot = getTimeZoneParts(scheduledAt, NEW_YORK_TIME_ZONE);
 
     slots.push({
       index: index + 1,
       scheduledAt,
+      dayIndex: dayIndex + 1,
+      localHour: nySlot.hour,
+      localMinute: nySlot.minute,
       label: new Intl.DateTimeFormat("ru-RU", {
         timeZone: NEW_YORK_TIME_ZONE,
         dateStyle: "medium",
         timeStyle: "short",
       }).format(scheduledAt),
     });
-
-    const interval = intervalMin + ((index * 7) % Math.max(1, intervalMax - intervalMin + 1));
-    minute += interval;
   }
 
   return {
     bestHour,
+    windowStart,
+    perDay,
     slots,
   };
 }
