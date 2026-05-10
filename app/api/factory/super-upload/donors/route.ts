@@ -11,6 +11,29 @@ import {
 
 export const runtime = "nodejs";
 
+function serializeDonor(donor: {
+  id: string;
+  channelId: string;
+  channelTitle: string;
+  sourceUrl: string;
+  uploadsPlaylistId: string | null;
+  subscriberCount: bigint;
+  videoCount: bigint;
+  viewCount: bigint;
+  isActive: boolean;
+  lastCheckedAt: Date | null;
+  lastError: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  return {
+    ...donor,
+    subscriberCount: donor.subscriberCount.toString(),
+    videoCount: donor.videoCount.toString(),
+    viewCount: donor.viewCount.toString(),
+  };
+}
+
 const postSchema = z.object({
   sourceUrl: z.string().min(3, "Вставь ссылку на YouTube-канал, видео или @handle"),
 });
@@ -25,7 +48,7 @@ export async function GET() {
     const candidates = await buildTodayCandidates({ limit: 10 });
 
     return NextResponse.json({
-      donors,
+      donors: donors.map(serializeDonor),
       candidates,
       summary: {
         donors: donors.length,
@@ -62,7 +85,7 @@ export async function POST(request: Request) {
     const candidates = await buildTodayCandidates({ limit: 10 });
 
     return NextResponse.json({
-      donor: result.donor,
+      donor: serializeDonor(result.donor),
       analysis: result.analysis,
       candidates,
       message: `Донор сохранен: ${result.donor.channelTitle}. Видео найдено: ${result.analysis.totalSeen}`,
@@ -104,7 +127,7 @@ export async function DELETE(request: Request) {
     const candidates = await buildTodayCandidates({ limit: 10 });
 
     return NextResponse.json({
-      donor,
+      donor: serializeDonor(donor),
       candidates,
       message: "Донор выключен. История source videos сохранена.",
     });
