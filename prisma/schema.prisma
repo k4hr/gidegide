@@ -179,6 +179,9 @@ model FactoryJob {
   clips              FactoryClip[]
   candidates         FactoryClipCandidate[]
 
+  superUploadPackageId String?
+  superUploadPackage   FactorySuperUploadPackage? @relation(fields: [superUploadPackageId], references: [id], onDelete: SetNull)
+
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -192,6 +195,7 @@ model FactoryJob {
   @@index([publishTiming])
   @@index([scheduledAt])
   @@index([cutMode])
+  @@index([superUploadPackageId])
 }
 
 model FactoryJobTarget {
@@ -409,4 +413,82 @@ model FactoryVideoAnalysis {
   @@index([factoryScore])
   @@index([verdict])
   @@index([lastCheckedAt])
+}
+
+
+model FactorySourceVideo {
+  id              String   @id @default(cuid())
+
+  sourceVideoId   String   @unique
+  sourceUrl       String
+  channelId       String?
+  channelTitle    String?
+
+  title           String
+  description     String?
+  thumbnailUrl    String?
+  durationSeconds Int?
+  publishedAt     DateTime?
+
+  views           Int      @default(0)
+  likes           Int      @default(0)
+  comments        Int      @default(0)
+
+  viewsPerDay     Float    @default(0)
+  likeRate        Float    @default(0)
+  commentRate     Float    @default(0)
+
+  sourceScore     Int      @default(0)
+  viralChance     Int      @default(0)
+  suggestedClips  Int      @default(5)
+  suggestedHookMode String @default("AUTO_BEST_MIX")
+  suggestedWindow   String @default("ANALYTICS_BEST_WINDOW")
+
+  isUsed          Boolean  @default(false)
+  usedAt          DateTime?
+  notes           String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  packages        FactorySuperUploadPackage[]
+
+  @@index([channelId])
+  @@index([sourceScore])
+  @@index([viralChance])
+  @@index([isUsed])
+  @@index([publishedAt])
+}
+
+model FactorySuperUploadPackage {
+  id              String      @id @default(cuid())
+
+  sourceVideoId   String
+  sourceVideo     FactorySourceVideo @relation(fields: [sourceVideoId], references: [id], onDelete: Cascade)
+
+  accountId       String?
+  accountName     String?
+  game            FactoryGame @default(ROBLOX)
+
+  clipsCount      Int
+  clipSeconds     Int
+  intervalMin     Int @default(20)
+  intervalMax     Int @default(30)
+
+  scheduleMode    String @default("ANALYTICS_BEST_WINDOW")
+  hookMode        String @default("AUTO_BEST_MIX")
+  titlePrefix     String @default("auto mix")
+
+  status          String @default("CREATED")
+  recommendation  String?
+
+  jobs            FactoryJob[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([sourceVideoId])
+  @@index([accountId])
+  @@index([status])
+  @@index([createdAt])
 }

@@ -604,6 +604,7 @@ export default function FactoryPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
+          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
           <Link href="/factory/analytics">Аналитика</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>

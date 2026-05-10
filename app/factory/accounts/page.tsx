@@ -135,6 +135,7 @@ export default function FactoryAccountsPage() {
         <nav className="nav">
           <Link href="/">Home</Link>
           <Link href="/factory">Factory</Link>
+          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
           <Link href="/factory/assets">Character Videos</Link>
           <Link href="/factory/templates">Templates</Link>
           <Link href="/factory/accounts">Accounts</Link>
