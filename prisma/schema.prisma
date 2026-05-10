@@ -118,21 +118,25 @@ model FactoryTemplate {
 }
 
 model FactoryAccount {
-  id           String          @id @default(cuid())
-  platform     FactoryPlatform
-  name         String
-  accessToken  String
-  refreshToken String?
-  expiresAt    DateTime?
+  id                String          @id @default(cuid())
+  platform          FactoryPlatform
+  name              String
+  platformChannelId String?
+  accessToken       String
+  refreshToken      String?
+  expiresAt         DateTime?
 
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  targets      FactoryJobTarget[]
-  publishes    FactoryPublish[]
+  targets           FactoryJobTarget[]
+  publishes         FactoryPublish[]
+  videoMetrics      FactoryVideoMetric[]
+  analyses          FactoryVideoAnalysis[]
 
   @@unique([platform, name])
   @@index([platform])
+  @@index([platformChannelId])
 }
 
 model FactoryJob {
@@ -220,21 +224,23 @@ model FactoryJobTarget {
 }
 
 model FactoryClip {
-  id         String      @id @default(cuid())
-  jobId      String
-  job        FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  id           String      @id @default(cuid())
+  jobId        String
+  job          FactoryJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
 
-  index      Int
-  startSec   Int
-  endSec     Int
-  title      String
-  filePath   String?
-  storageKey String?
+  index        Int
+  startSec     Int
+  endSec       Int
+  title        String
+  filePath     String?
+  storageKey   String?
 
-  publishes  FactoryPublish[]
+  publishes    FactoryPublish[]
+  videoMetrics FactoryVideoMetric[]
+  analyses     FactoryVideoAnalysis[]
 
-  createdAt  DateTime    @default(now())
-  updatedAt  DateTime    @updatedAt
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
 
   @@index([jobId])
   @@index([createdAt])
@@ -284,11 +290,17 @@ model FactoryPublish {
 
   platformPostId   String?
   platformUrl      String?
+  title            String?
+  description      String?
+  publishedAt      DateTime?
 
   renderFilePath   String?
   renderStorageKey String?
 
   error            String?
+
+  videoMetrics     FactoryVideoMetric[]
+  analysis         FactoryVideoAnalysis?
 
   createdAt        DateTime             @default(now())
   updatedAt        DateTime             @updatedAt
@@ -298,4 +310,103 @@ model FactoryPublish {
   @@index([accountId])
   @@index([platform])
   @@index([status])
+  @@index([platformPostId])
+  @@index([publishedAt])
+}
+
+model FactoryVideoMetric {
+  id                       String          @id @default(cuid())
+
+  publishId                String
+  publish                  FactoryPublish  @relation(fields: [publishId], references: [id], onDelete: Cascade)
+
+  clipId                   String
+  clip                     FactoryClip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  accountId                String?
+  account                  FactoryAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  platform                 FactoryPlatform
+  platformVideoId           String
+
+  views                    Int             @default(0)
+  likes                    Int             @default(0)
+  comments                 Int             @default(0)
+  shares                   Int             @default(0)
+
+  estimatedMinutesWatched  Int             @default(0)
+  averageViewDuration      Float           @default(0)
+  averageViewPercentage    Float           @default(0)
+  subscribersGained        Int             @default(0)
+  subscribersLost          Int             @default(0)
+
+  ageMinutes               Int             @default(0)
+  checkedAt                DateTime        @default(now())
+  createdAt                DateTime        @default(now())
+
+  @@index([publishId])
+  @@index([clipId])
+  @@index([accountId])
+  @@index([platform])
+  @@index([platformVideoId])
+  @@index([checkedAt])
+  @@index([ageMinutes])
+}
+
+model FactoryVideoAnalysis {
+  id                         String          @id @default(cuid())
+
+  publishId                  String          @unique
+  publish                    FactoryPublish  @relation(fields: [publishId], references: [id], onDelete: Cascade)
+
+  clipId                     String
+  clip                       FactoryClip     @relation(fields: [clipId], references: [id], onDelete: Cascade)
+
+  accountId                  String?
+  account                    FactoryAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+
+  platform                   FactoryPlatform
+  platformVideoId             String
+
+  viewsNow                   Int             @default(0)
+  views1h                    Int             @default(0)
+  views3h                    Int             @default(0)
+  views6h                    Int             @default(0)
+  views24h                   Int             @default(0)
+  views48h                   Int             @default(0)
+
+  likesNow                   Int             @default(0)
+  commentsNow                Int             @default(0)
+  sharesNow                  Int             @default(0)
+
+  likes24h                   Int             @default(0)
+  comments24h                Int             @default(0)
+  shares24h                  Int             @default(0)
+  subscribersGained24h       Int             @default(0)
+  subscribersLost24h         Int             @default(0)
+
+  estimatedMinutesWatched24h Int             @default(0)
+  averageViewDuration24h     Float           @default(0)
+  averageViewPercentage24h   Float           @default(0)
+
+  likeRate                   Float           @default(0)
+  commentRate                Float           @default(0)
+  subscriberRate             Float           @default(0)
+
+  factoryScore               Int             @default(0)
+  velocityType               String          @default("UNKNOWN")
+  verdict                    String          @default("WAITING")
+  recommendation             String?
+
+  lastCheckedAt              DateTime?
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+
+  @@index([clipId])
+  @@index([accountId])
+  @@index([platform])
+  @@index([platformVideoId])
+  @@index([factoryScore])
+  @@index([verdict])
+  @@index([lastCheckedAt])
 }
