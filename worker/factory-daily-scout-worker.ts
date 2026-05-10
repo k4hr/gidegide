@@ -1,28 +1,20 @@
 import { checkAllSuperUploadDonors } from "@/lib/factory/super-upload";
 
-const DEFAULT_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = Number(
-  process.env.FACTORY_DAILY_SCOUT_INTERVAL_MS ?? DEFAULT_INTERVAL_MS,
+  process.env.FACTORY_DAILY_SCOUT_INTERVAL_MS ??
+    process.env.DAILY_SCOUT_INTERVAL_MS ??
+    THREE_HOURS_MS,
 );
-const TARGET_HOUR_UTC = Number(process.env.FACTORY_DAILY_SCOUT_UTC_HOUR ?? 12);
+const RUN_IMMEDIATELY =
+  (process.env.FACTORY_DAILY_SCOUT_RUN_IMMEDIATELY ?? "true") !== "false";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function getDelayToNextRun() {
-  const now = new Date();
-  const next = new Date(now);
-  next.setUTCHours(TARGET_HOUR_UTC, 0, 0, 0);
-
-  if (next.getTime() <= now.getTime() + 60_000) {
-    next.setUTCDate(next.getUTCDate() + 1);
-  }
-
-  return next.getTime() - now.getTime();
-}
-
 async function runOnce() {
+  const startedAt = new Date();
   const result = await checkAllSuperUploadDonors();
 
   console.log(
@@ -32,21 +24,32 @@ async function runOnce() {
   for (const error of result.errors) {
     console.warn(`Daily scout donor failed: ${error.channelTitle}: ${error.message}`);
   }
+
+  console.log(
+    `Daily scout finished in ${Math.round((Date.now() - startedAt.getTime()) / 1000)}s. Next check in ${Math.round(CHECK_INTERVAL_MS / 60_000)} minutes.`,
+  );
 }
 
 async function main() {
   console.log("Factory daily scout worker started");
+  console.log(`Daily scout interval: ${CHECK_INTERVAL_MS} ms`);
 
-  await sleep(getDelayToNextRun());
-
-  while (true) {
+  if (RUN_IMMEDIATELY) {
     try {
       await runOnce();
     } catch (error) {
       console.error("Factory daily scout worker error:", error);
     }
+  }
 
+  while (true) {
     await sleep(CHECK_INTERVAL_MS);
+
+    try {
+      await runOnce();
+    } catch (error) {
+      console.error("Factory daily scout worker error:", error);
+    }
   }
 }
 

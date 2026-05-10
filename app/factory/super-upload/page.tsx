@@ -45,9 +45,9 @@ type AnalyzeResponse = {
   channel: {
     id: string;
     title: string;
-    subscriberCount: number;
-    videoCount: number;
-    viewCount: number;
+    subscriberCount: number | string;
+    videoCount: number | string;
+    viewCount: number | string;
     uploadsPlaylistId: string;
   };
   totalSeen: number;
@@ -63,9 +63,9 @@ type DonorChannel = {
   channelTitle: string;
   sourceUrl: string;
   uploadsPlaylistId: string | null;
-  subscriberCount: number;
-  videoCount: number;
-  viewCount: number;
+  subscriberCount: number | string;
+  videoCount: number | string;
+  viewCount: number | string;
   isActive: boolean;
   lastCheckedAt: string | null;
   lastError: string | null;
@@ -142,8 +142,14 @@ const schedulePaces: Record<
   },
 };
 
-function formatNumber(value: number) {
-  return new Intl.NumberFormat("ru-RU").format(Math.round(value || 0));
+function formatNumber(value: number | string | null | undefined) {
+  const numberValue = Number(value ?? 0);
+
+  if (!Number.isFinite(numberValue)) {
+    return "0";
+  }
+
+  return new Intl.NumberFormat("ru-RU").format(Math.round(numberValue));
 }
 
 function formatPercent(value: number) {

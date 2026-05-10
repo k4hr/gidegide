@@ -73,90 +73,90 @@ export async function POST(request: Request) {
       intervalMax: body.intervalMax,
     });
 
-    const result = await withDbRetry(() =>
-      prisma.$transaction(async (tx) => {
-        const packages = [];
-        const jobs = [];
+    const packages = [];
+    const jobs = [];
 
-        for (const [index, sourceVideo] of selected.entries()) {
-          const slot = schedule.slots[index];
-          const titlePrefix = hookPrefixFromMode(sourceVideo.suggestedHookMode);
+    for (const [index, sourceVideo] of selected.entries()) {
+      const slot = schedule.slots[index];
+      const titlePrefix = hookPrefixFromMode(sourceVideo.suggestedHookMode);
 
-          const pack = await tx.factorySuperUploadPackage.create({
-            data: {
-              sourceVideoId: sourceVideo.id,
-              accountId: account.id,
-              accountName: account.name,
-              game: "ROBLOX",
-              clipsCount: 1,
-              clipSeconds: body.clipSeconds,
-              intervalMin: body.intervalMin,
-              intervalMax: body.intervalMax,
-              scheduleMode: "DAILY_SCOUT_BEST_WINDOW",
-              hookMode: sourceVideo.suggestedHookMode,
-              titlePrefix,
-              status: "CREATED",
-              recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook mode: ${sourceVideo.suggestedHookMode}.`,
-            },
-          });
+      const pack = await withDbRetry(() =>
+        prisma.factorySuperUploadPackage.create({
+          data: {
+            sourceVideoId: sourceVideo.id,
+            accountId: account.id,
+            accountName: account.name,
+            game: "ROBLOX",
+            clipsCount: 1,
+            clipSeconds: body.clipSeconds,
+            intervalMin: body.intervalMin,
+            intervalMax: body.intervalMax,
+            scheduleMode: "DAILY_SCOUT_BEST_WINDOW",
+            hookMode: sourceVideo.suggestedHookMode,
+            titlePrefix,
+            status: "CREATED",
+            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook mode: ${sourceVideo.suggestedHookMode}.`,
+          },
+        }),
+      );
 
-          const job = await tx.factoryJob.create({
-            data: {
-              sourceUrl: sourceVideo.sourceUrl,
-              sourceFilePath: null,
-              sourceStorageKey: null,
-              sourceOriginalName: sourceVideo.title,
-              sourceSizeBytes: null,
-              clipSeconds: body.clipSeconds,
-              clipStartIndex: 0,
-              titlePrefix,
-              game: "ROBLOX",
-              templateId: template.id,
-              platforms: [account.platform],
-              status: "QUEUED",
-              totalClips: 0,
-              progress: 0,
-              progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100`,
-              publishTiming: "USA_SMART",
-              scheduledAt: slot.scheduledAt,
-              cutMode: "SEQUENTIAL",
-              smartStepSeconds: 10,
-              smartCandidates: 80,
-              smartMinGapSeconds: 30,
-              cancelRequested: false,
-              superUploadPackageId: pack.id,
-              targets: {
-                create: {
-                  accountId: account.id,
-                  platform: account.platform,
-                  templateId: template.id,
-                  titlePrefix,
-                  maxClips: 1,
-                },
+      const job = await withDbRetry(() =>
+        prisma.factoryJob.create({
+          data: {
+            sourceUrl: sourceVideo.sourceUrl,
+            sourceFilePath: null,
+            sourceStorageKey: null,
+            sourceOriginalName: sourceVideo.title,
+            sourceSizeBytes: null,
+            clipSeconds: body.clipSeconds,
+            clipStartIndex: 0,
+            titlePrefix,
+            game: "ROBLOX",
+            templateId: template.id,
+            platforms: [account.platform],
+            status: "QUEUED",
+            totalClips: 0,
+            progress: 0,
+            progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100`,
+            publishTiming: "USA_SMART",
+            scheduledAt: slot.scheduledAt,
+            cutMode: "SEQUENTIAL",
+            smartStepSeconds: 10,
+            smartCandidates: 80,
+            smartMinGapSeconds: 30,
+            cancelRequested: false,
+            superUploadPackageId: pack.id,
+            targets: {
+              create: {
+                accountId: account.id,
+                platform: account.platform,
+                templateId: template.id,
+                titlePrefix,
+                maxClips: 1,
               },
             },
-          });
+          },
+        }),
+      );
 
-          await tx.factorySourceVideo.update({
-            where: { id: sourceVideo.id },
-            data: { isUsed: true, usedAt: new Date() },
-          });
+      await withDbRetry(() =>
+        prisma.factorySourceVideo.update({
+          where: { id: sourceVideo.id },
+          data: { isUsed: true, usedAt: new Date() },
+        }),
+      );
 
-          packages.push(pack);
-          jobs.push(job);
-        }
-
-        return { packages, jobs };
-      }),
-    );
+      packages.push(pack);
+      jobs.push(job);
+    }
 
     return NextResponse.json({
-      packages: result.packages,
-      jobs: result.jobs,
+      packages,
+      jobs,
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
       candidates: selected,
-      message: `Пакет дня создан: ${result.jobs.length} задач. Окно: вечер/ночь New York.`,
+      message: `Пакет дня создан: ${jobs.length} задач. Окно: вечер/ночь New York.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

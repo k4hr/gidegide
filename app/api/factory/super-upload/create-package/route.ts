@@ -117,89 +117,86 @@ export async function POST(request: Request) {
       titlePrefix: body.titlePrefix,
     });
 
-    const result = await withDbRetry(() =>
-      prisma.$transaction(async (tx) => {
-        const pack = await tx.factorySuperUploadPackage.create({
+    const pack = await withDbRetry(() =>
+      prisma.factorySuperUploadPackage.create({
+        data: {
+          sourceVideoId: sourceVideo.id,
+          accountId: account.id,
+          accountName: account.name,
+          game: "ROBLOX",
+          clipsCount: body.clipsCount,
+          clipSeconds: body.clipSeconds,
+          intervalMin: body.intervalMin,
+          intervalMax: body.intervalMax,
+          scheduleMode: "ANALYTICS_BEST_WINDOW",
+          hookMode: body.hookMode,
+          titlePrefix,
+          status: "CREATED",
+          recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
+        },
+      }),
+    );
+
+    const jobs = [];
+
+    for (const slot of schedule.slots) {
+      const job = await withDbRetry(() =>
+        prisma.factoryJob.create({
           data: {
-            sourceVideoId: sourceVideo.id,
-            accountId: account.id,
-            accountName: account.name,
-            game: "ROBLOX",
-            clipsCount: body.clipsCount,
+            sourceUrl: sourceVideo.sourceUrl,
+            sourceFilePath: null,
+            sourceStorageKey: null,
+            sourceOriginalName: sourceVideo.title,
+            sourceSizeBytes: null,
             clipSeconds: body.clipSeconds,
-            intervalMin: body.intervalMin,
-            intervalMax: body.intervalMax,
-            scheduleMode: "ANALYTICS_BEST_WINDOW",
-            hookMode: body.hookMode,
+            clipStartIndex: slot.index - 1,
             titlePrefix,
-            status: "CREATED",
-            recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
-          },
-        });
-
-        const jobs = [];
-
-        for (const slot of schedule.slots) {
-          const job = await tx.factoryJob.create({
-            data: {
-              sourceUrl: sourceVideo.sourceUrl,
-              sourceFilePath: null,
-              sourceStorageKey: null,
-              sourceOriginalName: sourceVideo.title,
-              sourceSizeBytes: null,
-              clipSeconds: body.clipSeconds,
-              clipStartIndex: slot.index - 1,
-              titlePrefix,
-              game: "ROBLOX",
-              templateId: template.id,
-              platforms: [account.platform],
-              status: "QUEUED",
-              totalClips: 0,
-              progress: 0,
-              progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · день ${slot.dayIndex}`,
-              publishTiming: "USA_SMART",
-              scheduledAt: slot.scheduledAt,
-              cutMode: "SEQUENTIAL",
-              smartStepSeconds: 10,
-              smartCandidates: 80,
-              smartMinGapSeconds: 30,
-              cancelRequested: false,
-              superUploadPackageId: pack.id,
-              targets: {
-                create: {
-                  accountId: account.id,
-                  platform: account.platform,
-                  templateId: template.id,
-                  titlePrefix,
-                  maxClips: 1,
-                },
+            game: "ROBLOX",
+            templateId: template.id,
+            platforms: [account.platform],
+            status: "QUEUED",
+            totalClips: 0,
+            progress: 0,
+            progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · день ${slot.dayIndex}`,
+            publishTiming: "USA_SMART",
+            scheduledAt: slot.scheduledAt,
+            cutMode: "SEQUENTIAL",
+            smartStepSeconds: 10,
+            smartCandidates: 80,
+            smartMinGapSeconds: 30,
+            cancelRequested: false,
+            superUploadPackageId: pack.id,
+            targets: {
+              create: {
+                accountId: account.id,
+                platform: account.platform,
+                templateId: template.id,
+                titlePrefix,
+                maxClips: 1,
               },
             },
-          });
-
-          jobs.push(job);
-        }
-
-        await tx.factorySourceVideo.update({
-          where: {
-            id: sourceVideo.id,
           },
-          data: {
-            isUsed: true,
-            usedAt: new Date(),
-          },
-        });
+        }),
+      );
 
-        return {
-          pack,
-          jobs,
-        };
+      jobs.push(job);
+    }
+
+    await withDbRetry(() =>
+      prisma.factorySourceVideo.update({
+        where: {
+          id: sourceVideo.id,
+        },
+        data: {
+          isUsed: true,
+          usedAt: new Date(),
+        },
       }),
     );
 
     return NextResponse.json({
-      package: result.pack,
-      jobs: result.jobs,
+      package: pack,
+      jobs,
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
       windowStart: schedule.windowStart,
