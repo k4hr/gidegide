@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { google } from "googleapis";
+import { google, youtube_v3 } from "googleapis";
+import { GaxiosResponse } from "gaxios";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
@@ -96,17 +97,12 @@ async function collectVideoIdsFromUploadsPlaylist(input: {
   let pageToken: string | undefined;
 
   while (videoIds.length < MAX_IMPORT_VIDEOS) {
-    const playlistResponse = (await input.youtube.playlistItems.list({
+    const playlistResponse: GaxiosResponse<youtube_v3.Schema$PlaylistItemListResponse> = await input.youtube.playlistItems.list({
       part: ["contentDetails", "snippet"],
       playlistId: input.uploadsPlaylistId,
       maxResults: PAGE_SIZE,
       pageToken,
-    })) as {
-      data: {
-        items?: PlaylistItem[];
-        nextPageToken?: string | null;
-      };
-    };
+    });
 
     const items = playlistResponse.data.items ?? [];
 
