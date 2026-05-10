@@ -711,20 +711,46 @@ export function buildFactoryDescription(input: {
 }
 
 /**
- * Старые имена функций, которые уже импортируются в worker/factory-worker.ts.
- * Не удалять: они нужны, чтобы не ломать существующий worker.
+ * Старый wrapper для worker/factory-worker.ts.
+ *
+ * Поддерживает новый формат:
+ * buildClipTitle({ game, titlePrefix, index })
+ *
+ * И старый формат:
+ * buildClipTitle({ game, clipIndex, customPrefix, seedHint })
  */
 export function buildClipTitle(input: {
   game: FactoryGame;
-  titlePrefix: string;
-  index: number;
+  titlePrefix?: string;
+  index?: number;
+  clipIndex?: number;
+  customPrefix?: string | null;
+  seedHint?: string;
 }) {
-  return buildFactoryTitle(input);
+  const titlePrefix = input.titlePrefix ?? input.customPrefix ?? "auto mix";
+  const index = input.index ?? input.clipIndex ?? 1;
+
+  return buildFactoryTitle({
+    game: input.game,
+    titlePrefix,
+    index,
+  });
 }
 
+/**
+ * Старый wrapper для worker/factory-worker.ts.
+ *
+ * Поддерживает:
+ * buildClipDescription({ game, title })
+ * buildClipDescription({ game, clipTitle })
+ */
 export function buildClipDescription(input: {
   game: FactoryGame;
-  title: string;
+  title?: string;
+  clipTitle?: string;
 }) {
-  return buildFactoryDescription(input);
+  return buildFactoryDescription({
+    game: input.game,
+    title: input.title ?? input.clipTitle ?? "",
+  });
 }
