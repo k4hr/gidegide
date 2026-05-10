@@ -658,6 +658,7 @@ function buildManualTitle(input: {
   index: number;
 }) {
   const titleNumber = input.index > 1 ? ` #${input.index}` : "";
+
   return normalizeTitle(`${input.titlePrefix}${titleNumber}`);
 }
 
@@ -707,4 +708,23 @@ export function buildFactoryDescription(input: {
   const hashtags = meta.hashtags.join(" ");
 
   return `${input.title}\n\n${hashtags}`;
+}
+
+/**
+ * Старые имена функций, которые уже импортируются в worker/factory-worker.ts.
+ * Не удалять: они нужны, чтобы не ломать существующий worker.
+ */
+export function buildClipTitle(input: {
+  game: FactoryGame;
+  titlePrefix: string;
+  index: number;
+}) {
+  return buildFactoryTitle(input);
+}
+
+export function buildClipDescription(input: {
+  game: FactoryGame;
+  title: string;
+}) {
+  return buildFactoryDescription(input);
 }
