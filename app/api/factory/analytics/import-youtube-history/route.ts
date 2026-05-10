@@ -189,7 +189,23 @@ async function importVideo(input: {
   );
 
   if (existingPublish) {
-    return "skipped" as const;
+    await withDbRetry(() =>
+      prisma.factoryPublish.update({
+        where: {
+          id: existingPublish.id,
+        },
+        data: {
+          accountId: input.accountId,
+          status: "PUBLISHED",
+          title: input.video.title,
+          description: input.video.description,
+          publishedAt: input.video.publishedAt,
+          platformUrl: input.video.url,
+        },
+      }),
+    );
+
+    return "updated" as const;
   }
 
   await withDbRetry(() =>
@@ -322,6 +338,7 @@ export async function POST() {
     });
 
     let imported = 0;
+    let updated = 0;
     let skipped = 0;
     const errors: Array<{
       videoId: string;
@@ -337,6 +354,8 @@ export async function POST() {
 
         if (result === "imported") {
           imported += 1;
+        } else if (result === "updated") {
+          updated += 1;
         } else {
           skipped += 1;
         }
@@ -353,12 +372,13 @@ export async function POST() {
 
     return NextResponse.json({
       imported,
+      updated,
       skipped,
-      errors: errors.length,
-      errorDetails: errors.slice(0, 20),
+      errors,
       totalSeen: videos.length,
       totalVideoIds: videoIds.length,
       uploadsPlaylistId,
+      message: `Imported ${imported} new, updated ${updated} existing, skipped ${skipped} videos.`,
     });
   } catch (error) {
     console.error(error);
