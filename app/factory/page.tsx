@@ -25,7 +25,7 @@ type FactoryPublishTiming =
   | "USA_SMART";
 
 type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE";
-type PublishAction = "DEFAULT" | "USA_SMART" | "LONG_USA_DAILY";
+type PublishAction = "DEFAULT" | "USA_SMART";
 
 type FactoryTemplate = {
   id: string;
@@ -211,7 +211,6 @@ function getSubmitAction(event: FormEvent<HTMLFormElement>): PublishAction {
 
   if (submitter instanceof HTMLButtonElement) {
     if (submitter.value === "USA_SMART") return "USA_SMART";
-    if (submitter.value === "LONG_USA_DAILY") return "LONG_USA_DAILY";
   }
 
   return "DEFAULT";
@@ -221,7 +220,7 @@ function getSubmitPublishTiming(
   action: PublishAction,
   fallback: FactoryPublishTiming,
 ) {
-  if (action === "USA_SMART" || action === "LONG_USA_DAILY") {
+  if (action === "USA_SMART") {
     return "USA_SMART" as const;
   }
 
@@ -238,10 +237,10 @@ export default function FactoryPage() {
   const [publishTiming, setPublishTiming] =
     useState<FactoryPublishTiming>("NOW");
 
-  const [cutMode, setCutMode] = useState<FactoryCutMode>("SMART_LITE");
-  const [smartStepSeconds, setSmartStepSeconds] = useState("10");
-  const [smartCandidates, setSmartCandidates] = useState("80");
-  const [smartMinGapSeconds, setSmartMinGapSeconds] = useState("30");
+  const cutMode: FactoryCutMode = "SEQUENTIAL";
+  const smartStepSeconds = "10";
+  const smartCandidates = "80";
+  const smartMinGapSeconds = "30";
 
   const [templateId, setTemplateId] = useState("");
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
@@ -467,7 +466,7 @@ export default function FactoryPage() {
         titlePrefix,
         templateId: templateId || null,
         publishTiming: nextPublishTiming,
-        packageMode: action === "LONG_USA_DAILY" ? "LONG_USA_DAILY" : "NORMAL",
+        packageMode: "NORMAL",
         ...getSmartSettingsPayload(),
         targets: getSelectedTargets(),
       }),
@@ -498,10 +497,7 @@ export default function FactoryPage() {
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
     formData.set("publishTiming", nextPublishTiming);
-    formData.set(
-      "packageMode",
-      action === "LONG_USA_DAILY" ? "LONG_USA_DAILY" : "NORMAL",
-    );
+    formData.set("packageMode", "NORMAL");
     formData.set("cutMode", cutMode);
     formData.set("smartStepSeconds", smartStepSeconds);
     formData.set("smartCandidates", smartCandidates);
@@ -568,30 +564,6 @@ export default function FactoryPage() {
         throw new Error("Выбери хотя бы один YouTube или TikTok аккаунт");
       }
 
-      if (cutMode === "SMART_LITE") {
-        const step = Number(smartStepSeconds);
-        const candidates = Number(smartCandidates);
-        const minGap = Number(smartMinGapSeconds);
-
-        if (!Number.isFinite(step) || step < 5 || step > 30) {
-          throw new Error("Шаг анализа должен быть от 5 до 30 секунд");
-        }
-
-        if (
-          !Number.isFinite(candidates) ||
-          candidates < 10 ||
-          candidates > 200
-        ) {
-          throw new Error("Количество кандидатов должно быть от 10 до 200");
-        }
-
-        if (!Number.isFinite(minGap) || minGap < 10 || minGap > 120) {
-          throw new Error(
-            "Минимальная дистанция должна быть от 10 до 120 секунд",
-          );
-        }
-      }
-
       if (sourceMode === "UPLOAD") {
         await createUploadJob(nextPublishTiming, submitAction);
         setSourceFile(null);
@@ -632,6 +604,7 @@ export default function FactoryPage() {
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
+          <Link href="/factory/analytics">Аналитика</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/thumbnails">Превью</Link>
@@ -641,9 +614,9 @@ export default function FactoryPage() {
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Выбираешь игру, источник, режим нарезки, время публикации и
-            конкретные аккаунты. Smart Cut Lite выбирает лучшие цельные
-            фрагменты без вырезания середины и без поломки звука.
+            Выбираешь игру, источник, время публикации и конкретные аккаунты.
+            Завод нарезает исходник подряд, собирает 9:16 ролики и отправляет их
+            в очередь публикации.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -768,91 +741,6 @@ export default function FactoryPage() {
             </div>
 
             <section className="target-panel">
-              <h2>Режим нарезки</h2>
-              <p className="muted">
-                Smart Cut Lite не вырезает лица и не режет середину клипа. Он
-                только выбирает лучшие цельные стартовые точки по движению,
-                звуку и нормальному стартовому кадру.
-              </p>
-
-              <div className="schedule-options">
-                <label className="target-checkbox schedule-option">
-                  <input
-                    type="checkbox"
-                    checked={cutMode === "SEQUENTIAL"}
-                    onChange={() => setCutMode("SEQUENTIAL")}
-                  />
-
-                  <span>
-                    <b>Обычная нарезка подряд</b>
-                    <small>
-                      0–45, 45–90, 90–135. Быстро, но может брать слабые старты.
-                    </small>
-                  </span>
-                </label>
-
-                <label className="target-checkbox schedule-option">
-                  <input
-                    type="checkbox"
-                    checked={cutMode === "SMART_LITE"}
-                    onChange={() => setCutMode("SMART_LITE")}
-                  />
-
-                  <span>
-                    <b>Умная нарезка Lite</b>
-                    <small>
-                      Проверяет много стартов каждые 10 секунд и выбирает лучшие
-                      цельные куски. Внутри клипа ничего не вырезается.
-                    </small>
-                  </span>
-                </label>
-              </div>
-
-              {cutMode === "SMART_LITE" ? (
-                <div className="target-settings-grid smart-cut-grid">
-                  <label>
-                    Шаг анализа, сек
-                    <input
-                      type="number"
-                      min={5}
-                      max={30}
-                      value={smartStepSeconds}
-                      onChange={(event) =>
-                        setSmartStepSeconds(event.target.value)
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Кандидатов проверить
-                    <input
-                      type="number"
-                      min={10}
-                      max={200}
-                      value={smartCandidates}
-                      onChange={(event) =>
-                        setSmartCandidates(event.target.value)
-                      }
-                    />
-                  </label>
-
-                  <label>
-                    Мин. дистанция, сек
-                    <input
-                      type="number"
-                      min={10}
-                      max={120}
-                      value={smartMinGapSeconds}
-                      onChange={(event) =>
-                        setSmartMinGapSeconds(event.target.value)
-                      }
-                    />
-                  </label>
-                </div>
-              ) : null}
-            </section>
-
-            <section className="target-panel">
               <h2>Когда публиковать</h2>
               <p className="muted">
                 Если выбираешь время New York, задача создастся сразу, но worker
@@ -875,16 +763,6 @@ export default function FactoryPage() {
                   МСК — ролик 9 · 05:15 МСК — ролик 10
                 </small>
               </button>
-
-              <div className="long-video-note">
-                <b>Новая отдельная кнопка для длинных видео</b>
-                <span>
-                  Вставляешь часовой YouTube-ролик и жмешь “Длинное видео → USA
-                  пакет каждый день”. Система создаст несколько дневных задач:
-                  по 10 роликов в день, со смещением 0/10/20/30... чтобы не
-                  заливать одно и то же.
-                </span>
-              </div>
 
               <div className="schedule-options">
                 {publishTimingOptions.map((option) => (
@@ -1033,17 +911,6 @@ export default function FactoryPage() {
                 disabled={isCreating}
               >
                 {isCreating ? "Создаю USA-пакет..." : "Грамотный залив под USA"}
-              </button>
-
-              <button
-                name="publishAction"
-                value="LONG_USA_DAILY"
-                className="long-video-button"
-                disabled={isCreating}
-              >
-                {isCreating
-                  ? "Создаю daily USA пакет..."
-                  : "Длинное видео → USA пакет каждый день"}
               </button>
             </div>
           </form>
