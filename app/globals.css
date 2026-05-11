@@ -195,17 +195,34 @@ button:disabled {
   min-width: 320px;
 }
 
-.cancel-button {
+.progress-actions {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.cancel-button,
+.run-now-button {
   padding: 9px 12px;
   border-radius: 12px;
-  background: rgba(248, 113, 113, 0.12);
-  color: #fecaca;
-  border: 1px solid rgba(248, 113, 113, 0.32);
   font-size: 12px;
   font-weight: 900;
 }
 
-.cancel-button:disabled {
+.cancel-button {
+  background: rgba(248, 113, 113, 0.12);
+  color: #fecaca;
+  border: 1px solid rgba(248, 113, 113, 0.32);
+}
+
+.run-now-button {
+  background: rgba(34, 197, 94, 0.14);
+  color: #bbf7d0;
+  border: 1px solid rgba(34, 197, 94, 0.36);
+}
+
+.cancel-button:disabled,
+.run-now-button:disabled {
   opacity: 0.35;
   cursor: not-allowed;
 }
@@ -884,7 +901,12 @@ button:disabled {
     min-width: 0;
   }
 
-  .cancel-button {
+  .progress-actions {
+    grid-template-columns: repeat(2, max-content);
+  }
+
+  .cancel-button,
+  .run-now-button {
     width: fit-content;
   }
 

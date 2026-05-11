@@ -171,6 +171,10 @@ function canCancel(job: FactoryJob) {
   return !["DONE", "FAILED", "CANCELED"].includes(job.status);
 }
 
+function canRunNow(job: FactoryJob) {
+  return job.status === "QUEUED" && Boolean(job.scheduledAt);
+}
+
 function formatMb(bytes: number | null) {
   if (!bytes) return "";
 
@@ -250,6 +254,7 @@ export default function FactoryPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [cancelingJobId, setCancelingJobId] = useState("");
+  const [runningNowJobId, setRunningNowJobId] = useState("");
   const [error, setError] = useState("");
 
   const selectedGame = useMemo(
@@ -599,6 +604,34 @@ export default function FactoryPage() {
     }
   }
 
+  async function runJobNow(jobId: string) {
+    setRunningNowJobId(jobId);
+
+    try {
+      const response = await fetch(`/api/factory/jobs/${jobId}/run-now`, {
+        method: "POST",
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+      };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Не получилось запустить задачу сейчас");
+      }
+
+      await loadJobs();
+    } catch (runError) {
+      setError(
+        runError instanceof Error
+          ? runError.message
+          : "Не получилось запустить задачу сейчас",
+      );
+    } finally {
+      setRunningNowJobId("");
+    }
+  }
+
   return (
     <main className="page">
       <div className="shell">
@@ -945,16 +978,31 @@ export default function FactoryPage() {
                 <tr key={job.id}>
                   <td>
                     <div className="progress-row">
-                      <button
-                        type="button"
-                        className="cancel-button"
-                        disabled={!canCancel(job) || cancelingJobId === job.id}
-                        onClick={() => cancelJob(job.id)}
-                      >
-                        {job.cancelRequested || cancelingJobId === job.id
-                          ? "Отмена..."
-                          : "Отменить"}
-                      </button>
+                      <div className="progress-actions">
+                        <button
+                          type="button"
+                          className="cancel-button"
+                          disabled={!canCancel(job) || cancelingJobId === job.id}
+                          onClick={() => cancelJob(job.id)}
+                        >
+                          {job.cancelRequested || cancelingJobId === job.id
+                            ? "Отмена..."
+                            : "Отменить"}
+                        </button>
+
+                        {canRunNow(job) ? (
+                          <button
+                            type="button"
+                            className="run-now-button"
+                            disabled={runningNowJobId === job.id}
+                            onClick={() => runJobNow(job.id)}
+                          >
+                            {runningNowJobId === job.id
+                              ? "Запускаю..."
+                              : "Загрузить сейчас"}
+                          </button>
+                        ) : null}
+                      </div>
 
                       <div className="progress-block">
                         <div className="progress-head">
