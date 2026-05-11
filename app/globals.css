@@ -1363,3 +1363,46 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.analytics-period-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin: 16px 0;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.analytics-period-card h2 {
+  margin: 0 0 6px;
+}
+
+.analytics-period-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.analytics-period-tabs button {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  border-radius: 999px;
+  padding: 10px 16px;
+  cursor: pointer;
+}
+
+.analytics-period-tabs button.active {
+  background: linear-gradient(135deg, #9f4cf2, #ff4fb3);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+@media (max-width: 760px) {
+  .analytics-period-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}

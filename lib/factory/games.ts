@@ -620,12 +620,35 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
 const TITLE_SUFFIXES = [
   "",
   "",
-  "",
   " #shorts",
-  " #gaming",
   " #roblox",
   " #robloxshorts",
 ];
+
+const SOURCE_TITLE_STOP_WORDS = new Set([
+  "roblox",
+  "the",
+  "and",
+  "with",
+  "from",
+  "this",
+  "that",
+  "video",
+  "videos",
+  "new",
+  "best",
+  "funny",
+  "crazy",
+  "insane",
+  "moments",
+  "moment",
+  "challenge",
+  "challenges",
+  "gameplay",
+  "watch",
+  "full",
+  "official",
+]);
 
 function pickRandom<T>(items: T[]) {
   return items[Math.floor(Math.random() * items.length)];
@@ -634,9 +657,84 @@ function pickRandom<T>(items: T[]) {
 function normalizeTitle(value: string) {
   return value
     .replace(/\s+/g, " ")
-    .replace(/\s+([?!.,])/g, "$1")
+    .replace(/\s+([?!.,:])/g, "$1")
+    .replace(/[|]+/g, " ")
     .trim()
     .slice(0, 95);
+}
+
+function normalizeSourceTitle(value: string | null | undefined) {
+  return (value ?? "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/#[\w-]+/g, " ")
+    .replace(/[^a-zA-Z0-9а-яА-ЯёЁ\s'-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function hasWord(text: string, words: string[]) {
+  return words.some((word) => text.includes(word));
+}
+
+function getRobloxSourceTopic(sourceTitle: string | null | undefined) {
+  const cleanTitle = normalizeSourceTitle(sourceTitle);
+  const normalized = cleanTitle.toLowerCase();
+
+  if (!normalized) return "Roblox";
+
+  if (hasWord(normalized, ["doors", "door"])) return "Roblox Doors";
+  if (hasWord(normalized, ["obby", "obstacle"])) return "Roblox obby";
+  if (hasWord(normalized, ["parkour"])) return "Roblox parkour";
+  if (hasWord(normalized, ["tower", "toh"])) return "Roblox tower";
+  if (hasWord(normalized, ["lava"])) return "Roblox lava challenge";
+  if (hasWord(normalized, ["zone"])) return "Roblox zone";
+  if (hasWord(normalized, ["update", "updates"])) return "Roblox update";
+  if (hasWord(normalized, ["escape", "escaped", "escaping"])) return "Roblox escape";
+  if (hasWord(normalized, ["survive", "survival", "survived"])) return "Roblox survival";
+  if (hasWord(normalized, ["horror", "scary", "monster"])) return "Roblox horror";
+  if (hasWord(normalized, ["admin", "mod", "moderator"])) return "Roblox admin";
+  if (hasWord(normalized, ["tycoon"])) return "Roblox tycoon";
+  if (hasWord(normalized, ["brookhaven"])) return "Roblox Brookhaven";
+  if (hasWord(normalized, ["blox fruit", "blox fruits"])) return "Roblox Blox Fruits";
+
+  const words = cleanTitle
+    .split(/\s+/)
+    .map((word) => word.replace(/^['-]+|['-]+$/g, ""))
+    .filter((word) => word.length >= 3)
+    .filter((word) => !SOURCE_TITLE_STOP_WORDS.has(word.toLowerCase()))
+    .slice(0, 2);
+
+  if (words.length > 0) {
+    return normalizeTitle(`Roblox ${words.join(" ")}`);
+  }
+
+  return "Roblox";
+}
+
+function getDescriptionAngle(input: {
+  title: string;
+  sourceTitle?: string | null;
+  titlePrefix?: string | null;
+}) {
+  const text = `${input.title} ${input.sourceTitle ?? ""} ${input.titlePrefix ?? ""}`.toLowerCase();
+
+  if (hasWord(text, ["fail", "mistake", "lost it", "painful", "dumbest", "panicked"])) {
+    return "A Roblox fail clip with a painful mistake, chaotic timing, and a moment that is worth watching until the end.";
+  }
+
+  if (hasWord(text, ["escape", "survive", "survival", "survived", "stayed alive"])) {
+    return "A Roblox survival clip with a close escape, risky timing, and a final moment that can change the whole run.";
+  }
+
+  if (hasWord(text, ["obby", "parkour", "tower", "jump", "impossible", "too hard", "rage quit"])) {
+    return "A Roblox obby clip with hard jumps, stressful timing, and a run that gets more dangerous every second.";
+  }
+
+  if (hasWord(text, ["doors", "horror", "scary", "monster"])) {
+    return "A Roblox horror clip with suspense, pressure, and a moment that gets intense fast.";
+  }
+
+  return "A Roblox short with fast gameplay, a strong hook, and a moment that is worth watching until the end.";
 }
 
 function getHookCategoriesFromPrefix(value: string | null | undefined): HookCategory[] | null {
@@ -712,14 +810,18 @@ function buildManualTitle(input: {
   index: number;
 }) {
   const titleNumber = input.index > 1 ? ` #${input.index}` : "";
+  const prefix = input.game === "ROBLOX" && !input.titlePrefix.toLowerCase().includes("roblox")
+    ? `Roblox ${input.titlePrefix}`
+    : input.titlePrefix;
 
-  return normalizeTitle(`${input.titlePrefix}${titleNumber}`);
+  return normalizeTitle(`${prefix}${titleNumber}`);
 }
 
 function buildAutoMixTitle(input: {
   game: FactoryGame;
   index: number;
   titlePrefix?: string | null;
+  sourceTitle?: string | null;
 }) {
   const hookGroups = HOOK_MIX[input.game] ?? HOOK_MIX.OTHER;
   const preferredCategories = getHookCategoriesFromPrefix(input.titlePrefix);
@@ -729,6 +831,13 @@ function buildAutoMixTitle(input: {
   const group = pickRandom(filteredGroups.length > 0 ? filteredGroups : hookGroups);
   const template = pickRandom(group.templates);
   const suffix = input.game === "ROBLOX" ? pickRandom(TITLE_SUFFIXES) : "";
+
+  if (input.game === "ROBLOX") {
+    const topic = getRobloxSourceTopic(input.sourceTitle);
+    const cleanedTemplate = template.replace(/^Roblox\s+/i, "").trim();
+
+    return normalizeTitle(`${topic}: ${cleanedTemplate}${suffix}`);
+  }
 
   return normalizeTitle(`${template}${suffix}`);
 }
@@ -744,12 +853,14 @@ export function buildFactoryTitle(input: {
   game: FactoryGame;
   titlePrefix: string;
   index: number;
+  sourceTitle?: string | null;
 }) {
   if (isAutoMixTitlePrefix(input.titlePrefix)) {
     return buildAutoMixTitle({
       game: input.game,
       index: input.index,
       titlePrefix: input.titlePrefix,
+      sourceTitle: input.sourceTitle,
     });
   }
 
@@ -763,11 +874,21 @@ export function buildFactoryTitle(input: {
 export function buildFactoryDescription(input: {
   game: FactoryGame;
   title: string;
+  sourceTitle?: string | null;
+  titlePrefix?: string | null;
 }) {
   const meta = getGameMeta(input.game);
   const hashtags = meta.hashtags.join(" ");
+  const sourceContext = input.sourceTitle
+    ? `Source idea: ${normalizeSourceTitle(input.sourceTitle).slice(0, 120)}`
+    : "Fresh Roblox gameplay clip";
+  const angle = getDescriptionAngle({
+    title: input.title,
+    sourceTitle: input.sourceTitle,
+    titlePrefix: input.titlePrefix,
+  });
 
-  return `${input.title}\n\n${hashtags}`;
+  return `${input.title}\n\n${angle}\n${sourceContext}\n\n${hashtags}`;
 }
 
 /**
@@ -786,6 +907,7 @@ export function buildClipTitle(input: {
   clipIndex?: number;
   customPrefix?: string | null;
   seedHint?: string;
+  sourceTitle?: string | null;
 }) {
   const titlePrefix = input.titlePrefix ?? input.customPrefix ?? "auto mix";
   const index = input.index ?? input.clipIndex ?? 1;
@@ -794,6 +916,7 @@ export function buildClipTitle(input: {
     game: input.game,
     titlePrefix,
     index,
+    sourceTitle: input.sourceTitle,
   });
 }
 
@@ -811,16 +934,23 @@ export function buildClipDescription(input: {
   clipTitle?: string;
   customPrefix?: string | null;
   titlePrefix?: string | null;
+  sourceTitle?: string | null;
 }) {
+  const titlePrefix = input.customPrefix ?? input.titlePrefix ?? getGameMeta(input.game).titlePrefix;
   const title =
     input.title ??
     input.clipTitle ??
-    input.customPrefix ??
-    input.titlePrefix ??
-    getGameMeta(input.game).titlePrefix;
+    buildFactoryTitle({
+      game: input.game,
+      titlePrefix,
+      index: 1,
+      sourceTitle: input.sourceTitle,
+    });
 
   return buildFactoryDescription({
     game: input.game,
     title,
+    sourceTitle: input.sourceTitle,
+    titlePrefix,
   });
 }

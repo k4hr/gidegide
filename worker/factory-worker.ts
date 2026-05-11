@@ -532,6 +532,7 @@ async function processOneJob() {
         clipIndex,
         customPrefix: job.titlePrefix,
         seedHint: `${job.id}:${clipIndex}:base`,
+        sourceTitle: job.sourceOriginalName,
       });
 
       const clip = await db(() =>
@@ -560,11 +561,14 @@ async function processOneJob() {
           clipIndex,
           customPrefix: titlePrefixForTarget,
           seedHint: `${job.id}:${target.accountId}:${clipIndex}`,
+          sourceTitle: job.sourceOriginalName,
         });
 
         const description = buildClipDescription({
           game: job.game,
+          title,
           customPrefix: titlePrefixForTarget,
+          sourceTitle: job.sourceOriginalName,
         });
 
         const renderProgress =

@@ -163,14 +163,54 @@ function summarizeGroup<T>(
   };
 }
 
-export async function GET() {
+function getAnalyticsPeriod(request: Request) {
+  const url = new URL(request.url);
+  const period = url.searchParams.get("period") ?? "month";
+
+  if (period === "day" || period === "week" || period === "month" || period === "all") {
+    return period;
+  }
+
+  return "month";
+}
+
+function getPublishedAfter(period: string) {
+  if (period === "all") return null;
+
+  const date = new Date();
+
+  if (period === "day") {
+    date.setDate(date.getDate() - 1);
+    return date;
+  }
+
+  if (period === "week") {
+    date.setDate(date.getDate() - 7);
+    return date;
+  }
+
+  date.setDate(date.getDate() - 30);
+  return date;
+}
+
+export async function GET(request: Request) {
   try {
+    const period = getAnalyticsPeriod(request);
+    const publishedAfter = getPublishedAfter(period);
+
     const analyses = await withDbRetry(() =>
       prisma.factoryVideoAnalysis.findMany({
         where: {
           publish: {
             is: {
               status: "PUBLISHED",
+              ...(publishedAfter
+                ? {
+                    publishedAt: {
+                      gte: publishedAfter,
+                    },
+                  }
+                : {}),
             },
           },
         },
@@ -377,6 +417,8 @@ export async function GET() {
     }
 
     return NextResponse.json({
+      period,
+      publishedAfter,
       summary: {
         totalVideos,
         winners: winners.length,

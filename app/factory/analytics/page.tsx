@@ -68,7 +68,11 @@ type FailedVideo = {
   recommendation: string | null;
 };
 
+type AnalyticsPeriod = "day" | "week" | "month" | "all";
+
 type AnalyticsResponse = {
+  period: AnalyticsPeriod;
+  publishedAfter: string | null;
   summary: Summary;
   topVideos: AnalyticsVideo[];
   failedVideos: FailedVideo[];
@@ -154,6 +158,7 @@ export default function FactoryAnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState<AnalyticsTab>("TOP");
+  const [period, setPeriod] = useState<AnalyticsPeriod>("day");
   const [deletingPublishId, setDeletingPublishId] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
 
@@ -161,7 +166,7 @@ export default function FactoryAnalyticsPage() {
     try {
       setError("");
 
-      const response = await fetch("/api/factory/analytics", {
+      const response = await fetch(`/api/factory/analytics?period=${period}`, {
         cache: "no-store",
       });
 
@@ -238,7 +243,8 @@ export default function FactoryAnalyticsPage() {
     }, 60_000);
 
     return () => window.clearInterval(timer);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
 
   const summaryCards = useMemo(() => {
     const summary = data?.summary;
@@ -297,6 +303,44 @@ export default function FactoryAnalyticsPage() {
           <button type="button" onClick={loadAnalytics} disabled={isLoading}>
             {isLoading ? "Обновляю..." : "Обновить"}
           </button>
+        </section>
+
+        <section className="analytics-period-card">
+          <div>
+            <h2>Период аналитики</h2>
+            <p className="muted">Переключай срез: последний день, неделя, месяц или все данные.</p>
+          </div>
+
+          <div className="analytics-period-tabs">
+            <button
+              type="button"
+              className={period === "day" ? "active" : ""}
+              onClick={() => setPeriod("day")}
+            >
+              День
+            </button>
+            <button
+              type="button"
+              className={period === "week" ? "active" : ""}
+              onClick={() => setPeriod("week")}
+            >
+              Неделя
+            </button>
+            <button
+              type="button"
+              className={period === "month" ? "active" : ""}
+              onClick={() => setPeriod("month")}
+            >
+              Месяц
+            </button>
+            <button
+              type="button"
+              className={period === "all" ? "active" : ""}
+              onClick={() => setPeriod("all")}
+            >
+              Все
+            </button>
+          </div>
         </section>
 
         {error ? <p className="error">{error}</p> : null}
