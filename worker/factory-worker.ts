@@ -29,6 +29,10 @@ import {
   buildSequentialClipStarts,
   buildSmartClipCandidates,
 } from "@/lib/factory/smart-cut";
+import {
+  buildAiHookCutCandidates,
+  type AiHookCutCandidate,
+} from "@/lib/factory/ai-hook-cut";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -420,8 +424,81 @@ async function processOneJob() {
     const maxClips = Math.min(globalMaxClips, maxTargetClips);
     const clipStartIndex = Math.max(0, job.clipStartIndex ?? 0);
     let clipStarts: number[] = [];
+    const aiHookPlanByStart = new Map<number, AiHookCutCandidate>();
 
-    if (job.cutMode === "SMART_LITE") {
+    if (job.cutMode === "SMART_HOOK_AI") {
+      await updateJobProgress(
+        job.id,
+        31,
+        "AI Hook Cut: ищу моменты через FFmpeg и отправляю лучшие кадры в OpenAI",
+      );
+
+      await safeDb(() =>
+        prisma.factoryClipCandidate.deleteMany({
+          where: {
+            jobId: job.id,
+          },
+        }),
+      );
+
+      const candidates = await buildAiHookCutCandidates({
+        sourcePath,
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        stepSeconds: job.smartStepSeconds ?? 10,
+        maxCandidates: job.smartCandidates ?? 80,
+        minGapSeconds: job.smartMinGapSeconds ?? 30,
+        clipStartIndex,
+        sourceTitle: job.sourceOriginalName,
+        game: job.game,
+        isCanceled: () => isJobCanceled(job.id),
+        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+      });
+
+      if (candidates.length > 0) {
+        await safeDb(() =>
+          prisma.factoryClipCandidate.createMany({
+            data: candidates.map((candidate) => ({
+              jobId: job.id,
+              startSec: candidate.startSec,
+              endSec: candidate.endSec,
+              durationSec: candidate.durationSec,
+              motionScore: candidate.motionScore,
+              audioScore: candidate.audioScore,
+              firstFrameScore: candidate.firstFrameScore,
+              sceneScore: candidate.sceneScore,
+              finalScore: candidate.finalScore,
+              aiScore: candidate.aiScore,
+              hookMomentSec: candidate.hookMomentSec,
+              hookPreviewStartSec: candidate.hookPreviewStartSec,
+              hookPreviewDurationSec: candidate.hookPreviewDurationSec,
+              overlayText: candidate.overlayText,
+              aiTitle: candidate.title,
+              momentType: candidate.momentType,
+              selected: candidate.selected,
+              reason: candidate.reason,
+            })),
+          }),
+        );
+      }
+
+      const selectedAiCandidates = candidates
+        .filter((candidate) => candidate.selected)
+        .sort((a, b) => a.startSec - b.startSec);
+
+      for (const candidate of selectedAiCandidates) {
+        aiHookPlanByStart.set(candidate.startSec, candidate);
+      }
+
+      clipStarts = selectedAiCandidates.map((candidate) => candidate.startSec);
+
+      await updateJobProgress(
+        job.id,
+        55,
+        `AI Hook Cut: выбрано сильных моментов ${clipStarts.length}`,
+      );
+    } else if (job.cutMode === "SMART_LITE") {
       await updateJobProgress(
         job.id,
         31,
@@ -490,7 +567,7 @@ async function processOneJob() {
 
     if (clipStarts.length === 0) {
       throw new Error(
-        "Видео слишком короткое или Smart Cut Lite не нашел подходящие куски",
+        "Видео слишком короткое или умная нарезка не нашла подходящие моменты",
       );
     }
 
@@ -527,7 +604,8 @@ async function processOneJob() {
       const startSec = clipStarts[i];
       const endSec = startSec + job.clipSeconds;
 
-      const baseTitle = buildClipTitle({
+      const aiHookPlan = aiHookPlanByStart.get(startSec);
+      const baseTitle = aiHookPlan?.title ?? buildClipTitle({
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
@@ -556,7 +634,7 @@ async function processOneJob() {
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
 
-        const title = buildClipTitle({
+        const title = aiHookPlan?.title ?? buildClipTitle({
           game: job.game,
           clipIndex,
           customPrefix: titlePrefixForTarget,
@@ -595,7 +673,14 @@ async function processOneJob() {
           startSec,
           clipSeconds: job.clipSeconds,
           template: getTargetTemplate(target),
-          thumbnailPath,
+          thumbnailPath: aiHookPlan ? null : thumbnailPath,
+          hookPreview: aiHookPlan
+            ? {
+                startSec: aiHookPlan.hookPreviewStartSec,
+                durationSec: aiHookPlan.hookPreviewDurationSec,
+                overlayText: aiHookPlan.overlayText,
+              }
+            : null,
           isCanceled: () => isJobCanceled(job.id),
         });
 

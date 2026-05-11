@@ -24,7 +24,7 @@ type FactoryPublishTiming =
   | "NY_22"
   | "USA_SMART";
 
-type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE";
+type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI";
 type PublishAction = "DEFAULT" | "USA_SMART";
 
 type FactoryTemplate = {

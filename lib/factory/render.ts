@@ -78,6 +78,60 @@ function buildThumbnailCropChain() {
   ].join(",");
 }
 
+
+function buildFullScreenCropChain() {
+  return [
+    "scale=1080:1920:force_original_aspect_ratio=increase",
+    "crop=1080:1920:(iw-1080)/2:(ih-1920)/2",
+    "setsar=1",
+    "format=yuv420p",
+    "fps=30",
+  ].join(",");
+}
+
+function escapeDrawText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]")
+    .slice(0, 64);
+}
+
+function buildHookDrawText(text: string) {
+  const safeText = escapeDrawText(text || "WAIT FOR IT");
+
+  return [
+    `drawtext=text='${safeText}'`,
+    "fontcolor=white",
+    "fontsize=76",
+    "borderw=7",
+    "bordercolor=black",
+    "shadowcolor=black@0.65",
+    "shadowx=3",
+    "shadowy=3",
+    "x=(w-text_w)/2",
+    "y=150",
+  ].join(":");
+}
+
+function buildAiHookFilter(input: {
+  template: FactoryRenderTemplate;
+  overlayText: string;
+}) {
+  return [
+    `[0:v]${buildFullScreenCropChain()},${buildHookDrawText(input.overlayText)}[hookv]`,
+    `[1:v]${buildCenteredHalfCropChain()}[game]`,
+    `[2:v]${buildCenteredHalfCropChain({ mirror: input.template.mirrorLana })}[person]`,
+    "[game][person]vstack=inputs=2,format=yuv420p,fps=30[stackv]",
+    "[hookv][stackv]concat=n=2:v=1:a=0,format=yuv420p[v]",
+    "[0:a]asetpts=PTS-STARTPTS[hooka]",
+    "[1:a]asetpts=PTS-STARTPTS[maina]",
+    "[hooka][maina]concat=n=2:v=0:a=1[a]",
+  ].join(";");
+}
+
 function buildBaseStackFilter(template: FactoryRenderTemplate) {
   return [
     `[0:v]${buildCenteredHalfCropChain()}[game]`,
@@ -284,6 +338,11 @@ type RenderFactoryClipInput = {
   clipSeconds: number;
   template: FactoryRenderTemplate;
   thumbnailPath?: string | null;
+  hookPreview?: {
+    startSec: number;
+    durationSec: number;
+    overlayText: string;
+  } | null;
   isCanceled?: CancelCheck;
 };
 
@@ -302,6 +361,72 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
 
   try {
     await assertSourceAudioOrThrow(input.sourcePath);
+
+    if (input.hookPreview) {
+      const previewDuration = Math.max(2, Math.min(5, input.hookPreview.durationSec));
+      const mainDuration = Math.max(1, input.clipSeconds - previewDuration);
+      const args = [
+        "-y",
+        "-ss",
+        String(Math.max(0, input.hookPreview.startSec)),
+        "-t",
+        String(previewDuration),
+        "-i",
+        input.sourcePath,
+        "-ss",
+        String(Math.max(0, input.startSec)),
+        "-t",
+        String(mainDuration),
+        "-i",
+        input.sourcePath,
+        "-stream_loop",
+        "-1",
+        "-t",
+        String(mainDuration),
+        "-i",
+        input.lanaPath,
+        "-filter_complex",
+        buildAiHookFilter({
+          template: input.template,
+          overlayText: input.hookPreview.overlayText,
+        }),
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "24",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-movflags",
+        "+faststart",
+        "-shortest",
+        outputPath,
+      ];
+
+      await runCommand("ffmpeg", args, {
+        logPrefix: `ffmpeg-ai-hook-${input.clipIndex}`,
+        isCanceled: input.isCanceled,
+      });
+
+      await assertVideoHasAudio(outputPath);
+
+      return outputPath;
+    }
 
     const variant = getRenderVariant({
       jobId: input.jobId,

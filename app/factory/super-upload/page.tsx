@@ -615,8 +615,9 @@ export default function SuperUploadPage() {
             <h1>СУПЕР ЗАЛИВ</h1>
             <p>
               Вставь канал Roblox-ютубера. Система найдет лучшие source videos,
-              посчитает шанс на залет, предложит hooks, количество клипов и
-              создаст умный пакет с публикациями через лучшее окно из аналитики.
+              посчитает шанс на залет, а при создании пакета включит AI Hook Cut:
+              FFmpeg найдет динамичные моменты, OpenAI выберет самый цепляющий hook,
+              первые 3 секунды будут full-screen Roblox с текстом, а дальше пойдет gameplay + Amelia.
             </p>
           </div>
 
@@ -960,6 +961,15 @@ export default function SuperUploadPage() {
               </div>
 
               <div className="super-plan-box">
+                <b>AI Hook Cut</b>
+                <span>
+                  Каждый ролик: 0–3 сек full-screen Roblox hook + крупный текст,
+                  потом split-screen gameplay + Amelia. Основная часть начинается раньше
+                  и заканчивается тем самым hook-моментом.
+                </span>
+              </div>
+
+              <div className="super-plan-box">
                 <b>Расписание</b>
                 <span>
                   {getPaceSummary(schedulePace)} · до 10 роликов в одну ночь,
@@ -968,7 +978,7 @@ export default function SuperUploadPage() {
               </div>
 
               <label>
-                Hook strategy
+                Hook strategy для title/описания
                 <select value={hookMode} onChange={(event) => setHookMode(event.target.value)}>
                   <option value="AUTO_BEST_MIX">Auto best mix</option>
                   <option value="IMPOSSIBLE_SUSPENSE">Obby / Parkour → Impossible + Suspense</option>
@@ -979,7 +989,7 @@ export default function SuperUploadPage() {
               </label>
 
               <button type="button" onClick={createPackage} disabled={isCreating}>
-                {isCreating ? "Создаю пакет..." : "Создать умный пакет"}
+                {isCreating ? "AI ищет hooks и создает пакет..." : "Создать AI Hook пакет"}
               </button>
             </section>
           </div>

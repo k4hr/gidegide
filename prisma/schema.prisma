@@ -52,6 +52,7 @@ enum FactoryPublishTiming {
 enum FactoryCutMode {
   SEQUENTIAL
   SMART_LITE
+  SMART_HOOK_AI
 }
 
 model FactoryAsset {
@@ -266,6 +267,14 @@ model FactoryClipCandidate {
   firstFrameScore Int        @default(0)
   sceneScore      Int        @default(0)
   finalScore      Int        @default(0)
+  aiScore         Int        @default(0)
+
+  hookMomentSec        Int?
+  hookPreviewStartSec  Int?
+  hookPreviewDurationSec Int?
+  overlayText          String?
+  aiTitle              String?
+  momentType           String?
 
   selected        Boolean    @default(false)
   reason          String?

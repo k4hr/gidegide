@@ -34,7 +34,7 @@ const publishTimingSchema = z
   .default("NOW");
 
 const cutModeSchema = z
-  .enum(["SEQUENTIAL", "SMART_LITE"])
+  .enum(["SEQUENTIAL", "SMART_LITE", "SMART_HOOK_AI"])
   .default("SEQUENTIAL");
 
 const packageModeSchema = z
