@@ -363,9 +363,12 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
     await assertSourceAudioOrThrow(input.sourcePath);
 
     if (input.hookPreview) {
-      const previewDuration = Math.max(2, Math.min(5, input.hookPreview.durationSec));
+      const previewDuration = Math.max(3, Math.min(10, input.hookPreview.durationSec));
       const mainDuration = Math.max(1, input.clipSeconds - previewDuration);
       const args = [
+        "-hide_banner",
+        "-loglevel",
+        "error",
         "-y",
         "-ss",
         String(Math.max(0, input.hookPreview.startSec)),

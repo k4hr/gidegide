@@ -218,8 +218,10 @@ export default function SuperUploadPage() {
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
   const [selectedVideo, setSelectedVideo] = useState<SourceVideo | null>(null);
+  const [isDailyPackageModalOpen, setIsDailyPackageModalOpen] = useState(false);
   const [clipsCount, setClipsCount] = useState(10);
   const [clipSeconds, setClipSeconds] = useState<30 | 45 | 60>(60);
+  const [hookPreviewSeconds, setHookPreviewSeconds] = useState<7 | 8 | 10>(8);
   const [schedulePace, setSchedulePace] = useState<SchedulePace>("NORMAL");
   const [intervalMin, setIntervalMin] = useState(45);
   const [intervalMax, setIntervalMax] = useState(60);
@@ -401,6 +403,24 @@ export default function SuperUploadPage() {
     }
   }
 
+  function openDailyPackageModal() {
+    const nextClipsCount = Math.min(10, Math.max(1, dailyCandidates.length || 10));
+    const nextPace = getRecommendedPace(nextClipsCount);
+    const paceSettings = schedulePaces[nextPace];
+
+    setSelectedVideo(null);
+    setIsDailyPackageModalOpen(true);
+    setClipsCount(nextClipsCount);
+    setClipSeconds(60);
+    setHookPreviewSeconds(8);
+    setHookMode("AUTO_BEST_MIX");
+    setSchedulePace(nextPace);
+    setIntervalMin(paceSettings.intervalMin);
+    setIntervalMax(paceSettings.intervalMax);
+    setMessage("");
+    setError("");
+  }
+
   async function createDayPackage() {
     setIsCreatingDayPackage(true);
     setError("");
@@ -423,10 +443,11 @@ export default function SuperUploadPage() {
         body: JSON.stringify({
           accountId: selectedAccountId,
           templateId: selectedTemplateId,
-          candidatesCount: 10,
-          clipSeconds: 60,
-          intervalMin: 45,
-          intervalMax: 60,
+          candidatesCount: clipsCount,
+          clipSeconds,
+          hookPreviewSeconds,
+          intervalMin,
+          intervalMax,
         }),
       });
       const nextData = (await response.json()) as DailyPackageResponse;
@@ -436,6 +457,7 @@ export default function SuperUploadPage() {
       }
 
       await loadDonors();
+      setIsDailyPackageModalOpen(false);
       setMessage(nextData.message ?? `Пакет дня создан: ${nextData.jobs?.length ?? 0} задач.`);
     } catch (packageError) {
       setError(
@@ -533,6 +555,7 @@ export default function SuperUploadPage() {
     setClipsCount(nextClipsCount);
     setHookMode(video.suggestedHookMode || "AUTO_BEST_MIX");
     setClipSeconds(60);
+    setHookPreviewSeconds(8);
     setSchedulePace(nextPace);
     setIntervalMin(paceSettings.intervalMin);
     setIntervalMax(paceSettings.intervalMax);
@@ -567,6 +590,7 @@ export default function SuperUploadPage() {
           templateId: selectedTemplateId,
           clipsCount,
           clipSeconds,
+          hookPreviewSeconds,
           intervalMin,
           intervalMax,
           hookMode,
@@ -617,7 +641,7 @@ export default function SuperUploadPage() {
               Вставь канал Roblox-ютубера. Система найдет лучшие source videos,
               посчитает шанс на залет, а при создании пакета включит AI Hook Cut:
               FFmpeg найдет динамичные моменты, OpenAI выберет самый цепляющий hook,
-              первые 3 секунды будут full-screen Roblox с текстом, а дальше пойдет gameplay + Amelia.
+              первые 7–10 секунд будут full-screen Roblox с текстом, а дальше пойдет gameplay + Amelia.
             </p>
           </div>
 
@@ -684,8 +708,8 @@ export default function SuperUploadPage() {
                 funny/fail → Funny + Fail, doors/horror → Suspense + Ending.
               </p>
             </div>
-            <button type="button" onClick={createDayPackage} disabled={isCreatingDayPackage || dailyCandidates.length === 0}>
-              {isCreatingDayPackage ? "Собираю пакет дня..." : "Собрать пакет дня"}
+            <button type="button" onClick={openDailyPackageModal} disabled={dailyCandidates.length === 0}>
+              Собрать пакет дня
             </button>
           </div>
 
@@ -839,6 +863,158 @@ export default function SuperUploadPage() {
           </>
         ) : null}
 
+        {isDailyPackageModalOpen ? (
+          <div className="super-modal-backdrop">
+            <section className="card super-modal">
+              <div className="super-modal-head">
+                <div>
+                  <span className="super-eyebrow">Пакет дня</span>
+                  <h2>Настройка перед созданием</h2>
+                  <p>Задачи не создаются сразу. Сначала выбираем количество роликов, длину, hook preview, Amelia-шаблон и темп расписания.</p>
+                </div>
+                <button type="button" className="secondary-button" onClick={() => setIsDailyPackageModalOpen(false)}>
+                  Закрыть
+                </button>
+              </div>
+
+              <div className="grid grid-2">
+                <label>
+                  YouTube-аккаунт
+                  <select value={selectedAccountId} onChange={(event) => setSelectedAccountId(event.target.value)}>
+                    <option value="">Выбери аккаунт</option>
+                    {accounts
+                      .filter((account) => account.platform === "YOUTUBE")
+                      .map((account) => (
+                        <option key={account.id} value={account.id}>{account.name}</option>
+                      ))}
+                  </select>
+                </label>
+
+                <label>
+                  Amelia-шаблон
+                  <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
+                    <option value="">Выбери шаблон</option>
+                    <option value="RANDOM">Random Amelia — чередовать шаблоны</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={template.id}>{template.name}{template.isDefault ? " — default" : ""}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Количество роликов
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={clipsCount}
+                    onChange={(event) => {
+                      const value = Math.max(1, Math.min(30, Number(event.target.value) || 1));
+                      const nextPace = getRecommendedPace(value);
+                      const settings = schedulePaces[nextPace];
+
+                      setClipsCount(value);
+                      setSchedulePace(nextPace);
+                      setIntervalMin(settings.intervalMin);
+                      setIntervalMax(settings.intervalMax);
+                    }}
+                  />
+                </label>
+
+                <label>
+                  Длина ролика
+                  <select value={clipSeconds} onChange={(event) => setClipSeconds(Number(event.target.value) as 30 | 45 | 60)}>
+                    <option value={30}>30 секунд</option>
+                    <option value={45}>45 секунд</option>
+                    <option value={60}>60 секунд</option>
+                  </select>
+                </label>
+
+                <label>
+                  Длина начального AI hook
+                  <select value={hookPreviewSeconds} onChange={(event) => setHookPreviewSeconds(Number(event.target.value) as 7 | 8 | 10)}>
+                    <option value={7}>7 секунд — быстрее</option>
+                    <option value={8}>8 секунд — оптимально</option>
+                    <option value={10}>10 секунд — понятнее момент</option>
+                  </select>
+                </label>
+
+                <label>
+                  Режим расписания
+                  <select
+                    value={schedulePace}
+                    onChange={(event) => {
+                      const pace = event.target.value as SchedulePace;
+                      const settings = schedulePaces[pace];
+
+                      setSchedulePace(pace);
+                      setIntervalMin(settings.intervalMin);
+                      setIntervalMax(settings.intervalMax);
+                    }}
+                  >
+                    {Object.entries(schedulePaces).map(([value, settings]) => (
+                      <option key={value} value={value}>
+                        {settings.title} — {settings.intervalMin}–{settings.intervalMax} мин
+                      </option>
+                    ))}
+                  </select>
+                  <small className="muted">{schedulePaces[schedulePace].description}</small>
+                </label>
+              </div>
+
+              <div className="grid grid-2">
+                <label>
+                  Интервал минимум
+                  <input
+                    type="number"
+                    min={20}
+                    max={120}
+                    value={intervalMin}
+                    onChange={(event) => {
+                      const value = Number(event.target.value) || 45;
+                      setIntervalMin(value);
+                      setIntervalMax((current) => Math.max(current, value));
+                    }}
+                  />
+                </label>
+
+                <label>
+                  Интервал максимум
+                  <input
+                    type="number"
+                    min={20}
+                    max={180}
+                    value={intervalMax}
+                    onChange={(event) =>
+                      setIntervalMax(
+                        Math.max(intervalMin, Number(event.target.value) || 60),
+                      )
+                    }
+                  />
+                </label>
+              </div>
+
+              <div className="super-plan-box">
+                <b>AI Hook Cut</b>
+                <span>
+                  Будет взято {clipsCount} кандидатов дня. Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст, потом gameplay + выбранная Amelia. Финал приходит к hook-моменту.
+                </span>
+              </div>
+
+              <div className="super-plan-box">
+                <b>Расписание</b>
+                <span>
+                  {getPaceSummary(schedulePace)} · система сама раскидает публикации по вечернему/ночному окну New York.
+                </span>
+              </div>
+
+              <button type="button" onClick={createDayPackage} disabled={isCreatingDayPackage}>
+                {isCreatingDayPackage ? "Создаю пакет дня..." : "Создать пакет дня"}
+              </button>
+            </section>
+          </div>
+        ) : null}
+
         {selectedVideo ? (
           <div className="super-modal-backdrop">
             <section className="card super-modal">
@@ -870,6 +1046,7 @@ export default function SuperUploadPage() {
                   Amelia-шаблон
                   <select value={selectedTemplateId} onChange={(event) => setSelectedTemplateId(event.target.value)}>
                     <option value="">Выбери шаблон</option>
+                    <option value="RANDOM">Random Amelia — чередовать шаблоны</option>
                     {templates.map((template) => (
                       <option key={template.id} value={template.id}>{template.name}{template.isDefault ? " — default" : ""}</option>
                     ))}
@@ -902,6 +1079,15 @@ export default function SuperUploadPage() {
                     <option value={30}>30 секунд</option>
                     <option value={45}>45 секунд</option>
                     <option value={60}>60 секунд</option>
+                  </select>
+                </label>
+
+                <label>
+                  Длина начального AI hook
+                  <select value={hookPreviewSeconds} onChange={(event) => setHookPreviewSeconds(Number(event.target.value) as 7 | 8 | 10)}>
+                    <option value={7}>7 секунд — для 30 сек роликов</option>
+                    <option value={8}>8 секунд — оптимально</option>
+                    <option value={10}>10 секунд — максимум интриги</option>
                   </select>
                 </label>
 
@@ -963,7 +1149,7 @@ export default function SuperUploadPage() {
               <div className="super-plan-box">
                 <b>AI Hook Cut</b>
                 <span>
-                  Каждый ролик: 0–3 сек full-screen Roblox hook + крупный текст,
+                  Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст,
                   потом split-screen gameplay + Amelia. Основная часть начинается раньше
                   и заканчивается тем самым hook-моментом.
                 </span>

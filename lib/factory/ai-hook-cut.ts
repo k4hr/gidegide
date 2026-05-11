@@ -35,6 +35,7 @@ type BuildAiHookCutInput = {
   sourcePath: string;
   duration: number;
   clipSeconds: number;
+  hookPreviewSeconds?: number | null;
   maxClips: number;
   stepSeconds: number;
   maxCandidates: number;
@@ -54,8 +55,8 @@ type AiCandidateReview = {
   reason: string;
 };
 
-const HOOK_PREVIEW_SECONDS = Number(
-  process.env.FACTORY_AI_HOOK_PREVIEW_SECONDS ?? 3,
+const DEFAULT_HOOK_PREVIEW_SECONDS = Number(
+  process.env.FACTORY_AI_HOOK_PREVIEW_SECONDS ?? 8,
 );
 
 const OPENAI_MODEL = process.env.OPENAI_HOOK_MODEL ?? "gpt-4.1-mini";
@@ -294,8 +295,11 @@ function buildTiming(input: {
   hookMomentSec: number;
   duration: number;
   clipSeconds: number;
+  hookPreviewSeconds?: number | null;
 }) {
-  const previewDuration = clamp(HOOK_PREVIEW_SECONDS, 2, 5);
+  const requestedPreviewDuration = Number(input.hookPreviewSeconds ?? DEFAULT_HOOK_PREVIEW_SECONDS);
+  const maxPreviewDuration = Math.max(3, Math.min(10, input.clipSeconds - 8));
+  const previewDuration = clamp(requestedPreviewDuration, 3, maxPreviewDuration);
   const mainDuration = Math.max(5, input.clipSeconds - previewDuration);
   const safeHookMoment = clamp(
     input.hookMomentSec,
@@ -444,6 +448,7 @@ export async function buildAiHookCutCandidates(input: BuildAiHookCutInput) {
         hookMomentSec: roughHookMomentSec,
         duration: input.duration,
         clipSeconds: input.clipSeconds,
+        hookPreviewSeconds: input.hookPreviewSeconds,
       });
       const finalScore = clamp(
         Math.round(technical.finalScore * 0.42 + finalReview.hookScore * 0.58),

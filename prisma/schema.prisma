@@ -172,6 +172,7 @@ model FactoryJob {
   smartStepSeconds   Int               @default(10)
   smartCandidates    Int               @default(80)
   smartMinGapSeconds Int               @default(30)
+  hookPreviewSeconds Int               @default(8)
 
   cancelRequested    Boolean           @default(false)
   canceledAt         DateTime?
@@ -196,6 +197,7 @@ model FactoryJob {
   @@index([publishTiming])
   @@index([scheduledAt])
   @@index([cutMode])
+  @@index([hookPreviewSeconds])
   @@index([superUploadPackageId])
 }
 
@@ -510,6 +512,7 @@ model FactorySuperUploadPackage {
 
   clipsCount      Int
   clipSeconds     Int
+  hookPreviewSeconds Int @default(8)
   intervalMin     Int @default(20)
   intervalMax     Int @default(30)
 

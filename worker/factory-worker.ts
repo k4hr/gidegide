@@ -476,6 +476,7 @@ async function processOneJob() {
         sourcePath,
         duration,
         clipSeconds: job.clipSeconds,
+        hookPreviewSeconds: job.hookPreviewSeconds ?? 8,
         maxClips,
         stepSeconds: job.smartStepSeconds ?? 10,
         maxCandidates: job.smartCandidates ?? 80,

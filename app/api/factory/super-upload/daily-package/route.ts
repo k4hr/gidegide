@@ -7,11 +7,14 @@ import { buildSuperUploadSchedule, buildTodayCandidates } from "@/lib/factory/su
 
 export const runtime = "nodejs";
 
+const RANDOM_TEMPLATE_ID = "RANDOM";
+
 const bodySchema = z.object({
   accountId: z.string().min(1),
   templateId: z.string().min(1),
-  candidatesCount: z.coerce.number().int().min(1).max(20).default(10),
+  candidatesCount: z.coerce.number().int().min(1).max(30).default(10),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
+  hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
   intervalMin: z.coerce.number().int().min(20).max(120).default(45),
   intervalMax: z.coerce.number().int().min(20).max(180).default(60),
 });
@@ -29,6 +32,47 @@ function hookPrefixFromMode(mode: string) {
   return "auto mix";
 }
 
+async function resolveTemplates(templateId: string) {
+  if (templateId === RANDOM_TEMPLATE_ID) {
+    const templates = await withDbRetry(() =>
+      prisma.factoryTemplate.findMany({
+        where: {
+          assetId: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: [
+          { isDefault: "desc" },
+          { createdAt: "asc" },
+        ],
+      }),
+    );
+
+    if (templates.length === 0) {
+      throw new Error("Нет Amelia-шаблонов с видео. Загрузи видео персонажа и создай шаблон.");
+    }
+
+    return templates;
+  }
+
+  const template = await withDbRetry(() =>
+    prisma.factoryTemplate.findUnique({
+      where: { id: templateId },
+      select: { id: true, name: true },
+    }),
+  );
+
+  if (!template) {
+    throw new Error("Amelia-шаблон не найден");
+  }
+
+  return [template];
+}
+
 export async function POST(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
@@ -44,16 +88,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "YouTube-аккаунт не найден" }, { status: 404 });
     }
 
-    const template = await withDbRetry(() =>
-      prisma.factoryTemplate.findUnique({
-        where: { id: body.templateId },
-        select: { id: true, name: true },
-      }),
-    );
-
-    if (!template) {
-      return NextResponse.json({ error: "Amelia-шаблон не найден" }, { status: 404 });
-    }
+    const templates = await resolveTemplates(body.templateId);
 
     const candidates = await buildTodayCandidates({ limit: body.candidatesCount });
     const selected = candidates.slice(0, body.candidatesCount);
@@ -78,6 +113,7 @@ export async function POST(request: Request) {
 
     for (const [index, sourceVideo] of selected.entries()) {
       const slot = schedule.slots[index];
+      const template = templates[index % templates.length];
       const titlePrefix = hookPrefixFromMode(sourceVideo.suggestedHookMode);
 
       const pack = await withDbRetry(() =>
@@ -89,13 +125,14 @@ export async function POST(request: Request) {
             game: "ROBLOX",
             clipsCount: 1,
             clipSeconds: body.clipSeconds,
+            hookPreviewSeconds: body.hookPreviewSeconds,
             intervalMin: body.intervalMin,
             intervalMax: body.intervalMax,
             scheduleMode: "DAILY_SCOUT_BEST_WINDOW",
             hookMode: sourceVideo.suggestedHookMode,
             titlePrefix,
             status: "CREATED",
-            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook mode: ${sourceVideo.suggestedHookMode}.`,
+            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook preview: ${body.hookPreviewSeconds} сек. Hook mode: ${sourceVideo.suggestedHookMode}.`,
           },
         }),
       );
@@ -109,6 +146,7 @@ export async function POST(request: Request) {
             sourceOriginalName: sourceVideo.title,
             sourceSizeBytes: null,
             clipSeconds: body.clipSeconds,
+            hookPreviewSeconds: body.hookPreviewSeconds,
             clipStartIndex: 0,
             titlePrefix,
             game: "ROBLOX",
@@ -117,7 +155,7 @@ export async function POST(request: Request) {
             status: "QUEUED",
             totalClips: 0,
             progress: 0,
-            progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100`,
+            progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100 · hook ${body.hookPreviewSeconds} сек`,
             publishTiming: "USA_SMART",
             scheduledAt: slot.scheduledAt,
             cutMode: "SMART_HOOK_AI",
@@ -156,7 +194,7 @@ export async function POST(request: Request) {
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
       candidates: selected,
-      message: `Пакет дня создан: ${jobs.length} задач. Окно: вечер/ночь New York.`,
+      message: `Пакет дня создан: ${jobs.length} задач. Длина: ${body.clipSeconds} сек. Hook: ${body.hookPreviewSeconds} сек. Окно: вечер/ночь New York.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

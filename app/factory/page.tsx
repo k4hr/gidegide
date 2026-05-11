@@ -69,6 +69,7 @@ type FactoryJob = {
   smartStepSeconds: number;
   smartCandidates: number;
   smartMinGapSeconds: number;
+  hookPreviewSeconds: number;
   cancelRequested: boolean;
   createdAt: string;
   targets: {
@@ -1056,9 +1057,11 @@ export default function FactoryPage() {
                     </p>
 
                     <p className="muted">
-                      {job.cutMode === "SMART_LITE"
-                        ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
-                        : "Обычная нарезка подряд"}
+                      {job.cutMode === "SMART_HOOK_AI"
+                        ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
+                        : job.cutMode === "SMART_LITE"
+                          ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
+                          : "Обычная нарезка подряд"}
                     </p>
 
                     {job.clipStartIndex > 0 ? (

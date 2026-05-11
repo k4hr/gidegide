@@ -7,12 +7,15 @@ import { buildSuperUploadSchedule } from "@/lib/factory/super-upload";
 
 export const runtime = "nodejs";
 
+const RANDOM_TEMPLATE_ID = "RANDOM";
+
 const bodySchema = z.object({
   sourceVideoDbId: z.string().min(1),
   accountId: z.string().min(1),
   templateId: z.string().min(1),
   clipsCount: z.coerce.number().int().min(1).max(30).default(10),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
+  hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
   intervalMin: z.coerce.number().int().min(5).max(120).default(45),
   intervalMax: z.coerce.number().int().min(5).max(180).default(60),
   hookMode: z.string().max(80).default("AUTO_BEST_MIX"),
@@ -34,6 +37,52 @@ function getHookPrefix(input: { hookMode: string; titlePrefix: string }) {
   if (mode === "SURVIVAL_SUSPENSE") return "HOOK:SURVIVAL,SUSPENSE";
 
   return input.titlePrefix.trim() || "auto mix";
+}
+
+async function resolveTemplates(templateId: string) {
+  if (templateId === RANDOM_TEMPLATE_ID) {
+    const templates = await withDbRetry(() =>
+      prisma.factoryTemplate.findMany({
+        where: {
+          assetId: {
+            not: null,
+          },
+        },
+        select: {
+          id: true,
+          name: true,
+        },
+        orderBy: [
+          { isDefault: "desc" },
+          { createdAt: "asc" },
+        ],
+      }),
+    );
+
+    if (templates.length === 0) {
+      throw new Error("Нет Amelia-шаблонов с видео. Загрузи видео персонажа и создай шаблон.");
+    }
+
+    return templates;
+  }
+
+  const template = await withDbRetry(() =>
+    prisma.factoryTemplate.findUnique({
+      where: {
+        id: templateId,
+      },
+      select: {
+        id: true,
+        name: true,
+      },
+    }),
+  );
+
+  if (!template) {
+    throw new Error("Шаблон Amelia не найден");
+  }
+
+  return [template];
 }
 
 export async function POST(request: Request) {
@@ -83,28 +132,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const template = await withDbRetry(() =>
-      prisma.factoryTemplate.findUnique({
-        where: {
-          id: body.templateId,
-        },
-        select: {
-          id: true,
-          name: true,
-        },
-      }),
-    );
-
-    if (!template) {
-      return NextResponse.json(
-        {
-          error: "Шаблон Amelia не найден",
-        },
-        {
-          status: 404,
-        },
-      );
-    }
+    const templates = await resolveTemplates(body.templateId);
 
     const schedule = await buildSuperUploadSchedule({
       clipsCount: body.clipsCount,
@@ -126,13 +154,14 @@ export async function POST(request: Request) {
           game: "ROBLOX",
           clipsCount: body.clipsCount,
           clipSeconds: body.clipSeconds,
+          hookPreviewSeconds: body.hookPreviewSeconds,
           intervalMin: body.intervalMin,
           intervalMax: body.intervalMax,
           scheduleMode: "ANALYTICS_BEST_WINDOW",
           hookMode: body.hookMode,
           titlePrefix,
           status: "CREATED",
-          recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
+          recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Hook preview ${body.hookPreviewSeconds} сек. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
         },
       }),
     );
@@ -140,6 +169,8 @@ export async function POST(request: Request) {
     const jobs = [];
 
     for (const slot of schedule.slots) {
+      const template = templates[(slot.index - 1) % templates.length];
+
       const job = await withDbRetry(() =>
         prisma.factoryJob.create({
           data: {
@@ -149,6 +180,7 @@ export async function POST(request: Request) {
             sourceOriginalName: sourceVideo.title,
             sourceSizeBytes: null,
             clipSeconds: body.clipSeconds,
+            hookPreviewSeconds: body.hookPreviewSeconds,
             clipStartIndex: slot.index - 1,
             titlePrefix,
             game: "ROBLOX",
@@ -157,7 +189,7 @@ export async function POST(request: Request) {
             status: "QUEUED",
             totalClips: 0,
             progress: 0,
-            progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · день ${slot.dayIndex}`,
+            progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · hook ${body.hookPreviewSeconds} сек`,
             publishTiming: "USA_SMART",
             scheduledAt: slot.scheduledAt,
             cutMode: "SMART_HOOK_AI",
