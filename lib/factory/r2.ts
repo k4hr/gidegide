@@ -18,6 +18,47 @@ function getRequiredEnv(name: string) {
   return value;
 }
 
+export class MissingR2ObjectError extends Error {
+  key: string;
+  purpose: string;
+
+  constructor(input: { key: string; purpose?: string }) {
+    const purpose = input.purpose ?? "object";
+
+    super(`Missing R2 object for ${purpose}: ${input.key}`);
+    this.name = "MissingR2ObjectError";
+    this.key = input.key;
+    this.purpose = purpose;
+  }
+}
+
+export function isMissingR2ObjectError(error: unknown) {
+  if (error instanceof MissingR2ObjectError) return true;
+
+  const value = error as {
+    name?: string;
+    Code?: string;
+    code?: string;
+    message?: string;
+    $metadata?: {
+      httpStatusCode?: number;
+    };
+  } | null;
+
+  const message = String(value?.message ?? "").toLowerCase();
+  const name = String(value?.name ?? "").toLowerCase();
+  const code = String(value?.Code ?? value?.code ?? "").toLowerCase();
+
+  return (
+    value?.$metadata?.httpStatusCode === 404 ||
+    name === "nosuchkey" ||
+    code === "nosuchkey" ||
+    message.includes("specified key does not exist") ||
+    message.includes("no such key") ||
+    message.includes("not found")
+  );
+}
+
 export function getR2Prefix() {
   return process.env.R2_PREFIX ?? "factory";
 }
@@ -97,6 +138,7 @@ export async function uploadFileToR2(input: {
 export async function downloadR2ObjectToFile(input: {
   key: string;
   filePath: string;
+  purpose?: string;
 }) {
   if (!isR2Enabled()) {
     throw new Error("R2 не настроен");
@@ -105,16 +147,35 @@ export async function downloadR2ObjectToFile(input: {
   await mkdir(path.dirname(input.filePath), { recursive: true });
 
   const client = getR2Client();
+  const purpose = input.purpose ?? "object";
 
-  const response = await client.send(
-    new GetObjectCommand({
-      Bucket: getR2BucketName(),
-      Key: input.key,
-    }),
-  );
+  console.log("Reading R2 object", {
+    purpose,
+    key: input.key,
+  });
+
+  let response;
+
+  try {
+    response = await client.send(
+      new GetObjectCommand({
+        Bucket: getR2BucketName(),
+        Key: input.key,
+      }),
+    );
+  } catch (error) {
+    if (isMissingR2ObjectError(error)) {
+      throw new MissingR2ObjectError({
+        key: input.key,
+        purpose,
+      });
+    }
+
+    throw error;
+  }
 
   if (!response.Body) {
-    throw new Error(`R2 object is empty: ${input.key}`);
+    throw new Error(`R2 object is empty for ${purpose}: ${input.key}`);
   }
 
   await new Promise<void>((resolve, reject) => {

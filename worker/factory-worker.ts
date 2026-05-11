@@ -20,6 +20,7 @@ import { uploadTikTokDraft } from "@/lib/factory/tiktok";
 import {
   downloadR2ObjectToFile,
   getR2Prefix,
+  isMissingR2ObjectError,
   isR2Enabled,
   uploadFileToR2,
 } from "@/lib/factory/r2";
@@ -155,6 +156,7 @@ async function ensureLocalSourceFile(job: {
     await downloadR2ObjectToFile({
       key: job.sourceStorageKey,
       filePath: localPath,
+      purpose: `source video for job ${job.id}`,
     });
 
     await updateJobProgress(job.id, 30, "Исходный MP4 готов");
@@ -242,6 +244,7 @@ async function ensureLocalTemplateAssetFile(target: {
   await downloadR2ObjectToFile({
     key: asset.storageKey,
     filePath: localPath,
+    purpose: `template asset ${template.name} / ${asset.title}`,
   });
 
   return localPath;
@@ -324,10 +327,38 @@ async function ensureLocalThumbnailFile(input: {
     return localPath;
   }
 
-  await downloadR2ObjectToFile({
-    key: thumbnail.storageKey,
-    filePath: localPath,
-  });
+  try {
+    await downloadR2ObjectToFile({
+      key: thumbnail.storageKey,
+      filePath: localPath,
+      purpose: `thumbnail ${thumbnail.title}`,
+    });
+  } catch (error) {
+    if (isMissingR2ObjectError(error)) {
+      console.warn(
+        `Thumbnail "${thumbnail.title}" is missing in R2. Continuing without thumbnail.`,
+        {
+          thumbnailId: thumbnail.id,
+          storageKey: thumbnail.storageKey,
+        },
+      );
+
+      await safeDb(() =>
+        prisma.factoryThumbnail.update({
+          where: {
+            id: thumbnail.id,
+          },
+          data: {
+            isActive: false,
+          },
+        }),
+      );
+
+      return null;
+    }
+
+    throw error;
+  }
 
   return localPath;
 }

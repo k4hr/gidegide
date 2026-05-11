@@ -165,6 +165,9 @@ async function extractFrame(input: {
   await runCommand(
     "ffmpeg",
     [
+      "-hide_banner",
+      "-loglevel",
+      "error",
       "-y",
       "-ss",
       String(Math.max(0, input.timeSec)),
@@ -172,14 +175,15 @@ async function extractFrame(input: {
       input.sourcePath,
       "-frames:v",
       "1",
+      "-update",
+      "1",
       "-vf",
-      `scale=${FRAME_WIDTH}:-1:force_original_aspect_ratio=decrease`,
+      `scale=${FRAME_WIDTH}:-2:force_original_aspect_ratio=decrease`,
       "-q:v",
       "4",
       input.outputPath,
     ],
     {
-      logPrefix: "ai-hook-frame",
       isCanceled: input.isCanceled,
     },
   );
