@@ -8,6 +8,7 @@ type UploadYoutubeShortInput = {
   filePath: string;
   title: string;
   description?: string;
+  thumbnailPath?: string | null;
 };
 
 export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
@@ -77,8 +78,23 @@ export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
     throw new Error("YouTube не вернул videoId");
   }
 
+  if (input.thumbnailPath) {
+    try {
+      await youtube.thumbnails.set({
+        videoId,
+        media: {
+          body: fs.createReadStream(input.thumbnailPath),
+        },
+      });
+    } catch (error) {
+      console.warn("YouTube thumbnail upload failed. Video stays published without custom thumbnail.", error);
+    }
+  }
+
   return {
     id: videoId,
     url: `https://www.youtube.com/watch?v=${videoId}`,
   };
 }
+
+export const uploadYoutubeVideo = uploadYoutubeShort;

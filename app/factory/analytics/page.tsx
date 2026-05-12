@@ -161,6 +161,8 @@ export default function FactoryAnalyticsPage() {
   const [period, setPeriod] = useState<AnalyticsPeriod>("day");
   const [deletingPublishId, setDeletingPublishId] = useState("");
   const [deleteMessage, setDeleteMessage] = useState("");
+  const [aiAnalysis, setAiAnalysis] = useState("");
+  const [isAiAnalyzing, setIsAiAnalyzing] = useState(false);
 
   async function loadAnalytics() {
     try {
@@ -185,6 +187,34 @@ export default function FactoryAnalyticsPage() {
       );
     } finally {
       setIsLoading(false);
+    }
+  }
+
+
+  async function runAiAnalysis() {
+    setIsAiAnalyzing(true);
+    setAiAnalysis("");
+    setError("");
+
+    try {
+      const response = await fetch(`/api/factory/analytics/ai?period=${period}`, {
+        method: "POST",
+      });
+      const result = (await response.json()) as { analysis?: string; error?: string };
+
+      if (!response.ok) {
+        throw new Error(result.error ?? "Не получилось выполнить AI-анализ");
+      }
+
+      setAiAnalysis(result.analysis ?? "AI не вернул анализ.");
+    } catch (analysisError) {
+      setError(
+        analysisError instanceof Error
+          ? analysisError.message
+          : "Не получилось выполнить AI-анализ",
+      );
+    } finally {
+      setIsAiAnalyzing(false);
     }
   }
 
@@ -283,6 +313,7 @@ export default function FactoryAnalyticsPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/long-video">Видео 16:9</Link>
           <Link href="/factory/analytics">Аналитика</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
@@ -370,6 +401,30 @@ export default function FactoryAnalyticsPage() {
             <p className="muted">
               Пока мало данных. Запусти analytics-worker и дождись первых
               снимков статистики.
+            </p>
+          )}
+        </section>
+
+        <section className="analytics-panel ai-analytics-panel">
+          <div className="analytics-table-header">
+            <div>
+              <h2>AI-анализ продвижения</h2>
+              <p className="muted">
+                Профессиональный разбор за выбранный период: день, неделя, месяц или все.
+                AI ищет паттерны, что убивает рост, и дает план следующего залива.
+              </p>
+            </div>
+
+            <button type="button" onClick={runAiAnalysis} disabled={isAiAnalyzing}>
+              {isAiAnalyzing ? "AI анализирует..." : "Проанализировать через AI"}
+            </button>
+          </div>
+
+          {aiAnalysis ? (
+            <pre className="ai-analysis-output">{aiAnalysis}</pre>
+          ) : (
+            <p className="muted">
+              Нажми кнопку — AI посмотрит ролики за текущий период и даст конкретный план.
             </p>
           )}
         </section>

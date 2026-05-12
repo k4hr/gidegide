@@ -80,35 +80,112 @@ function normalizeOverlayText(value: string) {
 }
 
 function normalizeTitle(value: string, sourceTitle?: string | null) {
-  const cleaned = value.replace(/\s+/g, " ").trim();
-
-  if (!cleaned) {
-    return buildFallbackTitle(sourceTitle);
-  }
-
-  const withRoblox = /roblox/i.test(cleaned) ? cleaned : `Roblox: ${cleaned}`;
-
-  return withRoblox.slice(0, 95);
+  return normalizeUniqueTitle({
+    title: value,
+    sourceTitle,
+    usedTitles: new Set<string>(),
+  });
 }
 
-function buildFallbackTitle(sourceTitle?: string | null) {
+function detectSourceTheme(sourceTitle?: string | null) {
   const source = (sourceTitle ?? "").toLowerCase();
 
-  if (source.includes("obby")) return "Roblox obby: No way he makes this";
-  if (source.includes("parkour")) return "Roblox parkour: This got too close";
-  if (source.includes("tower")) return "Roblox tower: The final jump was insane";
-  if (source.includes("escape")) return "Roblox escape: He should not survive this";
-  if (source.includes("survive") || source.includes("survival")) {
-    return "Roblox survival: This was too close";
-  }
-  if (source.includes("funny") || source.includes("fail")) {
-    return "Roblox fail: The ending hurts";
-  }
-  if (source.includes("doors") || source.includes("horror")) {
-    return "Roblox horror: Wait for the ending";
+  if (source.includes("obby")) return "obby";
+  if (source.includes("parkour")) return "parkour";
+  if (source.includes("tower")) return "tower";
+  if (source.includes("escape")) return "escape";
+  if (source.includes("survive") || source.includes("survival")) return "survival";
+  if (source.includes("funny")) return "funny";
+  if (source.includes("fail")) return "fail";
+  if (source.includes("doors") || source.includes("horror")) return "horror";
+  if (source.includes("update")) return "update";
+  if (source.includes("trend")) return "trend";
+  if (source.includes("event")) return "event";
+  if (source.includes("challenge")) return "challenge";
+
+  return "moment";
+}
+
+function getTitleThemeLabel(sourceTitle?: string | null, momentType?: string | null) {
+  const combined = `${sourceTitle ?? ""} ${momentType ?? ""}`.toLowerCase();
+
+  if (combined.includes("obby")) return "obby";
+  if (combined.includes("parkour")) return "parkour";
+  if (combined.includes("tower")) return "tower";
+  if (combined.includes("escape")) return "escape";
+  if (combined.includes("survival") || combined.includes("survive")) return "survival";
+  if (combined.includes("horror") || combined.includes("doors")) return "horror";
+  if (combined.includes("fail")) return "fail";
+  if (combined.includes("funny")) return "funny moment";
+  if (combined.includes("update")) return "update";
+  if (combined.includes("trend")) return "trend";
+  if (combined.includes("event")) return "event";
+  if (combined.includes("challenge")) return "challenge";
+
+  return detectSourceTheme(sourceTitle);
+}
+
+const TITLE_HOOKS = [
+  "Nobody expected this ending",
+  "This got way too close",
+  "He almost lost everything",
+  "The last second changed it all",
+  "This looked impossible",
+  "He should not have survived",
+  "This moment got chaotic fast",
+  "The final move saved the run",
+  "This went wrong so fast",
+  "The timing was actually wild",
+  "This was harder than it looked",
+  "The ending was pure chaos",
+  "He panicked at the worst time",
+  "This clip turned insane",
+  "That save was way too lucky",
+];
+
+function buildFallbackTitle(sourceTitle?: string | null, momentType?: string | null, salt = 0) {
+  const theme = getTitleThemeLabel(sourceTitle, momentType);
+  const hook = TITLE_HOOKS[Math.abs(salt) % TITLE_HOOKS.length];
+
+  return `Roblox ${theme}: ${hook}`.replace(/\s+/g, " ").slice(0, 95);
+}
+
+function normalizeUniqueTitle(input: {
+  title?: string | null;
+  sourceTitle?: string | null;
+  momentType?: string | null;
+  salt?: number;
+  usedTitles: Set<string>;
+}) {
+  const raw = (input.title ?? "").replace(/\s+/g, " ").trim();
+  const generic = /^(roblox:\s*)?(wait for (the )?ending|watch till the end|wait for it|insane roblox moment)$/i.test(raw);
+  let base = !raw || generic ? buildFallbackTitle(input.sourceTitle, input.momentType, input.salt ?? 0) : raw;
+
+  if (!/roblox/i.test(base)) {
+    base = `Roblox ${getTitleThemeLabel(input.sourceTitle, input.momentType)}: ${base}`;
   }
 
-  return "Roblox: Wait for the ending";
+  base = base
+    .replace(/^Roblox:\s*/i, `Roblox ${getTitleThemeLabel(input.sourceTitle, input.momentType)}: `)
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 95);
+
+  let candidate = base;
+  let suffixIndex = 0;
+
+  while (input.usedTitles.has(candidate.toLowerCase())) {
+    suffixIndex += 1;
+    candidate = buildFallbackTitle(
+      input.sourceTitle,
+      input.momentType,
+      (input.salt ?? 0) + suffixIndex,
+    );
+  }
+
+  input.usedTitles.add(candidate.toLowerCase());
+
+  return candidate;
 }
 
 function buildFallbackOverlay(sourceTitle?: string | null) {
@@ -212,13 +289,14 @@ async function reviewCandidateWithOpenAi(input: {
       type: "text",
       text: [
         "You are selecting viral hook moments for Roblox YouTube Shorts.",
-        "The final Short will start with a 3 second full-screen Roblox preview, then switch to gameplay + a girl watching.",
+        "The final Short will start with a 7-10 second full-screen Roblox preview, then switch to gameplay + a girl watching.",
         "Judge only whether these frames are a strong first-2-second hook.",
         "Prefer danger, jumps, falls, lava, obstacles, escape, near fails, scary monsters, intense timing, funny fails, clear visual tension.",
         "Return strict JSON only.",
         `Source video title: ${input.sourceTitle ?? "unknown"}`,
+        "Title rules: it must contain Roblox, reference the source idea or moment, and must not be generic like Roblox: Wait for the ending.",
         "Schema:",
-        "{\"hookScore\":0-100,\"momentType\":\"short_snake_case\",\"overlayText\":\"MAX 6 WORDS UPPERCASE\",\"title\":\"Roblox ...\",\"reason\":\"one short sentence\"}",
+        "{\"hookScore\":0-100,\"momentType\":\"short_snake_case\",\"overlayText\":\"MAX 6 WORDS UPPERCASE\",\"title\":\"Roblox obby: unique hook title\",\"reason\":\"one short sentence\"}",
       ].join("\n"),
     },
     ...input.frames.map((frame) => ({
@@ -286,7 +364,7 @@ function buildFallbackReview(input: {
     hookScore: clamp(input.technicalScore, 35, 88),
     momentType: "technical_motion_peak",
     overlayText: buildFallbackOverlay(input.sourceTitle),
-    title: buildFallbackTitle(input.sourceTitle),
+    title: buildFallbackTitle(input.sourceTitle, "technical_motion_peak", input.technicalScore),
     reason: "Fallback: selected by motion, scene change and audio peak.",
   } satisfies AiCandidateReview;
 }
@@ -343,6 +421,7 @@ function selectBest(input: {
   candidates: AiHookCutCandidate[];
   maxClips: number;
   minGapSeconds: number;
+  sourceTitle?: string | null;
 }) {
   const sorted = [...input.candidates].sort((a, b) => b.finalScore - a.finalScore);
   const selected: AiHookCutCandidate[] = [];
@@ -356,11 +435,26 @@ function selectBest(input: {
 
   const selectedKeys = new Set(selected.map((item) => `${item.startSec}:${item.hookMomentSec}`));
 
+  const usedTitles = new Set<string>();
+
   return input.candidates
-    .map((candidate) => ({
-      ...candidate,
-      selected: selectedKeys.has(`${candidate.startSec}:${candidate.hookMomentSec}`),
-    }))
+    .map((candidate, index) => {
+      const isSelected = selectedKeys.has(`${candidate.startSec}:${candidate.hookMomentSec}`);
+
+      return {
+        ...candidate,
+        selected: isSelected,
+        title: isSelected
+          ? normalizeUniqueTitle({
+              title: candidate.title,
+              sourceTitle: input.sourceTitle,
+              momentType: candidate.momentType,
+              salt: index + candidate.finalScore,
+              usedTitles,
+            })
+          : candidate.title,
+      };
+    })
     .sort((a, b) => a.startSec - b.startSec);
 }
 
@@ -485,6 +579,7 @@ export async function buildAiHookCutCandidates(input: BuildAiHookCutInput) {
       candidates,
       maxClips: input.maxClips,
       minGapSeconds: Math.max(input.clipSeconds, input.minGapSeconds),
+      sourceTitle: input.sourceTitle,
     });
   } finally {
     await rm(tempDir, { recursive: true, force: true });

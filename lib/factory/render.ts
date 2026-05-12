@@ -21,6 +21,10 @@ type CancelCheck = () => Promise<boolean>;
 
 export type FactoryRenderTemplate = {
   mirrorLana: boolean;
+  facecamPosition?: "TOP_LEFT" | "TOP_RIGHT" | "BOTTOM_LEFT" | "BOTTOM_RIGHT";
+  facecamWidthPercent?: number;
+  facecamMarginPercent?: number;
+  facecamBorderRadius?: number;
 };
 
 type RenderVariant = {
@@ -515,4 +519,119 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
       force: true,
     });
   }
+}
+
+function buildLongVideoMainChain() {
+  return [
+    "scale=1920:1080:force_original_aspect_ratio=increase",
+    "crop=1920:1080:(iw-1920)/2:(ih-1080)/2",
+    "setsar=1",
+    "format=yuv420p",
+    "fps=30",
+  ].join(",");
+}
+
+function buildLongVideoFacecamChain(template: FactoryRenderTemplate) {
+  const widthPercent = Math.max(12, Math.min(40, template.facecamWidthPercent ?? 24));
+  const width = Math.round((1920 * widthPercent) / 100);
+  const height = Math.round((width * 9) / 16);
+  return [
+    `scale=${width}:${height}:force_original_aspect_ratio=increase`,
+    `crop=${width}:${height}:(iw-${width})/2:(ih-${height})/2`,
+    template.mirrorLana ? "hflip" : null,
+    "setsar=1",
+    "format=rgba",
+  ]
+    .filter(Boolean)
+    .join(",");
+}
+
+function getFacecamOverlayPosition(template: FactoryRenderTemplate) {
+  const marginPercent = Math.max(1, Math.min(10, template.facecamMarginPercent ?? 3));
+  const marginX = Math.round((1920 * marginPercent) / 100);
+  const marginY = Math.round((1080 * marginPercent) / 100);
+  const position = template.facecamPosition ?? "TOP_LEFT";
+
+  if (position === "TOP_RIGHT") return `main_w-overlay_w-${marginX}:${marginY}`;
+  if (position === "BOTTOM_LEFT") return `${marginX}:main_h-overlay_h-${marginY}`;
+  if (position === "BOTTOM_RIGHT") return `main_w-overlay_w-${marginX}:main_h-overlay_h-${marginY}`;
+
+  return `${marginX}:${marginY}`;
+}
+
+function buildLongVideo16x9Filter(template: FactoryRenderTemplate) {
+  return [
+    `[0:v]${buildLongVideoMainChain()}[base]`,
+    `[1:v]${buildLongVideoFacecamChain(template)}[face]`,
+    `[base][face]overlay=${getFacecamOverlayPosition(template)}:format=auto,format=yuv420p[v]`,
+  ].join(";");
+}
+
+export async function renderLongVideo16x9(input: {
+  jobId: string;
+  sourcePath: string;
+  reactionPath: string;
+  template: FactoryRenderTemplate;
+  isCanceled?: CancelCheck;
+}) {
+  await ensureFactoryDirs();
+  await assertSourceAudioOrThrow(input.sourcePath);
+
+  const outputPath = path.join(FACTORY_OUTPUT_DIR, `${input.jobId}-long-16x9.mp4`);
+  const duration = await getVideoDurationSeconds(input.sourcePath);
+
+  await runCommand(
+    "ffmpeg",
+    [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      input.sourcePath,
+      "-stream_loop",
+      "-1",
+      "-t",
+      String(duration),
+      "-i",
+      input.reactionPath,
+      "-filter_complex",
+      buildLongVideo16x9Filter(input.template),
+      "-map",
+      "[v]",
+      "-map",
+      "0:a:0",
+      "-t",
+      String(duration),
+      "-r",
+      "30",
+      "-pix_fmt",
+      "yuv420p",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-b:a",
+      "160k",
+      "-ar",
+      "44100",
+      "-ac",
+      "2",
+      "-movflags",
+      "+faststart",
+      outputPath,
+    ],
+    {
+      logPrefix: `ffmpeg-long-${input.jobId}`,
+      isCanceled: input.isCanceled,
+    },
+  );
+
+  await assertVideoHasAudio(outputPath);
+
+  return outputPath;
 }

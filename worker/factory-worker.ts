@@ -13,9 +13,10 @@ import {
   downloadSourceFromUrl,
   getSourceDuration,
   renderFactoryClip,
+  renderLongVideo16x9,
   type FactoryRenderTemplate,
 } from "@/lib/factory/render";
-import { uploadYoutubeShort } from "@/lib/factory/youtube";
+import { uploadYoutubeShort, uploadYoutubeVideo } from "@/lib/factory/youtube";
 import { uploadTikTokDraft } from "@/lib/factory/tiktok";
 import {
   downloadR2ObjectToFile,
@@ -179,12 +180,20 @@ async function ensureLocalSourceFile(job: {
 function getDefaultTemplate(): FactoryRenderTemplate {
   return {
     mirrorLana: false,
+    facecamPosition: "TOP_LEFT",
+    facecamWidthPercent: 24,
+    facecamMarginPercent: 3,
+    facecamBorderRadius: 18,
   };
 }
 
 function getTargetTemplate(target: {
   template: {
     mirrorLana: boolean;
+    facecamPosition?: "TOP_LEFT" | "TOP_RIGHT" | "BOTTOM_LEFT" | "BOTTOM_RIGHT";
+    facecamWidthPercent?: number;
+    facecamMarginPercent?: number;
+    facecamBorderRadius?: number;
   } | null;
 }): FactoryRenderTemplate {
   if (!target.template) {
@@ -193,6 +202,10 @@ function getTargetTemplate(target: {
 
   return {
     mirrorLana: target.template.mirrorLana,
+    facecamPosition: target.template.facecamPosition ?? "TOP_LEFT",
+    facecamWidthPercent: target.template.facecamWidthPercent ?? 24,
+    facecamMarginPercent: target.template.facecamMarginPercent ?? 3,
+    facecamBorderRadius: target.template.facecamBorderRadius ?? 18,
   };
 }
 
@@ -259,6 +272,49 @@ function hashString(value: string) {
   }
 
   return hash >>> 0;
+}
+
+
+function makeJobTitleUnique(input: {
+  title: string;
+  game: FactoryGame;
+  sourceTitle?: string | null;
+  clipIndex: number;
+  usedTitles: Set<string>;
+}) {
+  let title = input.title.replace(/\s+/g, " ").trim();
+
+  if (!/roblox/i.test(title)) {
+    title = `Roblox: ${title}`;
+  }
+
+  if (/^roblox:\s*wait for (the )?ending$/i.test(title) || !title) {
+    title = buildClipTitle({
+      game: input.game,
+      clipIndex: input.clipIndex,
+      customPrefix: "auto mix",
+      seedHint: `${input.sourceTitle ?? "source"}:${input.clipIndex}:unique`,
+      sourceTitle: input.sourceTitle,
+    });
+  }
+
+  let candidate = title.slice(0, 95);
+  let attempt = 0;
+
+  while (input.usedTitles.has(candidate.toLowerCase())) {
+    attempt += 1;
+    candidate = buildClipTitle({
+      game: input.game,
+      clipIndex: input.clipIndex + attempt,
+      customPrefix: "auto mix",
+      seedHint: `${input.sourceTitle ?? "source"}:${input.clipIndex}:${attempt}`,
+      sourceTitle: input.sourceTitle,
+    }).slice(0, 95);
+  }
+
+  input.usedTitles.add(candidate.toLowerCase());
+
+  return candidate;
 }
 
 async function selectFactoryThumbnail(input: {
@@ -363,6 +419,177 @@ async function ensureLocalThumbnailFile(input: {
   return localPath;
 }
 
+async function ensureLocalJobThumbnailFile(job: {
+  id: string;
+  longVideoThumbnailPath: string | null;
+  longVideoThumbnailStorageKey: string | null;
+}) {
+  if (job.longVideoThumbnailPath && fs.existsSync(job.longVideoThumbnailPath)) {
+    return job.longVideoThumbnailPath;
+  }
+
+  if (!job.longVideoThumbnailStorageKey || !isR2Enabled()) {
+    return null;
+  }
+
+  await mkdir(FACTORY_THUMBNAILS_DIR, { recursive: true });
+  const ext = path.extname(job.longVideoThumbnailStorageKey) || ".jpg";
+  const localPath = path.join(FACTORY_THUMBNAILS_DIR, `${job.id}-long-thumbnail${ext}`);
+
+  if (fs.existsSync(localPath)) {
+    return localPath;
+  }
+
+  try {
+    await downloadR2ObjectToFile({
+      key: job.longVideoThumbnailStorageKey,
+      filePath: localPath,
+      purpose: `long video thumbnail for job ${job.id}`,
+    });
+    return localPath;
+  } catch (error) {
+    if (isMissingR2ObjectError(error)) {
+      console.warn("Long video thumbnail is missing in R2. Continuing without thumbnail.", {
+        jobId: job.id,
+        storageKey: job.longVideoThumbnailStorageKey,
+      });
+      await safeDb(() =>
+        prisma.factoryJob.update({
+          where: { id: job.id },
+          data: { longVideoThumbnailStorageKey: null, longVideoThumbnailPath: null },
+        }),
+      );
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function processLongVideoJob(input: {
+  job: any;
+  sourcePath: string;
+}) {
+  const { job, sourcePath } = input;
+  const target = job.targets[0];
+
+  if (!target) {
+    throw new Error("У 16:9 задачи нет аккаунта публикации");
+  }
+
+  await updateJobProgress(job.id, 36, "Видео 16:9: готовлю facecam-реакцию");
+  const reactionPath = await ensureLocalTemplateAssetFile(target);
+  const thumbnailPath = await ensureLocalJobThumbnailFile(job);
+
+  await db(() =>
+    prisma.factoryJob.update({
+      where: { id: job.id },
+      data: { status: "RENDERING", totalClips: 1, progress: 45, progressLabel: "Рендерю 16:9 видео 1920x1080" },
+    }),
+  );
+
+  const baseTemplate = getTargetTemplate(target);
+  const outputPath = await renderLongVideo16x9({
+    jobId: job.id,
+    sourcePath,
+    reactionPath,
+    template: {
+      ...baseTemplate,
+      facecamPosition: job.longVideoFacecamPosition ?? baseTemplate.facecamPosition,
+      facecamWidthPercent: job.longVideoFacecamWidthPercent ?? baseTemplate.facecamWidthPercent,
+      facecamMarginPercent: job.longVideoFacecamMarginPercent ?? baseTemplate.facecamMarginPercent,
+    },
+    isCanceled: () => isJobCanceled(job.id),
+  });
+
+  const title = (job.longVideoTitle || job.titlePrefix || job.sourceOriginalName || "Roblox video").slice(0, 100);
+  const description = job.longVideoDescription || "";
+
+  const sourceDuration = await getSourceDuration(sourcePath);
+  const clip = await db(() =>
+    prisma.factoryClip.create({
+      data: {
+        jobId: job.id,
+        index: 1,
+        startSec: 0,
+        endSec: sourceDuration,
+        title,
+      },
+    }),
+  );
+
+  const storageKey = `${getR2Prefix()}/jobs/${job.id}/long-video/output.mp4`;
+  const uploadedKey = await uploadFileToR2({
+    key: storageKey,
+    filePath: outputPath,
+    contentType: "video/mp4",
+  });
+
+  await db(() =>
+    prisma.factoryJob.update({
+      where: { id: job.id },
+      data: { status: "PUBLISHING", progress: 82, progressLabel: `Загружаю 16:9 видео в ${target.account.name}` },
+    }),
+  );
+
+  const publish = await db(() =>
+    prisma.factoryPublish.create({
+      data: {
+        clipId: clip.id,
+        targetId: target.id,
+        accountId: target.accountId,
+        platform: target.platform,
+        status: "QUEUED",
+        renderFilePath: outputPath,
+        renderStorageKey: uploadedKey,
+        title,
+        description,
+      },
+    }),
+  );
+
+  if (target.platform !== "YOUTUBE") {
+    throw new Error("Видео 16:9 сейчас поддерживает только YouTube");
+  }
+
+  await db(() =>
+    prisma.factoryPublish.update({
+      where: { id: publish.id },
+      data: { status: "UPLOADING", error: null },
+    }),
+  );
+
+  const result = await uploadYoutubeVideo({
+    accountId: target.accountId,
+    filePath: outputPath,
+    title,
+    description,
+    thumbnailPath,
+  });
+
+  await db(() =>
+    prisma.factoryPublish.update({
+      where: { id: publish.id },
+      data: {
+        status: "PUBLISHED",
+        platformPostId: result.id,
+        platformUrl: result.url,
+        publishedAt: new Date(),
+        error: null,
+      },
+    }),
+  );
+
+  await db(() =>
+    prisma.factoryJob.update({
+      where: { id: job.id },
+      data: { status: "DONE", progress: 100, progressLabel: "Готово" },
+    }),
+  );
+
+  await rm(outputPath, { force: true });
+}
+
 async function processOneJob() {
   const job = await db(() =>
     prisma.factoryJob.findFirst({
@@ -443,6 +670,16 @@ async function processOneJob() {
     sourcePath = await ensureLocalSourceFile(job);
 
     await assertNotCanceled(job.id);
+
+    if (job.renderFormat === "LONG_16_9") {
+      const readySourcePath = sourcePath;
+      await processLongVideoJob({ job, sourcePath: readySourcePath });
+
+      await rm(readySourcePath, { force: true });
+
+      console.log(`Long video job ${job.id} done`);
+      return true;
+    }
 
     const duration = await getSourceDuration(sourcePath);
 
@@ -627,6 +864,7 @@ async function processOneJob() {
     }, 0);
 
     let completedRenders = 0;
+    const usedPackageTitles = new Set<string>();
 
     for (let i = 0; i < clipStarts.length; i += 1) {
       await assertNotCanceled(job.id);
@@ -637,12 +875,19 @@ async function processOneJob() {
       const endSec = startSec + job.clipSeconds;
 
       const aiHookPlan = aiHookPlanByStart.get(startSec);
-      const baseTitle = aiHookPlan?.title ?? buildClipTitle({
+      const rawBaseTitle = aiHookPlan?.title ?? buildClipTitle({
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
         seedHint: `${job.id}:${clipIndex}:base`,
         sourceTitle: job.sourceOriginalName,
+      });
+      const baseTitle = makeJobTitleUnique({
+        title: rawBaseTitle,
+        game: job.game,
+        sourceTitle: job.sourceOriginalName,
+        clipIndex,
+        usedTitles: usedPackageTitles,
       });
 
       const clip = await db(() =>
@@ -666,13 +911,7 @@ async function processOneJob() {
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
 
-        const title = aiHookPlan?.title ?? buildClipTitle({
-          game: job.game,
-          clipIndex,
-          customPrefix: titlePrefixForTarget,
-          seedHint: `${job.id}:${target.accountId}:${clipIndex}`,
-          sourceTitle: job.sourceOriginalName,
-        });
+        const title = baseTitle;
 
         const description = buildClipDescription({
           game: job.game,
@@ -756,6 +995,8 @@ async function processOneJob() {
                 status: "QUEUED",
                 renderFilePath: outputPath,
                 renderStorageKey: uploadedKey,
+                title,
+                description,
               },
             }),
           );

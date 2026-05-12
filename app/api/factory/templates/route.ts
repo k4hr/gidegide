@@ -13,6 +13,11 @@ const templateSchema = z.object({
   lanaWidth: z.number().int().min(120).max(1080),
   lanaHeight: z.number().int().min(120).max(1920),
   mirrorLana: z.boolean(),
+  kind: z.enum(["SHORTS_9_16", "LONG_16_9"]).default("SHORTS_9_16"),
+  facecamPosition: z.enum(["TOP_LEFT", "TOP_RIGHT", "BOTTOM_LEFT", "BOTTOM_RIGHT"]).default("TOP_LEFT"),
+  facecamWidthPercent: z.number().int().min(12).max(40).default(24),
+  facecamMarginPercent: z.number().int().min(1).max(10).default(3),
+  facecamBorderRadius: z.number().int().min(0).max(64).default(18),
   isDefault: z.boolean().default(false),
 });
 
@@ -77,6 +82,11 @@ export async function POST(request: Request) {
         lanaWidth: data.lanaWidth,
         lanaHeight: data.lanaHeight,
         mirrorLana: data.mirrorLana,
+        kind: data.kind,
+        facecamPosition: data.facecamPosition,
+        facecamWidthPercent: data.facecamWidthPercent,
+        facecamMarginPercent: data.facecamMarginPercent,
+        facecamBorderRadius: data.facecamBorderRadius,
         isDefault: data.isDefault,
       },
       include: {

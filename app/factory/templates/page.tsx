@@ -9,21 +9,45 @@ type FactoryAsset = {
   originalName: string | null;
 };
 
+type TemplateKind = "SHORTS_9_16" | "LONG_16_9";
+type FacecamPosition = "TOP_LEFT" | "TOP_RIGHT" | "BOTTOM_LEFT" | "BOTTOM_RIGHT";
+
 type FactoryTemplate = {
   id: string;
   name: string;
   isDefault: boolean;
   mirrorLana: boolean;
+  kind: TemplateKind;
+  facecamPosition: FacecamPosition;
+  facecamWidthPercent: number;
+  facecamMarginPercent: number;
+  facecamBorderRadius: number;
   asset: FactoryAsset | null;
 };
+
+const positions: Array<{ value: FacecamPosition; label: string }> = [
+  { value: "TOP_LEFT", label: "Слева сверху" },
+  { value: "TOP_RIGHT", label: "Справа сверху" },
+  { value: "BOTTOM_LEFT", label: "Слева снизу" },
+  { value: "BOTTOM_RIGHT", label: "Справа снизу" },
+];
+
+function positionLabel(value: FacecamPosition) {
+  return positions.find((position) => position.value === value)?.label ?? value;
+}
 
 export default function FactoryTemplatesPage() {
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [assets, setAssets] = useState<FactoryAsset[]>([]);
-  const [name, setName] = useState("Ember watch");
+  const [name, setName] = useState("Amelia watch");
   const [assetId, setAssetId] = useState("");
   const [mirrorLana, setMirrorLana] = useState(false);
   const [isDefault, setIsDefault] = useState(true);
+  const [kind, setKind] = useState<TemplateKind>("SHORTS_9_16");
+  const [facecamPosition, setFacecamPosition] = useState<FacecamPosition>("TOP_LEFT");
+  const [facecamWidthPercent, setFacecamWidthPercent] = useState(24);
+  const [facecamMarginPercent, setFacecamMarginPercent] = useState(3);
+  const [facecamBorderRadius, setFacecamBorderRadius] = useState(18);
   const [error, setError] = useState("");
 
   const selectedAsset = useMemo(
@@ -32,29 +56,17 @@ export default function FactoryTemplatesPage() {
   );
 
   async function loadTemplates() {
-    const response = await fetch("/api/factory/templates", {
-      cache: "no-store",
-    });
-
-    const data = (await response.json()) as {
-      templates: FactoryTemplate[];
-    };
-
-    setTemplates(data.templates);
+    const response = await fetch("/api/factory/templates", { cache: "no-store" });
+    const data = (await response.json()) as { templates: FactoryTemplate[] };
+    setTemplates(data.templates ?? []);
   }
 
   async function loadAssets() {
-    const response = await fetch("/api/factory/assets", {
-      cache: "no-store",
-    });
+    const response = await fetch("/api/factory/assets", { cache: "no-store" });
+    const data = (await response.json()) as { assets: FactoryAsset[] };
+    setAssets(data.assets ?? []);
 
-    const data = (await response.json()) as {
-      assets: FactoryAsset[];
-    };
-
-    setAssets(data.assets);
-
-    if (!assetId && data.assets[0]) {
+    if (!assetId && data.assets?.[0]) {
       setAssetId(data.assets[0].id);
     }
   }
@@ -62,11 +74,11 @@ export default function FactoryTemplatesPage() {
   useEffect(() => {
     loadTemplates();
     loadAssets();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveTemplate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
     setError("");
 
     try {
@@ -76,9 +88,7 @@ export default function FactoryTemplatesPage() {
 
       const response = await fetch("/api/factory/templates", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
           assetId,
@@ -88,12 +98,14 @@ export default function FactoryTemplatesPage() {
           lanaHeight: 960,
           mirrorLana,
           isDefault,
+          kind,
+          facecamPosition,
+          facecamWidthPercent,
+          facecamMarginPercent,
+          facecamBorderRadius,
         }),
       });
-
-      const data = (await response.json()) as {
-        error?: string;
-      };
+      const data = (await response.json()) as { error?: string };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Не получилось сохранить шаблон");
@@ -101,40 +113,8 @@ export default function FactoryTemplatesPage() {
 
       await loadTemplates();
     } catch (saveError) {
-      setError(
-        saveError instanceof Error
-          ? saveError.message
-          : "Не получилось сохранить шаблон",
-      );
+      setError(saveError instanceof Error ? saveError.message : "Не получилось сохранить шаблон");
     }
-  }
-
-  async function makeDefault(id: string) {
-    await fetch(`/api/factory/templates/${id}`, {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        isDefault: true,
-      }),
-    });
-
-    await loadTemplates();
-  }
-
-  async function removeTemplate(id: string) {
-    const confirmed = window.confirm(
-      "Удалить шаблон? Если он был выбран в задачах, старые задачи останутся в истории.",
-    );
-
-    if (!confirmed) return;
-
-    await fetch(`/api/factory/templates/${id}`, {
-      method: "DELETE",
-    });
-
-    await loadTemplates();
   }
 
   return (
@@ -143,6 +123,8 @@ export default function FactoryTemplatesPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/long-video">Видео 16:9</Link>
+          <Link href="/factory/analytics">Аналитика</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
@@ -151,38 +133,24 @@ export default function FactoryTemplatesPage() {
         <section className="card">
           <h1>Шаблоны персонажей</h1>
           <p>
-            Новый шаблон — это только видео персонажа и зеркальность. Рендер всегда
-            делит экран 9:16 ровно пополам: сверху игра, снизу персонаж по центру
-            с сохранением пропорций.
+            Один и тот же asset можно использовать для Shorts 9:16 и для обычных
+            YouTube-видео 16:9. Для 16:9 выбирается позиция facecam в углу.
           </p>
 
           <div className="template-editor split-template-editor">
             <form className="grid" onSubmit={saveTemplate}>
               <label>
                 Название шаблона
-                <input
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  placeholder="Lana watch / Ember watch / Mia watch"
-                  required
-                />
+                <input value={name} onChange={(event) => setName(event.target.value)} required />
               </label>
 
               <label>
-                Видео персонажа для этого шаблона
-                <select
-                  value={assetId}
-                  onChange={(event) => setAssetId(event.target.value)}
-                  required
-                >
-                  {assets.length === 0 ? (
-                    <option value="">Сначала загрузи видео персонажа</option>
-                  ) : null}
-
+                Видео персонажа
+                <select value={assetId} onChange={(event) => setAssetId(event.target.value)} required>
+                  {assets.length === 0 ? <option value="">Сначала загрузи видео персонажа</option> : null}
                   {assets.map((asset) => (
                     <option key={asset.id} value={asset.id}>
-                      {asset.title}
-                      {asset.originalName ? ` — ${asset.originalName}` : ""}
+                      {asset.title}{asset.originalName ? ` — ${asset.originalName}` : ""}
                     </option>
                   ))}
                 </select>
@@ -190,49 +158,67 @@ export default function FactoryTemplatesPage() {
 
               <div className="grid grid-2">
                 <label>
-                  Отзеркалить персонажа
-                  <select
-                    value={mirrorLana ? "yes" : "no"}
-                    onChange={(event) =>
-                      setMirrorLana(event.target.value === "yes")
-                    }
-                  >
-                    <option value="no">Нет</option>
-                    <option value="yes">Да</option>
+                  Тип шаблона
+                  <select value={kind} onChange={(event) => setKind(event.target.value as TemplateKind)}>
+                    <option value="SHORTS_9_16">Shorts 9:16 — игра сверху, персонаж снизу</option>
+                    <option value="LONG_16_9">Видео 16:9 — facecam поверх игры</option>
                   </select>
                 </label>
 
                 <label>
-                  Использовать по умолчанию
-                  <select
-                    value={isDefault ? "yes" : "no"}
-                    onChange={(event) => setIsDefault(event.target.value === "yes")}
-                  >
-                    <option value="yes">Да</option>
+                  Отзеркалить персонажа
+                  <select value={mirrorLana ? "yes" : "no"} onChange={(event) => setMirrorLana(event.target.value === "yes")}>
                     <option value="no">Нет</option>
+                    <option value="yes">Да</option>
                   </select>
                 </label>
               </div>
 
-              <div className="split-template-note">
-                <b>Как будет выглядеть рендер:</b>
-                <span>Верхние 50% — игровое видео, crop по центру.</span>
-                <span>Нижние 50% — видео персонажа, crop по центру.</span>
-                <span>Позиции X/Y больше не нужны и не используются.</span>
-              </div>
+              {kind === "LONG_16_9" ? (
+                <div className="grid grid-3">
+                  <label>
+                    Позиция facecam
+                    <select value={facecamPosition} onChange={(event) => setFacecamPosition(event.target.value as FacecamPosition)}>
+                      {positions.map((position) => (
+                        <option key={position.value} value={position.value}>{position.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Размер, % ширины
+                    <input type="number" min={12} max={40} value={facecamWidthPercent} onChange={(event) => setFacecamWidthPercent(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    Отступ, %
+                    <input type="number" min={1} max={10} value={facecamMarginPercent} onChange={(event) => setFacecamMarginPercent(Number(event.target.value))} />
+                  </label>
+                </div>
+              ) : null}
+
+              <label>
+                Использовать по умолчанию
+                <select value={isDefault ? "yes" : "no"} onChange={(event) => setIsDefault(event.target.value === "yes")}>
+                  <option value="yes">Да</option>
+                  <option value="no">Нет</option>
+                </select>
+              </label>
 
               {error ? <p className="error">{error}</p> : null}
-
               <button type="submit">Сохранить шаблон</button>
             </form>
 
-            <div className="split-template-preview">
-              <div className="split-preview-half split-preview-game">
-                <span>GAME VIDEO</span>
-              </div>
-              <div className={`split-preview-half split-preview-person ${mirrorLana ? "mirror" : ""}`}>
-                <span>{selectedAsset?.title ?? "PERSON VIDEO"}</span>
-              </div>
+            <div className={kind === "LONG_16_9" ? "long-template-preview" : "split-template-preview"}>
+              {kind === "SHORTS_9_16" ? (
+                <>
+                  <div className="split-preview-half split-preview-game"><span>GAME VIDEO</span></div>
+                  <div className={`split-preview-half split-preview-person ${mirrorLana ? "mirror" : ""}`}><span>{selectedAsset?.title ?? "PERSON VIDEO"}</span></div>
+                </>
+              ) : (
+                <div className="long-preview-screen">
+                  <span className="long-preview-game-label">1920×1080 GAMEPLAY</span>
+                  <span className={`long-preview-facecam ${facecamPosition.toLowerCase().replace("_", "-")}`}>{selectedAsset?.title ?? "FACE CAM"}</span>
+                </div>
+              )}
             </div>
           </div>
         </section>
@@ -241,64 +227,32 @@ export default function FactoryTemplatesPage() {
 
         <section className="card">
           <h2>Сохраненные шаблоны</h2>
-
           <table className="table">
             <thead>
               <tr>
                 <th>Название</th>
                 <th>Видео персонажа</th>
-                <th>Формат</th>
-                <th>Зеркало</th>
-                <th>Действия</th>
+                <th>Тип</th>
+                <th>Настройки</th>
               </tr>
             </thead>
-
             <tbody>
               {templates.map((template) => (
                 <tr key={template.id}>
                   <td>
-                    {template.name}{" "}
-                    {template.isDefault ? (
-                      <span className="badge">default</span>
-                    ) : null}
+                    {template.name} {template.isDefault ? <span className="badge">default</span> : null}
                   </td>
+                  <td>{template.asset ? <b>{template.asset.title}</b> : <span className="error">Видео не выбрано</span>}</td>
+                  <td>{template.kind === "LONG_16_9" ? "Видео 16:9" : "Shorts 9:16"}</td>
                   <td>
-                    {template.asset ? (
-                      <>
-                        <b>{template.asset.title}</b>
-                        {template.asset.originalName ? (
-                          <p className="muted">{template.asset.originalName}</p>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="error">Видео не выбрано</span>
-                    )}
-                  </td>
-                  <td>50/50: игра сверху, персонаж снизу</td>
-                  <td>{template.mirrorLana ? "Да" : "Нет"}</td>
-                  <td>
-                    <div className="inline-actions">
-                      <button type="button" onClick={() => makeDefault(template.id)}>
-                        Сделать основным
-                      </button>
-                      <button
-                        type="button"
-                        className="danger-button"
-                        onClick={() => removeTemplate(template.id)}
-                      >
-                        Удалить
-                      </button>
-                    </div>
+                    {template.kind === "LONG_16_9"
+                      ? `${positionLabel(template.facecamPosition)} · ${template.facecamWidthPercent}% · отступ ${template.facecamMarginPercent}%`
+                      : "50/50: игра сверху, персонаж снизу"}
                   </td>
                 </tr>
               ))}
-
               {templates.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="muted">
-                    Пока шаблонов нет.
-                  </td>
-                </tr>
+                <tr><td colSpan={4} className="muted">Пока шаблонов нет.</td></tr>
               ) : null}
             </tbody>
           </table>

@@ -70,6 +70,8 @@ type FactoryJob = {
   smartCandidates: number;
   smartMinGapSeconds: number;
   hookPreviewSeconds: number;
+  renderFormat?: "SHORTS_9_16" | "LONG_16_9";
+  longVideoTitle?: string | null;
   cancelRequested: boolean;
   createdAt: string;
   targets: {
@@ -639,6 +641,7 @@ export default function FactoryPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/long-video">Видео 16:9</Link>
           <Link href="/factory/analytics">Аналитика</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
@@ -1057,11 +1060,13 @@ export default function FactoryPage() {
                     </p>
 
                     <p className="muted">
-                      {job.cutMode === "SMART_HOOK_AI"
-                        ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
-                        : job.cutMode === "SMART_LITE"
-                          ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
-                          : "Обычная нарезка подряд"}
+                      {job.renderFormat === "LONG_16_9"
+                        ? "Видео 16:9 · full video · facecam reaction"
+                        : job.cutMode === "SMART_HOOK_AI"
+                          ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
+                          : job.cutMode === "SMART_LITE"
+                            ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
+                            : "Обычная нарезка подряд"}
                     </p>
 
                     {job.clipStartIndex > 0 ? (

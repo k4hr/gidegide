@@ -55,6 +55,23 @@ enum FactoryCutMode {
   SMART_HOOK_AI
 }
 
+enum FactoryTemplateKind {
+  SHORTS_9_16
+  LONG_16_9
+}
+
+enum FactoryFacecamPosition {
+  TOP_LEFT
+  TOP_RIGHT
+  BOTTOM_LEFT
+  BOTTOM_RIGHT
+}
+
+enum FactoryRenderFormat {
+  SHORTS_9_16
+  LONG_16_9
+}
+
 model FactoryAsset {
   id           String   @id @default(cuid())
   title        String
@@ -107,6 +124,12 @@ model FactoryTemplate {
   lanaHeight  Int      @default(533)
   mirrorLana  Boolean  @default(false)
 
+  kind                    FactoryTemplateKind @default(SHORTS_9_16)
+  facecamPosition         FactoryFacecamPosition @default(TOP_LEFT)
+  facecamWidthPercent     Int @default(24)
+  facecamMarginPercent    Int @default(3)
+  facecamBorderRadius     Int @default(18)
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -114,6 +137,7 @@ model FactoryTemplate {
   jobTargets   FactoryJobTarget[]
 
   @@index([isDefault])
+  @@index([kind])
   @@index([createdAt])
   @@index([assetId])
 }
@@ -174,6 +198,15 @@ model FactoryJob {
   smartMinGapSeconds Int               @default(30)
   hookPreviewSeconds Int               @default(8)
 
+  renderFormat       FactoryRenderFormat @default(SHORTS_9_16)
+  longVideoTitle     String?
+  longVideoDescription String?
+  longVideoThumbnailPath String?
+  longVideoThumbnailStorageKey String?
+  longVideoFacecamPosition FactoryFacecamPosition?
+  longVideoFacecamWidthPercent Int?
+  longVideoFacecamMarginPercent Int?
+
   cancelRequested    Boolean           @default(false)
   canceledAt         DateTime?
 
@@ -198,6 +231,7 @@ model FactoryJob {
   @@index([scheduledAt])
   @@index([cutMode])
   @@index([hookPreviewSeconds])
+  @@index([renderFormat])
   @@index([superUploadPackageId])
 }
 
