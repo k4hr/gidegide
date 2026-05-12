@@ -1,6 +1,6 @@
 import path from "node:path";
-import { rm } from "node:fs/promises";
-import { chromium, type Page } from "playwright";
+import { readFile, rm, stat } from "node:fs/promises";
+import { chromium, type Locator, type Page } from "playwright";
 
 import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { hasAudioStream, runCommand } from "@/lib/factory/video";
@@ -20,7 +20,18 @@ type LinkCandidate = {
   text: string;
   score: number;
   qualityRank: number;
+  source: "link" | "row";
 };
+
+type ClickCandidate = {
+  index: number;
+  text: string;
+  href: string;
+  score: number;
+  qualityRank: number;
+};
+
+const MIN_VIDEO_FILE_BYTES = 1024 * 1024;
 
 function getYoutubeVideoId(url: string) {
   const parsedUrl = new URL(url);
@@ -81,13 +92,33 @@ async function assertNotCanceled(isCanceled?: CancelCheck) {
   }
 }
 
+function safeUrl(value: string) {
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function getUrlParam(value: string, key: string) {
+  return safeUrl(value)?.searchParams.get(key) ?? null;
+}
+
+function getYoutubeItag(href: string) {
+  return getUrlParam(href, "itag");
+}
+
+function isGoogleVideoUrl(href: string) {
+  return safeUrl(href)?.hostname.includes("googlevideo.com") ?? false;
+}
+
 function isBadHref(href: string) {
-  const lower = href.toLowerCase();
+  const lower = href.toLowerCase().trim();
 
   return (
-    !href ||
-    href.startsWith("javascript:") ||
-    href.startsWith("#") ||
+    !lower ||
+    lower.startsWith("javascript:") ||
+    lower.startsWith("#") ||
     lower.includes("facebook.com") ||
     lower.includes("twitter.com") ||
     lower.includes("telegram") ||
@@ -97,26 +128,46 @@ function isBadHref(href: string) {
   );
 }
 
-function getUrlParam(value: string, key: string) {
-  try {
-    const url = new URL(value);
-    return url.searchParams.get(key);
-  } catch {
-    return null;
-  }
-}
+function isRipyoutubeNavigationHref(href: string, text = "") {
+  const url = safeUrl(href);
+  const value = `${href} ${text}`.toLowerCase();
 
-function getYoutubeItag(href: string) {
-  return getUrlParam(href, "itag");
-}
+  if (!url) return false;
 
-function isGoogleVideoUrl(href: string) {
-  try {
-    const url = new URL(href);
-    return url.hostname.includes("googlevideo.com");
-  } catch {
+  const host = url.hostname.toLowerCase();
+  const pathname = url.pathname.toLowerCase().replace(/\/+$/, "");
+
+  if (!host.includes("ripyoutube.com")) {
     return false;
   }
+
+  const navPaths = new Set([
+    "",
+    "/",
+    "/en",
+    "/en/youtube-to-mp3-converter",
+    "/en/youtube-to-mp4-converter",
+    "/en/youtube-video-downloader",
+    "/en/youtube-shorts-downloader",
+    "/en/facebook-video-downloader",
+    "/en/instagram-video-downloader",
+    "/en/tiktok-video-downloader",
+    "/privacy",
+    "/terms",
+    "/contact",
+  ]);
+
+  if (navPaths.has(pathname)) {
+    return true;
+  }
+
+  return (
+    value.includes("youtube to mp4 converter") ||
+    value.includes("youtube video downloader") ||
+    value.includes("youtube to mp3") ||
+    value.includes("converter") ||
+    value.includes("downloader") && !looksLikeMediaRow(text, href)
+  );
 }
 
 function isKnownYoutubeVideoOnlyItag(itag: string | null) {
@@ -239,22 +290,8 @@ function isKnownYoutubeProgressiveWithAudioItag(itag: string | null) {
   return progressiveItags.has(itag);
 }
 
-function getQualityRank(text: string, href: string) {
-  const value = `${text} ${href}`.toLowerCase();
-  const itag = getYoutubeItag(href);
-
-  if (itag === "22") return 1000;
-  if (value.includes("720p") && !value.includes("60")) return 950;
-  if (value.includes("720")) return 900;
-  if (value.includes("480p")) return 700;
-  if (value.includes("480")) return 680;
-  if (itag === "18") return 600;
-  if (value.includes("360p")) return 500;
-  if (value.includes("360")) return 480;
-  if (value.includes("240p")) return 250;
-  if (value.includes("144p")) return 100;
-
-  return 0;
+function normalizeText(value: string) {
+  return value.replace(/\s+/g, " ").trim();
 }
 
 function isMarkedWithoutAudio(text: string, href: string) {
@@ -267,6 +304,8 @@ function isMarkedWithoutAudio(text: string, href: string) {
     value.includes("without audio") ||
     value.includes("video only") ||
     value.includes("video-only") ||
+    value.includes("audio only") ||
+    value.includes("audio-only") ||
     value.includes("без звука")
   );
 }
@@ -276,10 +315,11 @@ function isMarkedWithAudio(text: string, href: string) {
 
   return (
     value.includes("🔊") ||
-    value.includes("sound") ||
+    value.includes("speaker") ||
     value.includes("with audio") ||
     value.includes("audio") ||
-    value.includes("со звуком")
+    value.includes("со звуком") ||
+    value.includes("mp4 avc1")
   );
 }
 
@@ -301,201 +341,298 @@ function isDefinitelyVideoWithoutAudio(href: string, text: string) {
   return false;
 }
 
-function isProbablyDownloadLink(text: string, href: string) {
+function looksLikeMediaRow(text: string, href = "") {
   const value = `${text} ${href}`.toLowerCase();
 
   return (
+    (value.includes("mp4") || value.includes("avc1") || value.includes("video/mp4")) &&
+    /(720p60|720p|480p|360p|1080p60|1080p|\b720\b|\b480\b|\b360\b)/.test(value)
+  );
+}
+
+function isLikelyDirectMediaHref(href: string) {
+  const url = safeUrl(href);
+
+  if (!url) return false;
+
+  const host = url.hostname.toLowerCase();
+  const pathname = url.pathname.toLowerCase();
+  const value = href.toLowerCase();
+
+  return (
+    host.includes("googlevideo.com") ||
+    value.includes("videoplayback") ||
+    value.includes("download") ||
+    value.includes("/download") ||
+    value.includes("/dl") ||
+    value.includes("/mates/") ||
+    value.includes("genyoutube") ||
+    pathname.endsWith(".mp4")
+  );
+}
+
+function isProbablyDownloadLink(text: string, href: string) {
+  if (isRipyoutubeNavigationHref(href, text)) return false;
+
+  const value = `${text} ${href}`.toLowerCase();
+
+  return (
+    looksLikeMediaRow(text, href) ||
     value.includes("download") ||
     value.includes("скачать") ||
-    value.includes("mp4") ||
     value.includes("googlevideo.com") ||
     value.includes("videoplayback") ||
     value.includes("genyoutube") ||
-    value.includes("/mates/")
+    value.includes("/mates/") ||
+    value.includes(".mp4")
   );
+}
+
+function getQualityRank(text: string, href: string) {
+  const value = `${text} ${href}`.toLowerCase();
+  const itag = getYoutubeItag(href);
+
+  if (itag === "22") return 1000;
+  if (value.includes("720p60")) return 980;
+  if (value.includes("720p") && !value.includes("60")) return 950;
+  if (value.includes("720")) return 900;
+  if (value.includes("480p")) return 700;
+  if (value.includes("480")) return 680;
+  if (itag === "18") return 600;
+  if (value.includes("360p")) return 500;
+  if (value.includes("360")) return 480;
+  if (value.includes("240p")) return 250;
+  if (value.includes("144p")) return 100;
+
+  return 0;
 }
 
 function scoreDownloadLink(text: string, href: string) {
   const value = `${text} ${href}`.toLowerCase();
   const itag = getYoutubeItag(href);
 
-  if (isBadHref(href)) {
-    return -10000;
-  }
-
-  if (!isProbablyDownloadLink(text, href)) {
-    return -10000;
-  }
-
-  if (isDefinitelyVideoWithoutAudio(href, text)) {
-    return -10000;
-  }
+  if (isBadHref(href)) return -10000;
+  if (isRipyoutubeNavigationHref(href, text)) return -10000;
+  if (!isProbablyDownloadLink(text, href)) return -10000;
+  if (isDefinitelyVideoWithoutAudio(href, text)) return -10000;
 
   let score = 0;
 
-  if (isKnownYoutubeProgressiveWithAudioItag(itag)) score += 500;
-  if (isMarkedWithAudio(text, href)) score += 300;
+  if (isKnownYoutubeProgressiveWithAudioItag(itag)) score += 700;
+  if (isMarkedWithAudio(text, href)) score += 350;
+  if (looksLikeMediaRow(text, href)) score += 300;
+  if (isLikelyDirectMediaHref(href)) score += 250;
 
-  if (value.includes("download")) score += 60;
-  if (value.includes("скачать")) score += 60;
-  if (value.includes("mp4")) score += 80;
-  if (value.includes("avc1")) score += 20;
-  if (value.includes("video")) score += 8;
-  if (value.includes("googlevideo.com")) score += 35;
-  if (value.includes("videoplayback")) score += 35;
-  if (value.includes("genyoutube")) score += 15;
-  if (value.includes("/mates/")) score += 15;
-  if (value.includes("quality")) score += 6;
+  if (value.includes("download")) score += 80;
+  if (value.includes("скачать")) score += 80;
+  if (value.includes("mp4")) score += 120;
+  if (value.includes("avc1")) score += 50;
+  if (value.includes("googlevideo.com")) score += 120;
+  if (value.includes("videoplayback")) score += 120;
+  if (value.includes("quality")) score += 10;
 
-  if (itag === "22") score += 900;
+  if (itag === "22") score += 1000;
 
-  if (value.includes("720p60")) score -= 300;
-  else if (value.includes("720p")) score += 450;
-  else if (value.includes("720")) score += 400;
+  if (value.includes("720p60")) score += 620;
+  else if (value.includes("720p")) score += 580;
+  else if (value.includes("720")) score += 520;
 
-  if (value.includes("1080p60")) score -= 80;
-  else if (value.includes("1080p")) score += 50;
-  else if (value.includes("1080")) score += 30;
+  if (value.includes("1080p60")) score += 80;
+  else if (value.includes("1080p")) score += 60;
+  else if (value.includes("1080")) score += 40;
 
-  if (value.includes("480p")) score += 120;
-  if (value.includes("360p")) score += 40;
-  if (value.includes("240p")) score -= 80;
-  if (value.includes("144p")) score -= 100;
-
-  if (value.includes("mp3")) score -= 500;
-  if (value.includes("audio only")) score -= 500;
-  if (value.includes("audio-only")) score -= 500;
-  if (value.includes("advert")) score -= 400;
-  if (value.includes("adclick")) score -= 400;
+  if (value.includes("480p")) score += 180;
+  if (value.includes("360p")) score += 90;
+  if (value.includes("240p")) score -= 120;
+  if (value.includes("144p")) score -= 180;
+  if (value.includes("mp3")) score -= 1000;
+  if (value.includes("advert") || value.includes("adclick")) score -= 1000;
 
   return score;
+}
+
+function toCandidate(item: { href: string; text: string; source: "link" | "row" }) {
+  const text = normalizeText(item.text);
+  const href = item.href.trim();
+  const score = scoreDownloadLink(text, href);
+
+  if (score <= 50) return null;
+
+  return {
+    href,
+    text,
+    score,
+    qualityRank: getQualityRank(text, href),
+    source: item.source,
+  } satisfies LinkCandidate;
 }
 
 async function getDownloadLinks(page: Page) {
   const candidates = (await page.evaluate(`
     (() => {
-      const getRowText = (element) => {
-        const row =
-          element.closest("tr") ||
-          element.closest("li") ||
-          element.closest(".row") ||
-          element.closest(".download") ||
-          element.closest(".format") ||
-          element.closest(".col") ||
-          element.parentElement;
+      const normalize = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+      const getRow = (element) =>
+        element.closest('tr') ||
+        element.closest('li') ||
+        element.closest('.row') ||
+        element.closest('.download') ||
+        element.closest('.format') ||
+        element.closest('.col') ||
+        element.closest('[class*=quality]') ||
+        element.closest('[class*=format]') ||
+        element.closest('[class*=download]') ||
+        element.parentElement;
 
-        return row && row.textContent ? row.textContent : "";
-      };
+      const items = [];
 
-      return Array.from(document.querySelectorAll("a"))
-        .map((link) => {
-          const rowText = getRowText(link);
+      for (const link of Array.from(document.querySelectorAll('a[href]'))) {
+        const row = getRow(link);
+        const rowText = row ? normalize(row.textContent) : '';
+        items.push({
+          source: 'link',
+          href: link.href || '',
+          text: normalize([
+            link.innerText || link.textContent || '',
+            link.getAttribute('title') || '',
+            link.getAttribute('aria-label') || '',
+            link.getAttribute('download') || '',
+            rowText,
+          ].join(' ')),
+        });
+      }
 
-          return {
-            href: link.href || "",
-            text: [
-              link.innerText || link.textContent || "",
-              link.getAttribute("title") || "",
-              link.getAttribute("aria-label") || "",
-              link.getAttribute("download") || "",
-              rowText
-            ]
-              .join(" ")
-              .replace(/\\s+/g, " ")
-              .trim()
-          };
-        })
-        .filter((item) => item.href);
+      for (const row of Array.from(document.querySelectorAll('tr, li, .row, .download, .format, [class*=quality], [class*=format]'))) {
+        const rowText = normalize(row.textContent || '');
+        const link = row.querySelector('a[href]');
+        if (link && rowText) {
+          items.push({
+            source: 'row',
+            href: link.href || '',
+            text: rowText,
+          });
+        }
+      }
+
+      return items.filter((item) => item.href && item.text);
     })()
   `)) as Array<{
     href: string;
     text: string;
+    source: "link" | "row";
   }>;
 
   const unique = new Map<string, LinkCandidate>();
 
   for (const item of candidates) {
     if (isBadHref(item.href)) continue;
+    if (isRipyoutubeNavigationHref(item.href, item.text)) continue;
     if (isDefinitelyVideoWithoutAudio(item.href, item.text)) continue;
 
-    const score = scoreDownloadLink(item.text, item.href);
+    const candidate = toCandidate(item);
+    if (!candidate) continue;
 
-    if (score <= 25) continue;
-
-    const qualityRank = getQualityRank(item.text, item.href);
-    const current = unique.get(item.href);
-
-    if (!current || score > current.score) {
-      unique.set(item.href, {
-        ...item,
-        score,
-        qualityRank,
-      });
+    const current = unique.get(candidate.href);
+    if (!current || candidate.score > current.score) {
+      unique.set(candidate.href, candidate);
     }
   }
 
-  return Array.from(unique.values()).sort((a, b) => {
-    if (b.score !== a.score) return b.score - a.score;
-    return b.qualityRank - a.qualityRank;
+  const result = Array.from(unique.values()).sort((a, b) => {
+    if (b.qualityRank !== a.qualityRank) return b.qualityRank - a.qualityRank;
+    return b.score - a.score;
   });
+
+  if (result.length > 0) {
+    console.log(
+      "RIP media link candidates",
+      result.slice(0, 6).map((item) => ({
+        text: item.text.slice(0, 120),
+        score: item.score,
+        qualityRank: item.qualityRank,
+        href: item.href.slice(0, 160),
+      })),
+    );
+  }
+
+  return result;
 }
 
-async function getBestDownloadLink(page: Page) {
-  const links = await getDownloadLinks(page);
-
-  return links[0] ?? null;
-}
-
-async function clickBestButton(page: Page) {
+async function buildClickCandidates(page: Page) {
   const clickable = page.locator("a, button, input[type='button'], input[type='submit']");
   const count = await clickable.count();
+  const candidates: ClickCandidate[] = [];
 
-  const candidates: Array<{
-    index: number;
-    text: string;
-    href: string;
-    score: number;
-  }> = [];
-
-  for (let index = 0; index < Math.min(count, 160); index += 1) {
+  for (let index = 0; index < Math.min(count, 220); index += 1) {
     const item = clickable.nth(index);
 
     try {
       if (!(await item.isVisible())) continue;
 
-      const text =
-        (await item.innerText().catch(() => "")) ||
-        (await item.getAttribute("value").catch(() => "")) ||
-        (await item.getAttribute("title").catch(() => "")) ||
-        (await item.getAttribute("aria-label").catch(() => "")) ||
-        "";
-
+      const text = normalizeText(
+        [
+          await item.innerText().catch(() => ""),
+          await item.getAttribute("value").catch(() => ""),
+          await item.getAttribute("title").catch(() => ""),
+          await item.getAttribute("aria-label").catch(() => ""),
+          await item
+            .locator("xpath=ancestor::tr[1] | xpath=ancestor::li[1]")
+            .first()
+            .innerText()
+            .catch(() => ""),
+          await item
+            .locator("xpath=ancestor::*[contains(@class,'row') or contains(@class,'download') or contains(@class,'format')][1]")
+            .first()
+            .innerText()
+            .catch(() => ""),
+        ].join(" "),
+      );
       const href = (await item.getAttribute("href").catch(() => "")) || "";
 
+      if (isBadHref(href) && !text) continue;
+      if (isRipyoutubeNavigationHref(href, text)) continue;
       if (isDefinitelyVideoWithoutAudio(href, text)) continue;
+      if (!looksLikeMediaRow(text, href) && !isLikelyDirectMediaHref(href)) continue;
 
-      const score = scoreDownloadLink(text, href);
-
-      if (score <= 0) continue;
+      const score = scoreDownloadLink(text, href || page.url());
+      if (score <= 40) continue;
 
       candidates.push({
         index,
         text,
         href,
         score,
+        qualityRank: getQualityRank(text, href),
       });
     } catch {
       // ignore broken nodes
     }
   }
 
-  candidates.sort((a, b) => b.score - a.score);
+  candidates.sort((a, b) => {
+    if (b.qualityRank !== a.qualityRank) return b.qualityRank - a.qualityRank;
+    return b.score - a.score;
+  });
 
+  if (candidates.length > 0) {
+    console.log(
+      "RIP click candidates",
+      candidates.slice(0, 6).map((item) => ({
+        text: item.text.slice(0, 120),
+        score: item.score,
+        qualityRank: item.qualityRank,
+        href: item.href.slice(0, 160),
+      })),
+    );
+  }
+
+  return { clickable, candidates };
+}
+
+async function clickBestButton(page: Page) {
+  const { clickable, candidates } = await buildClickCandidates(page);
   const best = candidates[0];
 
-  if (!best) {
-    return false;
-  }
+  if (!best) return false;
 
   await clickable.nth(best.index).click({
     timeout: 15000,
@@ -505,9 +642,71 @@ async function clickBestButton(page: Page) {
   return true;
 }
 
+async function getFileSize(filePath: string) {
+  try {
+    return (await stat(filePath)).size;
+  } catch {
+    return 0;
+  }
+}
+
+async function looksLikeHtmlFile(filePath: string) {
+  try {
+    const buffer = await readFile(filePath);
+    const start = buffer.subarray(0, 4096).toString("utf8").toLowerCase();
+
+    return (
+      start.includes("<!doctype html") ||
+      start.includes("<html") ||
+      start.includes("<head") ||
+      start.includes("<body") ||
+      start.includes("youtube to mp4 converter") ||
+      start.includes("youtube video downloader")
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function validateDownloadedVideo(input: {
+  filePath: string;
+  text: string;
+  href: string;
+}) {
+  const fileSize = await getFileSize(input.filePath);
+
+  if (fileSize < MIN_VIDEO_FILE_BYTES) {
+    await rm(input.filePath, { force: true });
+    throw new Error(
+      `RIP скачал не видео, а слишком маленький файл (${fileSize} bytes)`,
+    );
+  }
+
+  if (await looksLikeHtmlFile(input.filePath)) {
+    await rm(input.filePath, { force: true });
+    throw new Error("RIP скачал HTML-страницу вместо MP4");
+  }
+
+  const hasAudio = await hasAudioStream(input.filePath);
+
+  if (!hasAudio) {
+    await rm(input.filePath, { force: true });
+    throw new Error("RIP-ссылка скачалась без звука");
+  }
+
+  console.log("RIP selected candidate", {
+    text: input.text.slice(0, 160),
+    href: input.href.slice(0, 220),
+    fileSize,
+  });
+
+  return input.filePath;
+}
+
 async function downloadHrefToFile(input: {
   href: string;
   outputPath: string;
+  referer?: string;
   isCanceled?: CancelCheck;
 }) {
   await runCommand(
@@ -526,6 +725,7 @@ async function downloadHrefToFile(input: {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0 Safari/537.36",
       "-H",
       "Accept: video/mp4,video/*,*/*",
+      ...(input.referer ? ["-H", `Referer: ${input.referer}`] : []),
       "-o",
       input.outputPath,
       input.href,
@@ -541,37 +741,46 @@ async function downloadAndValidateAudio(input: {
   href: string;
   text: string;
   outputPath: string;
+  referer?: string;
   isCanceled?: CancelCheck;
   onProgress?: ProgressCallback;
   label: string;
 }) {
+  if (isRipyoutubeNavigationHref(input.href, input.text)) {
+    throw new Error("RIP-ссылка является страницей навигации, не MP4");
+  }
+
   if (isDefinitelyVideoWithoutAudio(input.href, input.text)) {
     throw new Error("RIP-ссылка является video-only/audio-only и пропущена");
   }
 
-  await rm(input.outputPath, {
-    force: true,
-  });
-
+  await rm(input.outputPath, { force: true });
   await input.onProgress?.(22, input.label);
 
   await downloadHrefToFile({
     href: input.href,
     outputPath: input.outputPath,
+    referer: input.referer,
     isCanceled: input.isCanceled,
   });
 
-  const hasAudio = await hasAudioStream(input.outputPath);
+  return validateDownloadedVideo({
+    filePath: input.outputPath,
+    text: input.text,
+    href: input.href,
+  });
+}
 
-  if (!hasAudio) {
-    await rm(input.outputPath, {
-      force: true,
-    });
-
-    throw new Error("RIP-ссылка скачалась без звука");
-  }
-
-  return input.outputPath;
+async function validatePlaywrightDownload(input: {
+  filePath: string;
+  candidateText: string;
+  candidateHref: string;
+}) {
+  return validateDownloadedVideo({
+    filePath: input.filePath,
+    text: input.candidateText,
+    href: input.candidateHref,
+  });
 }
 
 function dedupeLinks(links: LinkCandidate[]) {
@@ -590,65 +799,51 @@ function dedupeLinks(links: LinkCandidate[]) {
 
 function buildAttemptList(links: LinkCandidate[]) {
   const cleanLinks = dedupeLinks(
-    links.filter((link) => !isDefinitelyVideoWithoutAudio(link.href, link.text)),
+    links.filter(
+      (link) =>
+        !isRipyoutubeNavigationHref(link.href, link.text) &&
+        !isDefinitelyVideoWithoutAudio(link.href, link.text),
+    ),
   );
 
-  const progressive720 = cleanLinks.filter((link) => {
+  const with720 = cleanLinks.filter((link) => {
     const value = `${link.text} ${link.href}`.toLowerCase();
     const itag = getYoutubeItag(link.href);
 
-    return (
-      (value.includes("720") || itag === "22") &&
-      isKnownYoutubeProgressiveWithAudioItag(itag)
-    );
+    return value.includes("720") || itag === "22";
   });
 
-  const marked720WithAudio = cleanLinks.filter((link) => {
-    const value = `${link.text} ${link.href}`.toLowerCase();
+  const progressive = cleanLinks.filter((link) =>
+    isKnownYoutubeProgressiveWithAudioItag(getYoutubeItag(link.href)),
+  );
 
-    return value.includes("720") && isMarkedWithAudio(link.text, link.href);
-  });
+  const withAudio = cleanLinks.filter((link) =>
+    isMarkedWithAudio(link.text, link.href),
+  );
 
-  const any720 = cleanLinks.filter((link) => {
-    const value = `${link.text} ${link.href}`.toLowerCase();
+  const directMedia = cleanLinks.filter((link) => isLikelyDirectMediaHref(link.href));
 
-    return value.includes("720") && !value.includes("60");
-  });
-
-  const progressiveOther = cleanLinks.filter((link) => {
-    const itag = getYoutubeItag(link.href);
-    return isKnownYoutubeProgressiveWithAudioItag(itag);
-  });
-
-  const otherWithAudio = cleanLinks.filter((link) => {
-    return isMarkedWithAudio(link.text, link.href);
-  });
-
-  const fallbackMp4 = cleanLinks.filter((link) => {
-    const value = `${link.text} ${link.href}`.toLowerCase();
-
-    return (
-      value.includes("mp4") &&
-      !value.includes("mp3") &&
-      !value.includes("audio only") &&
-      !value.includes("audio-only")
-    );
-  });
+  const mp4Rows = cleanLinks.filter((link) => looksLikeMediaRow(link.text, link.href));
 
   return dedupeLinks([
-    ...progressive720,
-    ...marked720WithAudio,
-    ...any720,
-    ...progressiveOther,
-    ...otherWithAudio,
-    ...fallbackMp4,
+    ...with720,
+    ...progressive,
+    ...withAudio,
+    ...directMedia,
+    ...mp4Rows,
     ...cleanLinks,
-  ]).slice(0, 12);
+  ])
+    .sort((a, b) => {
+      if (b.qualityRank !== a.qualityRank) return b.qualityRank - a.qualityRank;
+      return b.score - a.score;
+    })
+    .slice(0, 16);
 }
 
 async function tryDownloadLinksWithAudio(input: {
   links: LinkCandidate[];
   outputPath: string;
+  referer?: string;
   isCanceled?: CancelCheck;
   onProgress?: ProgressCallback;
 }) {
@@ -656,7 +851,7 @@ async function tryDownloadLinksWithAudio(input: {
 
   if (attempts.length === 0) {
     throw new Error(
-      "RIP нашёл только video-only/audio-only ссылки. Нет MP4 720p со звуком.",
+      "RIP не нашёл MP4-ссылку со звуком. Есть только navigation/video-only/audio-only.",
     );
   }
 
@@ -675,7 +870,7 @@ async function tryDownloadLinksWithAudio(input: {
       ].filter(Boolean);
 
       await input.onProgress?.(
-        18 + Math.min(index, 4),
+        18 + Math.min(index, 6),
         `Пробую RIP MP4 со звуком: ${labelParts.join(" · ")}`,
       );
 
@@ -683,6 +878,7 @@ async function tryDownloadLinksWithAudio(input: {
         href: link.href,
         text: link.text,
         outputPath: input.outputPath,
+        referer: input.referer,
         isCanceled: input.isCanceled,
         onProgress: input.onProgress,
         label: "Скачиваю RIP MP4 и проверяю звук",
@@ -691,13 +887,13 @@ async function tryDownloadLinksWithAudio(input: {
       lastError = error;
 
       console.error(
-        `RIP candidate failed or has no audio: ${link.text} ${link.href}`,
+        `RIP candidate failed or has no audio: ${link.text.slice(0, 180)} ${link.href.slice(0, 220)}`,
         error,
       );
 
       await input.onProgress?.(
-        18 + Math.min(index, 4),
-        "RIP-ссылка без звука или недоступна, пробую следующую",
+        18 + Math.min(index, 6),
+        "RIP-ссылка не подошла, пробую следующую",
       );
     }
   }
@@ -707,6 +903,81 @@ async function tryDownloadLinksWithAudio(input: {
       ? `RIP не дал MP4 со звуком: ${lastError.message}`
       : "RIP не дал MP4 со звуком",
   );
+}
+
+async function tryClickDownloadCandidates(input: {
+  page: Page;
+  outputPath: string;
+  isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
+}) {
+  const { clickable, candidates } = await buildClickCandidates(input.page);
+  let lastError: unknown = null;
+
+  for (let index = 0; index < Math.min(candidates.length, 12); index += 1) {
+    const candidate = candidates[index];
+    await assertNotCanceled(input.isCanceled);
+
+    try {
+      await input.onProgress?.(
+        14 + Math.min(index, 6),
+        `RIP: нажимаю MP4 со звуком ${candidate.text.slice(0, 60)}`,
+      );
+
+      const downloadPromise = input.page
+        .waitForEvent("download", { timeout: 25000 })
+        .catch(() => null);
+
+      await clickable.nth(candidate.index).click({
+        timeout: 15000,
+        force: true,
+      });
+
+      const download = await downloadPromise;
+
+      if (download) {
+        await rm(input.outputPath, { force: true });
+        await download.saveAs(input.outputPath);
+
+        await validatePlaywrightDownload({
+          filePath: input.outputPath,
+          candidateText: candidate.text,
+          candidateHref: candidate.href,
+        });
+
+        await input.onProgress?.(30, "MP4 со звуком скачан через RIP");
+        return input.outputPath;
+      }
+
+      await input.page
+        .waitForLoadState("domcontentloaded", { timeout: 15000 })
+        .catch(() => {});
+      await input.page.waitForTimeout(2500);
+
+      const links = await getDownloadLinks(input.page);
+      if (links.length > 0) {
+        return await tryDownloadLinksWithAudio({
+          links,
+          outputPath: input.outputPath,
+          referer: input.page.url(),
+          isCanceled: input.isCanceled,
+          onProgress: input.onProgress,
+        });
+      }
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `RIP click candidate failed: ${candidate.text.slice(0, 180)} ${candidate.href.slice(0, 220)}`,
+        error,
+      );
+    }
+  }
+
+  if (lastError) {
+    throw lastError;
+  }
+
+  throw new Error("RIP не дал кликабельную MP4-кнопку со звуком");
 }
 
 export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
@@ -730,10 +1001,7 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
   try {
     const context = await browser.newContext({
       acceptDownloads: true,
-      viewport: {
-        width: 1365,
-        height: 900,
-      },
+      viewport: { width: 1365, height: 900 },
       userAgent:
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
       locale: "en-US",
@@ -753,108 +1021,60 @@ export async function downloadViaRipYoutube(input: DownloadViaRipYoutubeInput) {
     await page.waitForTimeout(4000);
     await input.onProgress?.(7, "RIP-страница загружена");
 
-    for (let step = 1; step <= 6; step += 1) {
+    let lastError: unknown = null;
+
+    for (let step = 1; step <= 8; step += 1) {
       await assertNotCanceled(input.isCanceled);
 
       const links = await getDownloadLinks(page);
 
       if (links.length > 0) {
-        const filePath = await tryDownloadLinksWithAudio({
-          links,
+        try {
+          const filePath = await tryDownloadLinksWithAudio({
+            links,
+            outputPath,
+            referer: page.url(),
+            isCanceled: input.isCanceled,
+            onProgress: input.onProgress,
+          });
+
+          await input.onProgress?.(30, "MP4 720p со звуком скачан через RIP");
+          return filePath;
+        } catch (error) {
+          lastError = error;
+          console.error("RIP direct links failed, trying buttons", error);
+        }
+      }
+
+      try {
+        const filePath = await tryClickDownloadCandidates({
+          page,
           outputPath,
           isCanceled: input.isCanceled,
           onProgress: input.onProgress,
         });
 
-        await input.onProgress?.(30, "MP4 720p со звуком скачан через RIP");
-
         return filePath;
+      } catch (error) {
+        lastError = error;
+        console.error("RIP button flow failed", error);
       }
 
       await input.onProgress?.(
         10 + step * 3,
-        `RIP: шаг ${step}/6 — нажимаю кнопку скачивания`,
+        `RIP: шаг ${step}/8 — жду новые ссылки скачивания`,
       );
 
-      const downloadPromise = page
-        .waitForEvent("download", {
-          timeout: 20000,
-        })
-        .catch(() => null);
-
-      const clicked = await clickBestButton(page);
-
-      if (!clicked) {
-        throw new Error("RIP-сервис не дал кнопку скачивания");
-      }
-
-      const download = await downloadPromise;
-
-      if (download) {
-        await rm(outputPath, {
-          force: true,
-        });
-
-        await download.saveAs(outputPath);
-
-        const hasAudio = await hasAudioStream(outputPath);
-
-        if (hasAudio) {
-          await input.onProgress?.(30, "MP4 со звуком скачан через RIP");
-          return outputPath;
-        }
-
-        await rm(outputPath, {
-          force: true,
-        });
-
-        await input.onProgress?.(
-          18 + step,
-          "RIP download был без звука, пробую другой вариант",
-        );
-      }
-
       await page
-        .waitForLoadState("domcontentloaded", {
-          timeout: 20000,
-        })
+        .waitForLoadState("domcontentloaded", { timeout: 15000 })
         .catch(() => {});
-
-      await page.waitForTimeout(4000);
-    }
-
-    const finalLinks = await getDownloadLinks(page);
-
-    if (finalLinks.length > 0) {
-      const filePath = await tryDownloadLinksWithAudio({
-        links: finalLinks,
-        outputPath,
-        isCanceled: input.isCanceled,
-        onProgress: input.onProgress,
-      });
-
-      await input.onProgress?.(30, "MP4 720p со звуком скачан через RIP");
-
-      return filePath;
-    }
-
-    const finalLink = await getBestDownloadLink(page);
-
-    if (finalLink) {
-      const filePath = await tryDownloadLinksWithAudio({
-        links: [finalLink],
-        outputPath,
-        isCanceled: input.isCanceled,
-        onProgress: input.onProgress,
-      });
-
-      await input.onProgress?.(30, "MP4 со звуком скачан через RIP");
-
-      return filePath;
+      await page.waitForTimeout(3500);
     }
 
     throw new Error(
-      "RIP-сервис не вернул MP4-ссылку со звуком. Дай другое видео.",
+      lastError instanceof Error
+        ? `RIP-сервис не вернул MP4 со звуком: ${lastError.message}`
+        : "RIP-сервис не вернул MP4 со звуком. Дай другое видео или загрузи файл вручную.",
     );
   } finally {
     await browser.close().catch(() => {});
