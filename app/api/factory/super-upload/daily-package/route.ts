@@ -15,8 +15,13 @@ const bodySchema = z.object({
   candidatesCount: z.coerce.number().int().min(1).max(30).default(10),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
   hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
-  intervalMin: z.coerce.number().int().min(20).max(120).default(45),
-  intervalMax: z.coerce.number().int().min(20).max(180).default(60),
+  intervalMin: z.coerce.number().int().min(5).max(180).default(45),
+  intervalMax: z.coerce.number().int().min(5).max(240).default(60),
+  windowStartHour: z.coerce.number().int().min(0).max(23).default(21),
+  windowStartMinute: z.coerce.number().int().min(0).max(59).default(30),
+  windowEndHour: z.coerce.number().int().min(0).max(23).default(23),
+  windowEndMinute: z.coerce.number().int().min(0).max(59).default(45),
+  fitInsideWindow: z.boolean().default(true),
 });
 
 function hookPrefixFromMode(mode: string) {
@@ -106,6 +111,11 @@ export async function POST(request: Request) {
       clipsCount: selected.length,
       intervalMin: body.intervalMin,
       intervalMax: body.intervalMax,
+      windowStartHour: body.windowStartHour,
+      windowStartMinute: body.windowStartMinute,
+      windowEndHour: body.windowEndHour,
+      windowEndMinute: body.windowEndMinute,
+      fitInsideWindow: body.fitInsideWindow,
     });
 
     const packages = [];
@@ -132,7 +142,7 @@ export async function POST(request: Request) {
             hookMode: sourceVideo.suggestedHookMode,
             titlePrefix,
             status: "CREATED",
-            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook preview: ${body.hookPreviewSeconds} сек. Hook mode: ${sourceVideo.suggestedHookMode}.`,
+            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook preview: ${body.hookPreviewSeconds} сек. Окно: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")} NY. Hook mode: ${sourceVideo.suggestedHookMode}.`,
           },
         }),
       );
@@ -194,7 +204,7 @@ export async function POST(request: Request) {
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
       candidates: selected,
-      message: `Пакет дня создан: ${jobs.length} задач. Длина: ${body.clipSeconds} сек. Hook: ${body.hookPreviewSeconds} сек. Окно: вечер/ночь New York.`,
+      message: `Пакет дня создан: ${jobs.length} задач. Длина: ${body.clipSeconds} сек. Hook: ${body.hookPreviewSeconds} сек. Окно NY: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

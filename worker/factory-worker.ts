@@ -288,7 +288,19 @@ function makeJobTitleUnique(input: {
     title = `Roblox: ${title}`;
   }
 
-  if (/^roblox:\s*wait for (the )?ending$/i.test(title) || !title) {
+  const titleLower = title.toLowerCase();
+  const isGenericTitle =
+    !title ||
+    /^roblox:\s*wait for (the )?ending$/i.test(title) ||
+    /^roblox\s+(moment|game|clip)?:?\s*(wait for (the )?ending|watch till the end|wait for it|nobody expected this ending|this got way too close)$/i.test(title) ||
+    titleLower === "roblox" ||
+    titleLower === "roblox: nobody expected this ending" ||
+    titleLower === "roblox: this got way too close" ||
+    titleLower === "roblox: the ending changed everything" ||
+    titleLower.includes("wait for the ending") ||
+    titleLower.includes("watch till the end");
+
+  if (isGenericTitle) {
     title = buildClipTitle({
       game: input.game,
       clipIndex: input.clipIndex,

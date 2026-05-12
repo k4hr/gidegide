@@ -207,6 +207,17 @@ function getPaceSummary(pace: SchedulePace) {
   return `${settings.title}: ${settings.intervalMin}–${settings.intervalMax} мин`;
 }
 
+function parseNyTime(value: string, fallback: { hour: number; minute: number }) {
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+
+  if (!match) return fallback;
+
+  const hour = Math.max(0, Math.min(23, Number(match[1])));
+  const minute = Math.max(0, Math.min(59, Number(match[2])));
+
+  return { hour, minute };
+}
+
 export default function SuperUploadPage() {
   const [sourceUrl, setSourceUrl] = useState("");
   const [donorInput, setDonorInput] = useState("");
@@ -225,6 +236,8 @@ export default function SuperUploadPage() {
   const [schedulePace, setSchedulePace] = useState<SchedulePace>("NORMAL");
   const [intervalMin, setIntervalMin] = useState(45);
   const [intervalMax, setIntervalMax] = useState(60);
+  const [windowStartTime, setWindowStartTime] = useState("21:30");
+  const [windowEndTime, setWindowEndTime] = useState("23:45");
   const [hookMode, setHookMode] = useState("AUTO_BEST_MIX");
   const [onlyUnused, setOnlyUnused] = useState(true);
   const [minChance, setMinChance] = useState(50);
@@ -417,6 +430,8 @@ export default function SuperUploadPage() {
     setSchedulePace(nextPace);
     setIntervalMin(paceSettings.intervalMin);
     setIntervalMax(paceSettings.intervalMax);
+    setWindowStartTime("21:30");
+    setWindowEndTime("23:45");
     setMessage("");
     setError("");
   }
@@ -435,6 +450,9 @@ export default function SuperUploadPage() {
         throw new Error("Выбери Amelia-шаблон");
       }
 
+      const windowStart = parseNyTime(windowStartTime, { hour: 21, minute: 30 });
+      const windowEnd = parseNyTime(windowEndTime, { hour: 23, minute: 45 });
+
       const response = await fetch("/api/factory/super-upload/daily-package", {
         method: "POST",
         headers: {
@@ -448,6 +466,11 @@ export default function SuperUploadPage() {
           hookPreviewSeconds,
           intervalMin,
           intervalMax,
+          windowStartHour: windowStart.hour,
+          windowStartMinute: windowStart.minute,
+          windowEndHour: windowEnd.hour,
+          windowEndMinute: windowEnd.minute,
+          fitInsideWindow: true,
         }),
       });
       const nextData = (await response.json()) as DailyPackageResponse;
@@ -559,6 +582,8 @@ export default function SuperUploadPage() {
     setSchedulePace(nextPace);
     setIntervalMin(paceSettings.intervalMin);
     setIntervalMax(paceSettings.intervalMax);
+    setWindowStartTime("21:30");
+    setWindowEndTime("23:45");
     setMessage("");
     setError("");
   }
@@ -579,6 +604,9 @@ export default function SuperUploadPage() {
         throw new Error("Выбери Amelia-шаблон");
       }
 
+      const windowStart = parseNyTime(windowStartTime, { hour: 21, minute: 30 });
+      const windowEnd = parseNyTime(windowEndTime, { hour: 23, minute: 45 });
+
       const response = await fetch("/api/factory/super-upload/create-package", {
         method: "POST",
         headers: {
@@ -593,6 +621,11 @@ export default function SuperUploadPage() {
           hookPreviewSeconds,
           intervalMin,
           intervalMax,
+          windowStartHour: windowStart.hour,
+          windowStartMinute: windowStart.minute,
+          windowEndHour: windowEnd.hour,
+          windowEndMinute: windowEnd.minute,
+          fitInsideWindow: true,
           hookMode,
           titlePrefix: "auto mix",
         }),
@@ -605,7 +638,7 @@ export default function SuperUploadPage() {
       }
 
       setMessage(
-        `Пакет создан: ${nextData.jobs?.length ?? 0} задач. Лучшее окно: ${nextData.bestHour}:00 New York.`,
+        `Пакет создан: ${nextData.jobs?.length ?? 0} задач. Окно NY: ${windowStartTime}–${windowEndTime}.`,
       );
       setSelectedVideo(null);
       await markUsed(selectedVideo, true);
@@ -961,6 +994,24 @@ export default function SuperUploadPage() {
                   </select>
                   <small className="muted">{schedulePaces[schedulePace].description}</small>
                 </label>
+
+                <label>
+                  Окно NY — начало
+                  <input
+                    type="time"
+                    value={windowStartTime}
+                    onChange={(event) => setWindowStartTime(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Окно NY — конец
+                  <input
+                    type="time"
+                    value={windowEndTime}
+                    onChange={(event) => setWindowEndTime(event.target.value)}
+                  />
+                </label>
               </div>
 
               <div className="grid grid-2">
@@ -968,8 +1019,8 @@ export default function SuperUploadPage() {
                   Интервал минимум
                   <input
                     type="number"
-                    min={20}
-                    max={120}
+                    min={5}
+                    max={180}
                     value={intervalMin}
                     onChange={(event) => {
                       const value = Number(event.target.value) || 45;
@@ -983,8 +1034,8 @@ export default function SuperUploadPage() {
                   Интервал максимум
                   <input
                     type="number"
-                    min={20}
-                    max={180}
+                    min={5}
+                    max={240}
                     value={intervalMax}
                     onChange={(event) =>
                       setIntervalMax(
@@ -1005,7 +1056,7 @@ export default function SuperUploadPage() {
               <div className="super-plan-box">
                 <b>Расписание</b>
                 <span>
-                  {getPaceSummary(schedulePace)} · система сама раскидает публикации по вечернему/ночному окну New York.
+                  Окно New York: {windowStartTime}–{windowEndTime}. Все {clipsCount} роликов будут распределены внутри этого окна. Если роликов много, интервал автоматически сожмется, чтобы ничего не ушло на следующую ночь.
                 </span>
               </div>
 
@@ -1117,11 +1168,29 @@ export default function SuperUploadPage() {
                 </label>
 
                 <label>
+                  Окно NY — начало
+                  <input
+                    type="time"
+                    value={windowStartTime}
+                    onChange={(event) => setWindowStartTime(event.target.value)}
+                  />
+                </label>
+
+                <label>
+                  Окно NY — конец
+                  <input
+                    type="time"
+                    value={windowEndTime}
+                    onChange={(event) => setWindowEndTime(event.target.value)}
+                  />
+                </label>
+
+                <label>
                   Интервал минимум
                   <input
                     type="number"
-                    min={20}
-                    max={120}
+                    min={5}
+                    max={180}
                     value={intervalMin}
                     onChange={(event) => {
                       const value = Number(event.target.value) || 45;
@@ -1135,8 +1204,8 @@ export default function SuperUploadPage() {
                   Интервал максимум
                   <input
                     type="number"
-                    min={20}
-                    max={180}
+                    min={5}
+                    max={240}
                     value={intervalMax}
                     onChange={(event) =>
                       setIntervalMax(
@@ -1159,8 +1228,7 @@ export default function SuperUploadPage() {
               <div className="super-plan-box">
                 <b>Расписание</b>
                 <span>
-                  {getPaceSummary(schedulePace)} · до 10 роликов в одну ночь,
-                  большие пакеты автоматически растягиваются на 2–3 дня.
+                  Окно New York: {windowStartTime}–{windowEndTime}. Все {clipsCount} клипов будут распределены внутри выбранного окна без лимита 10 за ночь. Если роликов много, интервал автоматически сожмется.
                 </span>
               </div>
 

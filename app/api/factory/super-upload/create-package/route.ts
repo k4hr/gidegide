@@ -16,8 +16,13 @@ const bodySchema = z.object({
   clipsCount: z.coerce.number().int().min(1).max(30).default(10),
   clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
   hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
-  intervalMin: z.coerce.number().int().min(5).max(120).default(45),
-  intervalMax: z.coerce.number().int().min(5).max(180).default(60),
+  intervalMin: z.coerce.number().int().min(5).max(180).default(45),
+  intervalMax: z.coerce.number().int().min(5).max(240).default(60),
+  windowStartHour: z.coerce.number().int().min(0).max(23).default(21),
+  windowStartMinute: z.coerce.number().int().min(0).max(59).default(30),
+  windowEndHour: z.coerce.number().int().min(0).max(23).default(23),
+  windowEndMinute: z.coerce.number().int().min(0).max(59).default(45),
+  fitInsideWindow: z.boolean().default(true),
   hookMode: z.string().max(80).default("AUTO_BEST_MIX"),
   titlePrefix: z.string().max(80).default("auto mix"),
 });
@@ -138,6 +143,11 @@ export async function POST(request: Request) {
       clipsCount: body.clipsCount,
       intervalMin: body.intervalMin,
       intervalMax: body.intervalMax,
+      windowStartHour: body.windowStartHour,
+      windowStartMinute: body.windowStartMinute,
+      windowEndHour: body.windowEndHour,
+      windowEndMinute: body.windowEndMinute,
+      fitInsideWindow: body.fitInsideWindow,
     });
 
     const titlePrefix = getHookPrefix({
@@ -161,7 +171,7 @@ export async function POST(request: Request) {
           hookMode: body.hookMode,
           titlePrefix,
           status: "CREATED",
-          recommendation: `Вечер/ночь New York на основе аналитики. Лучший час: ${schedule.bestHour}:00 NY. Hook preview ${body.hookPreviewSeconds} сек. Интервал ${body.intervalMin}-${body.intervalMax} минут. До 10 роликов за ночь, большие пакеты растягиваются на несколько дней.`,
+          recommendation: `Окно New York: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}. Hook preview ${body.hookPreviewSeconds} сек. Все ${body.clipsCount} роликов распределяются внутри выбранного окна.`,
         },
       }),
     );

@@ -158,7 +158,15 @@ function normalizeUniqueTitle(input: {
   usedTitles: Set<string>;
 }) {
   const raw = (input.title ?? "").replace(/\s+/g, " ").trim();
-  const generic = /^(roblox:\s*)?(wait for (the )?ending|watch till the end|wait for it|insane roblox moment)$/i.test(raw);
+  const rawLower = raw.toLowerCase();
+  const generic =
+    /^(roblox:\s*)?(wait for (the )?ending|watch till the end|wait for it|insane roblox moment)$/i.test(raw) ||
+    /^roblox\s+(moment|game|clip)?:?\s*(wait for (the )?ending|watch till the end|wait for it|nobody expected this ending|this got way too close)$/i.test(raw) ||
+    rawLower === "roblox: nobody expected this ending" ||
+    rawLower === "roblox: this got way too close" ||
+    rawLower === "roblox: the ending changed everything" ||
+    rawLower.includes("wait for the ending") ||
+    rawLower.includes("watch till the end");
   let base = !raw || generic ? buildFallbackTitle(input.sourceTitle, input.momentType, input.salt ?? 0) : raw;
 
   if (!/roblox/i.test(base)) {
@@ -294,7 +302,7 @@ async function reviewCandidateWithOpenAi(input: {
         "Prefer danger, jumps, falls, lava, obstacles, escape, near fails, scary monsters, intense timing, funny fails, clear visual tension.",
         "Return strict JSON only.",
         `Source video title: ${input.sourceTitle ?? "unknown"}`,
-        "Title rules: it must contain Roblox, reference the source idea or moment, and must not be generic like Roblox: Wait for the ending.",
+        "Title rules: it must contain Roblox, reference the source idea or moment, be unique, and must not be generic. Forbidden titles: Roblox: Wait for the ending, Roblox: Watch till the end, Roblox moment: Nobody expected this ending, Roblox: Wait for it.",
         "Schema:",
         "{\"hookScore\":0-100,\"momentType\":\"short_snake_case\",\"overlayText\":\"MAX 6 WORDS UPPERCASE\",\"title\":\"Roblox obby: unique hook title\",\"reason\":\"one short sentence\"}",
       ].join("\n"),

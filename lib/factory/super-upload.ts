@@ -1032,39 +1032,68 @@ export async function buildSuperUploadSchedule(input: {
   clipsCount: number;
   intervalMin: number;
   intervalMax: number;
+  windowStartHour?: number | null;
+  windowStartMinute?: number | null;
+  windowEndHour?: number | null;
+  windowEndMinute?: number | null;
+  fitInsideWindow?: boolean | null;
 }) {
   const bestHour = await getBestAnalyticsHour();
   const now = new Date();
   const clipsCount = clamp(Math.round(input.clipsCount), 1, 30);
-  const intervalMin = clamp(Math.round(input.intervalMin), 20, 120);
-  const intervalMax = clamp(Math.round(input.intervalMax), intervalMin, 180);
-  const perDay = clampDaySlotsCount(clipsCount);
-  const windowStart = getWindowStartFromBestHour(bestHour);
+  const intervalMin = clamp(Math.round(input.intervalMin), 5, 180);
+  const intervalMax = clamp(Math.round(input.intervalMax), intervalMin, 240);
+  const analyticsWindowStart = getWindowStartFromBestHour(bestHour);
+  const windowStart = {
+    hour: clamp(Math.round(input.windowStartHour ?? analyticsWindowStart.hour), 0, 23),
+    minute: clamp(Math.round(input.windowStartMinute ?? analyticsWindowStart.minute), 0, 59),
+  };
+  const windowEnd = {
+    hour: clamp(Math.round(input.windowEndHour ?? 1), 0, 23),
+    minute: clamp(Math.round(input.windowEndMinute ?? 30), 0, 59),
+  };
+  const fitInsideWindow = input.fitInsideWindow ?? true;
   const firstStart = getNextNewYorkDateForStart({
     now,
     startHour: windowStart.hour,
     startMinute: windowStart.minute,
   });
+  const firstStartNy = getTimeZoneParts(firstStart, NEW_YORK_TIME_ZONE);
+  let windowEndDate = zonedTimeToUtc({
+    timeZone: NEW_YORK_TIME_ZONE,
+    year: firstStartNy.year,
+    month: firstStartNy.month,
+    day: firstStartNy.day,
+    hour: windowEnd.hour,
+    minute: windowEnd.minute,
+  });
+
+  if (windowEndDate.getTime() <= firstStart.getTime()) {
+    windowEndDate = addCalendarDays(windowEndDate, 1);
+  }
+
+  const windowMinutes = Math.max(0, Math.floor((windowEndDate.getTime() - firstStart.getTime()) / 60_000));
   const slots: SuperUploadScheduleSlot[] = [];
 
   for (let index = 0; index < clipsCount; index += 1) {
-    const dayIndex = Math.floor(index / perDay);
-    const indexInDay = index % perDay;
-    const dayStart = addCalendarDays(firstStart, dayIndex);
     let minutesFromStart = 0;
 
-    for (let stepIndex = 0; stepIndex < indexInDay; stepIndex += 1) {
-      const range = Math.max(1, intervalMax - intervalMin + 1);
-      minutesFromStart += intervalMin + (((index + stepIndex) * 11) % range);
+    if (clipsCount > 1 && fitInsideWindow && windowMinutes > 0) {
+      minutesFromStart = Math.round((windowMinutes * index) / (clipsCount - 1));
+    } else {
+      for (let stepIndex = 0; stepIndex < index; stepIndex += 1) {
+        const range = Math.max(1, intervalMax - intervalMin + 1);
+        minutesFromStart += intervalMin + (((index + stepIndex) * 11) % range);
+      }
     }
 
-    const scheduledAt = addMinutes(dayStart, minutesFromStart);
+    const scheduledAt = addMinutes(firstStart, minutesFromStart);
     const nySlot = getTimeZoneParts(scheduledAt, NEW_YORK_TIME_ZONE);
 
     slots.push({
       index: index + 1,
       scheduledAt,
-      dayIndex: dayIndex + 1,
+      dayIndex: 1,
       localHour: nySlot.hour,
       localMinute: nySlot.minute,
       label: new Intl.DateTimeFormat("ru-RU", {
@@ -1078,7 +1107,10 @@ export async function buildSuperUploadSchedule(input: {
   return {
     bestHour,
     windowStart,
-    perDay,
+    windowEnd,
+    perDay: clipsCount,
+    windowMinutes,
+    fitInsideWindow,
     slots,
   };
 }
