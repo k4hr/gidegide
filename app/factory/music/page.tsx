@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type Track = {
@@ -57,12 +58,19 @@ export default function FactoryMusicPage() {
   async function load() {
     const response = await fetch("/api/factory/music", { cache: "no-store" });
     const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error ?? "Не удалось загрузить музыку");
+    }
+
     setMoods(data.moods ?? []);
     setTracks(data.tracks ?? []);
   }
 
   useEffect(() => {
-    load().catch((error) => setMessage(error instanceof Error ? error.message : "Ошибка"));
+    load().catch((error) =>
+      setMessage(error instanceof Error ? error.message : "Ошибка"),
+    );
   }, []);
 
   const grouped = useMemo(() => {
@@ -91,9 +99,12 @@ export default function FactoryMusicPage() {
         method: "POST",
         body: formData,
       });
+
       const data = await response.json();
 
-      if (!response.ok) throw new Error(data.error ?? "Ошибка загрузки");
+      if (!response.ok) {
+        throw new Error(data.error ?? "Ошибка загрузки");
+      }
 
       setTitle("");
       setFile(null);
@@ -107,84 +118,145 @@ export default function FactoryMusicPage() {
   }
 
   async function toggle(track: Track) {
-    await fetch("/api/factory/music", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: track.id, isActive: !track.isActive }),
-    });
-    await load();
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/factory/music", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: track.id, isActive: !track.isActive }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Ошибка обновления трека");
+      }
+
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ошибка обновления");
+    }
   }
 
   async function remove(track: Track) {
     if (!confirm(`Удалить трек ${track.title}?`)) return;
-    await fetch(`/api/factory/music?id=${track.id}`, { method: "DELETE" });
-    await load();
+
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/factory/music?id=${track.id}`, {
+        method: "DELETE",
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Ошибка удаления трека");
+      }
+
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ошибка удаления");
+    }
   }
 
   return (
     <main className="factory-shell">
-        <nav className="nav">
-          <Link href="/factory">Завод</Link>
-          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
-          <Link href="/factory/story-shorts">Story Shorts</Link>
-          <Link href="/factory/music">Музыка</Link>
-          <Link href="/factory/long-video">Видео 16:9</Link>
-          <Link href="/factory/analytics">Аналитика</Link>
-          <Link href="/factory/assets">Видео персонажей</Link>
-          <Link href="/factory/templates">Шаблоны</Link>
-          <Link href="/factory/thumbnails">Превью</Link>
-          <Link href="/factory/accounts">Аккаунты</Link>
-        </nav>
+      <nav className="nav">
+        <Link href="/factory">Завод</Link>
+        <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+        <Link href="/factory/story-shorts">Story Shorts</Link>
+        <Link href="/factory/music">Музыка</Link>
+        <Link href="/factory/long-video">Видео 16:9</Link>
+        <Link href="/factory/analytics">Аналитика</Link>
+        <Link href="/factory/assets">Видео персонажей</Link>
+        <Link href="/factory/templates">Шаблоны</Link>
+        <Link href="/factory/thumbnails">Превью</Link>
+        <Link href="/factory/accounts">Аккаунты</Link>
+      </nav>
 
       <section className="factory-panel factory-panel-wide">
         <div className="factory-eyebrow">MUSIC LIBRARY</div>
         <h1>Музыка по темам</h1>
         <p className="factory-muted">
-          Загружай по 10–15 треков в каждую тему. Roblox Story Shorts сам выберет настроение и возьмет активный трек из нужной папки R2.
+          Загружай по 10–15 треков в каждую тему. Roblox Story Shorts сам
+          выберет настроение и возьмет активный трек из нужной папки R2.
         </p>
 
         <div className="factory-form-grid">
           <label>
             Тема
-            <select value={mood} onChange={(event) => setMood(event.target.value)}>
+            <select
+              value={mood}
+              onChange={(event) => setMood(event.target.value)}
+            >
               {moods.map((item) => (
-                <option key={item} value={item}>{moodLabels[item] ?? item}</option>
+                <option key={item} value={item}>
+                  {moodLabels[item] ?? item}
+                </option>
               ))}
             </select>
           </label>
+
           <label>
             Название
-            <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Например: sad piano drop 01" />
+            <input
+              value={title}
+              onChange={(event) => setTitle(event.target.value)}
+              placeholder="Например: sad piano drop 01"
+            />
           </label>
+
           <label>
             Файл
-            <input type="file" accept="audio/*,video/mp4" onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+            <input
+              type="file"
+              accept="audio/*,video/mp4"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
           </label>
         </div>
 
-        <button className="factory-primary-button" disabled={loading} onClick={upload}>
+        <button
+          className="factory-primary-button"
+          disabled={loading}
+          onClick={upload}
+        >
           {loading ? "Загружаю..." : "Загрузить трек"}
         </button>
+
         {message ? <p className="factory-error-text">{message}</p> : null}
       </section>
 
       <section className="factory-panel factory-panel-wide">
         <h2>Темы и треки</h2>
+
         <div className="factory-grid-cards">
           {grouped.map((group) => (
             <div className="factory-card" key={group.mood}>
               <h3>{moodLabels[group.mood] ?? group.mood}</h3>
               <p className="factory-muted">{group.tracks.length} треков</p>
+
               <div className="factory-stack">
-                {group.tracks.length === 0 ? <span className="factory-muted">Пока пусто</span> : null}
+                {group.tracks.length === 0 ? (
+                  <span className="factory-muted">Пока пусто</span>
+                ) : null}
+
                 {group.tracks.map((track) => (
                   <div className="factory-mini-row" key={track.id}>
                     <div>
                       <strong>{track.title}</strong>
-                      <span>{formatBytes(track.sizeBytes)} · {track.isActive ? "активен" : "выключен"}</span>
+                      <span>
+                        {formatBytes(track.sizeBytes)} ·{" "}
+                        {track.isActive ? "активен" : "выключен"}
+                      </span>
                     </div>
+
                     <div className="factory-row-actions">
-                      <button onClick={() => toggle(track)}>{track.isActive ? "Выкл" : "Вкл"}</button>
+                      <button onClick={() => toggle(track)}>
+                        {track.isActive ? "Выкл" : "Вкл"}
+                      </button>
                       <button onClick={() => remove(track)}>Удалить</button>
                     </div>
                   </div>
