@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import {
   DeleteObjectCommand,
   GetObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -189,6 +190,51 @@ export async function downloadR2ObjectToFile(input: {
   });
 
   return input.filePath;
+}
+
+export type R2ListedObject = {
+  key: string;
+  size: number | null;
+  lastModified: Date | null;
+};
+
+export async function listR2Objects(input: {
+  prefix: string;
+  maxKeys?: number;
+}) {
+  if (!isR2Enabled()) {
+    throw new Error("R2 не настроен");
+  }
+
+  const client = getR2Client();
+  const objects: R2ListedObject[] = [];
+  let continuationToken: string | undefined;
+  const maxKeys = Math.max(1, Math.min(input.maxKeys ?? 1000, 1000));
+
+  do {
+    const response = await client.send(
+      new ListObjectsV2Command({
+        Bucket: getR2BucketName(),
+        Prefix: input.prefix,
+        MaxKeys: maxKeys,
+        ContinuationToken: continuationToken,
+      }),
+    );
+
+    for (const item of response.Contents ?? []) {
+      if (!item.Key) continue;
+
+      objects.push({
+        key: item.Key,
+        size: typeof item.Size === "number" ? item.Size : null,
+        lastModified: item.LastModified ?? null,
+      });
+    }
+
+    continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+  } while (continuationToken);
+
+  return objects;
 }
 
 export async function deleteR2Object(key: string | null | undefined) {

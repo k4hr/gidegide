@@ -43,7 +43,12 @@ export async function GET() {
     withDbRetry(() =>
       prisma.factoryMusicTrack.groupBy({
         by: ["mood"],
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          copyrightStatus: {
+            in: ["SAFE_YOUTUBE_AUDIO_LIBRARY", "SAFE_OWNED", "SAFE_ROYALTY_FREE"],
+          },
+        },
         _count: { _all: true },
       }),
     ),
@@ -78,9 +83,12 @@ export async function GET() {
       "emotional",
       "suspense",
       "horror",
+      "scary",
       "funny",
       "chaos",
       "epic",
+      "victory",
+      "fail",
       "cute",
       "magical",
       "gift",
@@ -94,6 +102,17 @@ export async function GET() {
       "mystery",
       "surprise",
       "dramatic",
+      "chase",
+      "chill",
+      "explaining",
+      "finale",
+      "happy",
+      "hype",
+      "intense",
+      "other",
+      "random",
+      "riser",
+      "sneaky",
     ],
   });
 }

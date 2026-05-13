@@ -479,30 +479,80 @@ async function ensureLocalThumbnailFile(input: {
 }
 
 
+function musicFallbackMoods(mood: string) {
+  const normalized = mood.trim().toLowerCase();
+  const fallbackMap: Record<string, string[]> = {
+    chase: ["chase", "intense", "suspense", "dramatic"],
+    intense: ["intense", "chase", "dramatic", "suspense"],
+    scary: ["scary", "horror", "sneaky", "dark", "suspense", "dramatic"],
+    horror: ["horror", "scary", "sneaky", "suspense", "dramatic"],
+    sneaky: ["sneaky", "suspense", "horror", "dramatic"],
+    finale: ["finale", "epic", "victory", "celebration", "dramatic"],
+    victory: ["victory", "finale", "celebration", "happy", "epic"],
+    hype: ["hype", "intense", "epic", "chaos", "happy"],
+    funny: ["funny", "dumb", "happy", "chaos"],
+    fail: ["fail", "funny", "dumb", "chaos"],
+    gift: ["gift", "happy", "magical", "surprise", "cute"],
+    surprise: ["surprise", "gift", "magical", "hype", "dramatic"],
+    love: ["love", "romantic", "sad", "emotional", "calm"],
+    bullying: ["bullying", "sad", "dramatic", "emotional"],
+    revenge: ["revenge", "dramatic", "intense", "epic"],
+    system: ["system", "dramatic", "suspense", "intense"],
+    sad: ["sad", "emotional", "dramatic", "chill"],
+    emotional: ["emotional", "sad", "dramatic", "chill"],
+    cute: ["cute", "happy", "chill", "magical"],
+    chill: ["chill", "cute", "happy", "explaining"],
+    explaining: ["explaining", "chill", "other"],
+    riser: ["riser", "suspense", "intense", "dramatic"],
+    random: ["random", "other", "dramatic", "suspense"],
+    other: ["other", "random", "dramatic", "suspense"],
+  };
+
+  return Array.from(new Set([normalized, ...(fallbackMap[normalized] ?? []), "dramatic", "suspense"]));
+}
+
+function allowedMusicCopyrightStatuses() {
+  const allowUnknown = process.env.FACTORY_ALLOW_UNKNOWN_MUSIC === "true";
+  const safeStatuses = ["SAFE_YOUTUBE_AUDIO_LIBRARY", "SAFE_OWNED", "SAFE_ROYALTY_FREE"];
+
+  return allowUnknown ? [...safeStatuses, "UNKNOWN"] : safeStatuses;
+}
+
 async function selectFactoryMusicTrack(input: { mood: string; seed: string }) {
-  const normalizedMood = input.mood.trim().toLowerCase();
+  const moods = musicFallbackMoods(input.mood);
+  const allowedStatuses = allowedMusicCopyrightStatuses();
 
   const tracks = await db(() =>
     prisma.factoryMusicTrack.findMany({
       where: {
         isActive: true,
-        OR: [
-          { mood: normalizedMood },
-          { mood: "dramatic" },
-          { mood: "suspense" },
-        ],
+        mood: { in: moods },
+        copyrightStatus: { in: allowedStatuses },
       },
       orderBy: { createdAt: "desc" },
     }),
   );
 
-  if (tracks.length === 0) return null;
+  if (tracks.length === 0) {
+    console.warn("No copyright-safe music tracks found for Story Shorts", {
+      mood: input.mood,
+      fallbackMoods: moods,
+      allowedStatuses,
+      allowUnknown: process.env.FACTORY_ALLOW_UNKNOWN_MUSIC === "true",
+    });
+    return null;
+  }
 
-  const exact = tracks.filter((track) => track.mood === normalizedMood);
-  const pool = exact.length > 0 ? exact : tracks;
+  for (const mood of moods) {
+    const exact = tracks.filter((track) => track.mood === mood);
+    if (exact.length > 0) {
+      const hash = hashString(`${mood}:${input.seed}`);
+      return exact[(hash >>> 0) % exact.length];
+    }
+  }
+
   const hash = hashString(`${input.mood}:${input.seed}`);
-
-  return pool[(hash >>> 0) % pool.length];
+  return tracks[(hash >>> 0) % tracks.length];
 }
 
 async function ensureLocalMusicFile(input: { mood: string; seed: string }) {

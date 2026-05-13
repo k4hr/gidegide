@@ -72,6 +72,20 @@ const moodLabels: Record<string, string> = {
   mystery: "Mystery",
   surprise: "Surprise",
   dramatic: "Dramatic",
+  scary: "Scary",
+  victory: "Victory",
+  fail: "Fail",
+  chase: "Chase",
+  chill: "Chill",
+  explaining: "Explaining",
+  finale: "Finale",
+  happy: "Happy",
+  hype: "Hype",
+  intense: "Intense",
+  other: "Other",
+  random: "Random",
+  riser: "Riser",
+  sneaky: "Sneaky",
 };
 
 function formatNumber(value: number) {

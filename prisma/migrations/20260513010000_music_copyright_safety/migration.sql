@@ -1,0 +1,15 @@
+ALTER TABLE "FactoryMusicTrack"
+  ADD COLUMN IF NOT EXISTS "copyrightStatus" TEXT NOT NULL DEFAULT 'UNKNOWN',
+  ADD COLUMN IF NOT EXISTS "musicSource" TEXT NOT NULL DEFAULT 'UNKNOWN',
+  ADD COLUMN IF NOT EXISTS "licenseType" TEXT NOT NULL DEFAULT 'UNKNOWN',
+  ADD COLUMN IF NOT EXISTS "artist" TEXT,
+  ADD COLUMN IF NOT EXISTS "sourceUrl" TEXT,
+  ADD COLUMN IF NOT EXISTS "needsAttribution" BOOLEAN NOT NULL DEFAULT false,
+  ADD COLUMN IF NOT EXISTS "attributionText" TEXT,
+  ADD COLUMN IF NOT EXISTS "riskScore" INTEGER NOT NULL DEFAULT 50,
+  ADD COLUMN IF NOT EXISTS "blockedReason" TEXT,
+  ADD COLUMN IF NOT EXISTS "confirmedSafeAt" TIMESTAMP(3),
+  ADD COLUMN IF NOT EXISTS "lastClaimAt" TIMESTAMP(3);
+
+CREATE INDEX IF NOT EXISTS "FactoryMusicTrack_copyrightStatus_idx" ON "FactoryMusicTrack"("copyrightStatus");
+CREATE INDEX IF NOT EXISTS "FactoryMusicTrack_musicSource_idx" ON "FactoryMusicTrack"("musicSource");

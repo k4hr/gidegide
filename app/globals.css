@@ -1562,3 +1562,37 @@ button:disabled {
   .factory-row-between { flex-direction: column; }
   .factory-shell { padding: 14px; }
 }
+.factory-success-text { color:#86efac; font-weight:800; }
+
+.factory-status-ok,
+.factory-status-warn,
+.factory-status-danger {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px !important;
+  font-weight: 900;
+}
+.factory-status-ok { color: #bbf7d0 !important; background: rgba(34, 197, 94, .14); border: 1px solid rgba(34, 197, 94, .3); }
+.factory-status-warn { color: #fde68a !important; background: rgba(245, 158, 11, .14); border: 1px solid rgba(245, 158, 11, .32); }
+.factory-status-danger { color: #fecaca !important; background: rgba(239, 68, 68, .16); border: 1px solid rgba(239, 68, 68, .34); }
+.factory-stat-card {
+  display: grid;
+  gap: 4px;
+  border-radius: 18px;
+  padding: 16px;
+  border: 1px solid rgba(255,255,255,.1);
+  background: rgba(9,9,11,.68);
+}
+.factory-stat-card strong { font-size: 28px; line-height: 1; }
+.factory-stat-card span { color: #a1a1aa; font-size: 12px; font-weight: 800; }
+.factory-checkbox-row {
+  display: inline-flex;
+  gap: 10px;
+  align-items: center;
+  margin: 8px 0 14px;
+  color: rgba(255,255,255,.84);
+  font-weight: 800;
+}

@@ -79,21 +79,37 @@ enum FactoryDonorKind {
 }
 
 model FactoryMusicTrack {
-  id           String   @id @default(cuid())
-  title        String
-  mood         String
-  filePath     String
-  storageKey   String?
-  originalName String?
-  mimeType     String?
-  sizeBytes    Int?
-  isActive     Boolean  @default(true)
+  id              String   @id @default(cuid())
+  title           String
+  mood            String
+  filePath        String
+  storageKey      String?
+  originalName    String?
+  mimeType        String?
+  sizeBytes       Int?
+  isActive        Boolean  @default(true)
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  // Copyright safety metadata. YouTube Content ID has no public pre-check API,
+  // so the worker only treats tracks marked as safe as automatically usable.
+  copyrightStatus String   @default("UNKNOWN")
+  musicSource     String   @default("UNKNOWN")
+  licenseType     String   @default("UNKNOWN")
+  artist          String?
+  sourceUrl       String?
+  needsAttribution Boolean @default(false)
+  attributionText String?
+  riskScore       Int      @default(50)
+  blockedReason   String?
+  confirmedSafeAt DateTime?
+  lastClaimAt     DateTime?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([mood])
   @@index([isActive])
+  @@index([copyrightStatus])
+  @@index([musicSource])
   @@index([createdAt])
   @@index([storageKey])
 }
