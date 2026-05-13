@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { nanoid } from "nanoid";
 
 import {
@@ -9,6 +9,7 @@ import {
   ensureFactoryDirs,
 } from "@/lib/factory/paths";
 import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloader";
+import { prepareStoryTextAsset } from "@/lib/factory/story-emoji";
 import {
   assertVideoHasAudio,
   getVideoDurationSeconds,
@@ -101,6 +102,16 @@ function escapeDrawText(value: string) {
     .replace(/\[/g, "\\[")
     .replace(/\]/g, "\\]")
     .slice(0, 64);
+}
+
+function escapeFilterPath(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\'")
+    .replace(/,/g, "\\,")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
 }
 
 function buildHookDrawText(text: string) {
@@ -646,16 +657,30 @@ function buildStoryCropChain() {
   ].join(",");
 }
 
-function buildStoryDrawText(input: {
+type StoryBeatRenderAsset = {
   text: string;
+  textFilePath: string | null;
+  emojiFilePaths: string[];
+  y: number;
+  fontSize: number;
+  emojiY: number;
+  emojiBaseX: number;
+  emojiSize: number;
+  startSec: number;
+  endSec: number;
+};
+
+function buildStoryDrawTextFilter(input: {
+  textFilePath: string;
   y: number;
   fontSize: number;
   startSec?: number;
   endSec?: number;
 }) {
-  const safeText = escapeDrawText(input.text || "WATCH THIS").replace(/\n/g, "\\n");
   const parts = [
-    `drawtext=text='${safeText}'`,
+    `drawtext=textfile='${escapeFilterPath(input.textFilePath)}'`,
+    "reload=1",
+    "fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     "fontcolor=white",
     `fontsize=${input.fontSize}`,
     "borderw=8",
@@ -678,6 +703,51 @@ function buildStoryDrawText(input: {
 }
 
 function buildStoryVideoFilter(input: {
+  beats: StoryBeatRenderAsset[];
+}) {
+  const filters: string[] = [];
+  let currentLabel = "storybase0";
+  filters.push(`[0:v]${buildStoryCropChain()}[${currentLabel}]`);
+
+  let sequence = 0;
+
+  for (const beat of input.beats) {
+    if (beat.textFilePath) {
+      const nextLabel = `storytxt${sequence}`;
+      filters.push(
+        `[${currentLabel}]${buildStoryDrawTextFilter({
+          textFilePath: beat.textFilePath,
+          y: beat.y,
+          fontSize: beat.fontSize,
+          startSec: beat.startSec,
+          endSec: beat.endSec,
+        })}[${nextLabel}]`,
+      );
+      currentLabel = nextLabel;
+      sequence += 1;
+    }
+
+    for (let emojiIndex = 0; emojiIndex < beat.emojiFilePaths.length; emojiIndex += 1) {
+      const movieLabel = `storyemo${sequence}_${emojiIndex}`;
+      const nextLabel = `storyov${sequence}_${emojiIndex}`;
+      const emojiX = `(w-overlay_w)/2+${beat.emojiBaseX + emojiIndex * (beat.emojiSize + 14)}`;
+      filters.push(
+        `movie='${escapeFilterPath(beat.emojiFilePaths[emojiIndex])}',scale=${beat.emojiSize}:-1[${movieLabel}]`,
+      );
+      filters.push(
+        `[${currentLabel}][${movieLabel}]overlay=x=${emojiX}:y=${beat.emojiY}:enable='between(t,${Math.max(0, beat.startSec).toFixed(2)},${Math.max(beat.startSec + 0.2, beat.endSec).toFixed(2)})'[${nextLabel}]`,
+      );
+      currentLabel = nextLabel;
+      sequence += 1;
+    }
+  }
+
+  filters.push(`[${currentLabel}]format=yuv420p[v]`);
+  return filters.join(";");
+}
+
+async function prepareStoryBeatAssets(input: {
+  tempDir: string;
   clipSeconds: number;
   overlayText: string;
   conflictText?: string | null;
@@ -693,66 +763,81 @@ function buildStoryVideoFilter(input: {
   const escalationEnd = Math.max(escalationStart + 2.5, Math.min(clipSeconds * 0.82, escalationStart + 8));
   const punchlineStart = Math.max(escalationStart + 2, escalationEnd - 0.35);
 
-  const filters = [
-    `[0:v]${buildStoryCropChain()}`,
-    buildStoryDrawText({
-      text: input.overlayText,
-      y: 135,
-      fontSize: 80,
+  const beats = [
+    {
+      name: "hook",
+      rawText: input.overlayText,
+      y: 120,
+      fontSize: 82,
+      emojiY: 118,
+      emojiBaseX: 250,
+      emojiSize: 94,
       startSec: 0,
       endSec: hookEnd,
-    }),
+    },
+    {
+      name: "conflict",
+      rawText: input.conflictText ?? "",
+      y: 215,
+      fontSize: 72,
+      emojiY: 215,
+      emojiBaseX: 255,
+      emojiSize: 88,
+      startSec: conflictStart,
+      endSec: conflictEnd,
+    },
+    {
+      name: "escalation",
+      rawText: input.escalationText ?? "",
+      y: 215,
+      fontSize: 72,
+      emojiY: 215,
+      emojiBaseX: 255,
+      emojiSize: 88,
+      startSec: escalationStart,
+      endSec: escalationEnd,
+    },
+    {
+      name: "punchline",
+      rawText: input.punchlineText || input.secondaryText || "",
+      y: input.punchlineText ? 1260 : 1490,
+      fontSize: input.punchlineText ? 70 : 56,
+      emojiY: input.punchlineText ? 1268 : 1492,
+      emojiBaseX: input.punchlineText ? 235 : 230,
+      emojiSize: input.punchlineText ? 88 : 74,
+      startSec: punchlineStart,
+      endSec: clipSeconds + 0.1,
+    },
   ];
 
-  if (input.conflictText) {
-    filters.push(
-      buildStoryDrawText({
-        text: input.conflictText,
-        y: 210,
-        fontSize: 72,
-        startSec: conflictStart,
-        endSec: conflictEnd,
-      }),
-    );
+  const prepared: StoryBeatRenderAsset[] = [];
+
+  for (const beat of beats) {
+    const asset = prepareStoryTextAsset(beat.rawText);
+    let textFilePath: string | null = null;
+
+    if (asset.cleanText) {
+      textFilePath = path.join(input.tempDir, `${beat.name}.txt`);
+      await writeFile(textFilePath, asset.cleanText, "utf8");
+    }
+
+    prepared.push({
+      text: asset.cleanText,
+      textFilePath,
+      emojiFilePaths: asset.emojiFiles.map((fileName) =>
+        path.join(process.cwd(), "public", "factory", "emoji", fileName),
+      ),
+      y: beat.y,
+      fontSize: beat.fontSize,
+      emojiY: beat.emojiY,
+      emojiBaseX: beat.emojiBaseX,
+      emojiSize: beat.emojiSize,
+      startSec: beat.startSec,
+      endSec: beat.endSec,
+    });
   }
 
-  if (input.escalationText) {
-    filters.push(
-      buildStoryDrawText({
-        text: input.escalationText,
-        y: 210,
-        fontSize: 72,
-        startSec: escalationStart,
-        endSec: escalationEnd,
-      }),
-    );
-  }
-
-  if (input.punchlineText) {
-    filters.push(
-      buildStoryDrawText({
-        text: input.punchlineText,
-        y: 1280,
-        fontSize: 70,
-        startSec: punchlineStart,
-        endSec: clipSeconds + 0.1,
-      }),
-    );
-  } else if (input.secondaryText) {
-    filters.push(
-      buildStoryDrawText({
-        text: input.secondaryText,
-        y: 1510,
-        fontSize: 56,
-        startSec: punchlineStart,
-        endSec: clipSeconds + 0.1,
-      }),
-    );
-  }
-
-  filters.push("format=yuv420p[v]");
-
-  return filters.join(",");
+  return prepared.filter((beat) => beat.textFilePath || beat.emojiFilePaths.length > 0);
 }
 
 export async function renderRobloxStoryShort(input: {
@@ -779,110 +864,131 @@ export async function renderRobloxStoryShort(input: {
   );
 
   const sourceVolume = Math.max(0, Math.min(100, input.sourceAudioVolumePercent ?? 10)) / 100;
+  const tempDir = path.join(
+    FACTORY_TEMP_DIR,
+    `${input.jobId}-story-render-${String(input.clipIndex).padStart(4, "0")}-${nanoid(6)}`,
+  );
 
-  if (input.musicPath) {
-    const musicStart = Math.max(0, Math.round(input.musicStartSec ?? 0));
-    const audioFilter = [
-      `[0:a]asetpts=PTS-STARTPTS,volume=${sourceVolume.toFixed(2)}[srca]`,
-      `[1:a]atrim=start=${musicStart}:duration=${input.clipSeconds},asetpts=PTS-STARTPTS,volume=0.95,afade=t=in:st=0:d=0.25,afade=t=out:st=${Math.max(0, input.clipSeconds - 1)}:d=1[musica]`,
-      "[srca][musica]amix=inputs=2:duration=first:dropout_transition=0,volume=1.0[a]",
-    ].join(";");
+  await mkdir(tempDir, { recursive: true });
 
-    await runCommand(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-ss",
-        String(input.startSec),
-        "-t",
-        String(input.clipSeconds),
-        "-i",
-        input.sourcePath,
-        "-stream_loop",
-        "-1",
-        "-i",
-        input.musicPath,
-        "-filter_complex",
-        `${buildStoryVideoFilter({ clipSeconds: input.clipSeconds, overlayText: input.overlayText, conflictText: input.conflictText, escalationText: input.escalationText, punchlineText: input.punchlineText, secondaryText: input.secondaryText })};${audioFilter}`,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-t",
-        String(input.clipSeconds),
-        "-r",
-        "30",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "23",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "160k",
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        "-movflags",
-        "+faststart",
-        outputPath,
-      ],
-      { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
-    );
-  } else {
-    await runCommand(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-y",
-        "-ss",
-        String(input.startSec),
-        "-t",
-        String(input.clipSeconds),
-        "-i",
-        input.sourcePath,
-        "-filter_complex",
-        `${buildStoryVideoFilter({ clipSeconds: input.clipSeconds, overlayText: input.overlayText, conflictText: input.conflictText, escalationText: input.escalationText, punchlineText: input.punchlineText, secondaryText: input.secondaryText })};[0:a]volume=${sourceVolume.toFixed(2)}[a]`,
-        "-map",
-        "[v]",
-        "-map",
-        "[a]",
-        "-r",
-        "30",
-        "-pix_fmt",
-        "yuv420p",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "veryfast",
-        "-crf",
-        "23",
-        "-c:a",
-        "aac",
-        "-b:a",
-        "128k",
-        "-ar",
-        "44100",
-        "-ac",
-        "2",
-        "-movflags",
-        "+faststart",
-        outputPath,
-      ],
-      { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
-    );
+  try {
+    const beats = await prepareStoryBeatAssets({
+      tempDir,
+      clipSeconds: input.clipSeconds,
+      overlayText: input.overlayText,
+      conflictText: input.conflictText,
+      escalationText: input.escalationText,
+      punchlineText: input.punchlineText,
+      secondaryText: input.secondaryText,
+    });
+    const videoFilter = buildStoryVideoFilter({ beats });
+
+    if (input.musicPath) {
+      const musicStart = Math.max(0, Math.round(input.musicStartSec ?? 0));
+      const audioFilter = [
+        `[0:a]asetpts=PTS-STARTPTS,volume=${sourceVolume.toFixed(2)}[srca]`,
+        `[1:a]atrim=start=${musicStart}:duration=${input.clipSeconds},asetpts=PTS-STARTPTS,volume=0.95,afade=t=in:st=0:d=0.25,afade=t=out:st=${Math.max(0, input.clipSeconds - 1)}:d=1[musica]`,
+        "[srca][musica]amix=inputs=2:duration=first:dropout_transition=0,volume=1.0[a]",
+      ].join(";");
+
+      await runCommand(
+        "ffmpeg",
+        [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-y",
+          "-ss",
+          String(input.startSec),
+          "-t",
+          String(input.clipSeconds),
+          "-i",
+          input.sourcePath,
+          "-stream_loop",
+          "-1",
+          "-i",
+          input.musicPath,
+          "-filter_complex",
+          `${videoFilter};${audioFilter}`,
+          "-map",
+          "[v]",
+          "-map",
+          "[a]",
+          "-t",
+          String(input.clipSeconds),
+          "-r",
+          "30",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "23",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "160k",
+          "-ar",
+          "44100",
+          "-ac",
+          "2",
+          "-movflags",
+          "+faststart",
+          outputPath,
+        ],
+        { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
+      );
+    } else {
+      await runCommand(
+        "ffmpeg",
+        [
+          "-hide_banner",
+          "-loglevel",
+          "error",
+          "-y",
+          "-ss",
+          String(input.startSec),
+          "-t",
+          String(input.clipSeconds),
+          "-i",
+          input.sourcePath,
+          "-filter_complex",
+          `${videoFilter};[0:a]volume=${sourceVolume.toFixed(2)}[a]`,
+          "-map",
+          "[v]",
+          "-map",
+          "[a]",
+          "-r",
+          "30",
+          "-pix_fmt",
+          "yuv420p",
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-crf",
+          "23",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          "-ar",
+          "44100",
+          "-ac",
+          "2",
+          "-movflags",
+          "+faststart",
+          outputPath,
+        ],
+        { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
+      );
+    }
+
+    await assertVideoHasAudio(outputPath);
+    return outputPath;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
   }
-
-  await assertVideoHasAudio(outputPath);
-  return outputPath;
 }
