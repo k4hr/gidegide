@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
-import { buildSuperUploadSchedule, buildTodayCandidates } from "@/lib/factory/super-upload";
+import { buildSuperUploadSchedule, buildTodayCandidates, listSuperUploadDonors, STORY_SHORTS_DONOR_KIND } from "@/lib/factory/super-upload";
 
 export const runtime = "nodejs";
 
@@ -30,7 +30,7 @@ function normalizeUpper(value: string) {
 }
 
 export async function GET() {
-  const [accounts, candidates, musicSummary] = await Promise.all([
+  const [accounts, donors, candidates, musicSummary] = await Promise.all([
     withDbRetry(() =>
       prisma.factoryAccount.findMany({
         where: { platform: "YOUTUBE" },
@@ -38,7 +38,8 @@ export async function GET() {
         orderBy: { createdAt: "desc" },
       }),
     ),
-    buildTodayCandidates({ limit: 30 }),
+    listSuperUploadDonors({ donorKind: STORY_SHORTS_DONOR_KIND }),
+    buildTodayCandidates({ limit: 30, donorKind: STORY_SHORTS_DONOR_KIND }),
     withDbRetry(() =>
       prisma.factoryMusicTrack.groupBy({
         by: ["mood"],
@@ -50,6 +51,12 @@ export async function GET() {
 
   return NextResponse.json({
     accounts,
+    donors: donors.map((donor) => ({
+      ...donor,
+      subscriberCount: donor.subscriberCount.toString(),
+      videoCount: donor.videoCount.toString(),
+      viewCount: donor.viewCount.toString(),
+    })),
     candidates,
     musicSummary: musicSummary.map((item) => ({ mood: item.mood, count: item._count._all })),
     storyStyles: [
@@ -105,7 +112,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "YouTube-аккаунт не найден" }, { status: 404 });
     }
 
-    const candidates = (await buildTodayCandidates({ limit: body.candidatesCount })).slice(0, body.candidatesCount);
+    const candidates = (await buildTodayCandidates({
+      limit: body.candidatesCount,
+      donorKind: STORY_SHORTS_DONOR_KIND,
+    })).slice(0, body.candidatesCount);
 
     if (candidates.length === 0) {
       return NextResponse.json(

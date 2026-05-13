@@ -1,4 +1,8 @@
-import { checkAllSuperUploadDonors } from "@/lib/factory/super-upload";
+import {
+  checkAllSuperUploadDonors,
+  STORY_SHORTS_DONOR_KIND,
+  SUPER_UPLOAD_DONOR_KIND,
+} from "@/lib/factory/super-upload";
 
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = Number(
@@ -15,13 +19,17 @@ function sleep(ms: number) {
 
 async function runOnce() {
   const startedAt = new Date();
-  const result = await checkAllSuperUploadDonors();
+  const superResult = await checkAllSuperUploadDonors({ donorKind: SUPER_UPLOAD_DONOR_KIND });
+  const storyResult = await checkAllSuperUploadDonors({ donorKind: STORY_SHORTS_DONOR_KIND });
 
   console.log(
-    `Daily scout checked ${result.checked} donors, candidates ${result.candidates.length}, errors ${result.errors.length}`,
+    `Daily scout checked Super Upload ${superResult.checked} donors, candidates ${superResult.candidates.length}, errors ${superResult.errors.length}`,
+  );
+  console.log(
+    `Daily scout checked Story Shorts ${storyResult.checked} donors, candidates ${storyResult.candidates.length}, errors ${storyResult.errors.length}`,
   );
 
-  for (const error of result.errors) {
+  for (const error of [...superResult.errors, ...storyResult.errors]) {
     console.warn(`Daily scout donor failed: ${error.channelTitle}: ${error.message}`);
   }
 

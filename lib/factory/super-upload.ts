@@ -1,4 +1,5 @@
 import { google, type youtube_v3 } from "googleapis";
+import type { FactoryDonorKind } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
@@ -6,6 +7,7 @@ import { getYoutubeOAuthClient } from "@/lib/factory/youtube-analytics";
 
 export type SuperUploadVideo = {
   sourceVideoId: string;
+  sourceKind?: FactoryDonorKind;
   sourceUrl: string;
   channelId: string | null;
   channelTitle: string | null;
@@ -40,6 +42,8 @@ export type SuperUploadScheduleSlot = {
 const MAX_ANALYZE_VIDEOS = 100;
 const PAGE_SIZE = 50;
 const NEW_YORK_TIME_ZONE = "America/New_York";
+export const SUPER_UPLOAD_DONOR_KIND: FactoryDonorKind = "SUPER_UPLOAD";
+export const STORY_SHORTS_DONOR_KIND: FactoryDonorKind = "STORY_SHORTS";
 
 function toInt(value: unknown) {
   const numberValue = Number(value ?? 0);
@@ -461,6 +465,7 @@ async function fetchVideoDetails(input: {
   videoIds: string[];
   channelId: string;
   channelTitle: string;
+  donorKind: FactoryDonorKind;
 }) {
   const videos: SuperUploadVideo[] = [];
 
@@ -496,7 +501,10 @@ async function fetchVideoDetails(input: {
       const existing = await withDbRetry(() =>
         prisma.factorySourceVideo.findUnique({
           where: {
-            sourceVideoId: videoId,
+            sourceVideoId_sourceKind: {
+              sourceVideoId: videoId,
+              sourceKind: input.donorKind,
+            },
           },
           select: {
             isUsed: true,
@@ -517,6 +525,7 @@ async function fetchVideoDetails(input: {
 
       videos.push({
         sourceVideoId: videoId,
+        sourceKind: input.donorKind,
         sourceUrl: getVideoUrl(videoId),
         channelId: input.channelId,
         channelTitle: input.channelTitle,
@@ -536,7 +545,8 @@ async function fetchVideoDetails(input: {
   return videos;
 }
 
-export async function analyzeYoutubeSource(input: { sourceUrl: string }) {
+export async function analyzeYoutubeSource(input: { sourceUrl: string; donorKind?: FactoryDonorKind }) {
+  const donorKind = input.donorKind ?? SUPER_UPLOAD_DONOR_KIND;
   const youtube = await getYoutubeClient();
   const channelId = await resolveChannel({
     youtube,
@@ -558,15 +568,22 @@ export async function analyzeYoutubeSource(input: { sourceUrl: string }) {
     videoIds,
     channelId,
     channelTitle: channel.channelTitle,
+    donorKind,
   });
 
   for (const video of videos) {
     await withDbRetry(() =>
       prisma.factorySourceVideo.upsert({
         where: {
-          sourceVideoId: video.sourceVideoId,
+          sourceVideoId_sourceKind: {
+            sourceVideoId: video.sourceVideoId,
+            sourceKind: donorKind,
+          },
         },
-        create: video,
+        create: {
+          ...video,
+          sourceKind: donorKind,
+        },
         update: {
           sourceUrl: video.sourceUrl,
           channelId: video.channelId,
@@ -595,6 +612,7 @@ export async function analyzeYoutubeSource(input: { sourceUrl: string }) {
   const storedVideos = await withDbRetry(() =>
     prisma.factorySourceVideo.findMany({
       where: {
+        sourceKind: donorKind,
         sourceVideoId: {
           in: videos.map((video) => video.sourceVideoId),
         },
@@ -657,9 +675,12 @@ function buildSourceRecommendations(videos: Array<{
 }
 
 
-export async function listSuperUploadDonors() {
+export async function listSuperUploadDonors(input: { donorKind?: FactoryDonorKind } = {}) {
+  const donorKind = input.donorKind ?? SUPER_UPLOAD_DONOR_KIND;
+
   return withDbRetry(() =>
     prisma.factoryDonorChannel.findMany({
+      where: { donorKind },
       orderBy: [
         { isActive: "desc" },
         { createdAt: "desc" },
@@ -668,11 +689,12 @@ export async function listSuperUploadDonors() {
   );
 }
 
-export async function buildTodayCandidates(input: { limit?: number } = {}) {
+export async function buildTodayCandidates(input: { limit?: number; donorKind?: FactoryDonorKind } = {}) {
   const limit = input.limit ?? 10;
+  const donorKind = input.donorKind ?? SUPER_UPLOAD_DONOR_KIND;
   const donorIds = await withDbRetry(() =>
     prisma.factoryDonorChannel.findMany({
-      where: { isActive: true },
+      where: { isActive: true, donorKind },
       select: { id: true, channelId: true },
     }),
   );
@@ -682,6 +704,7 @@ export async function buildTodayCandidates(input: { limit?: number } = {}) {
   const since72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
 
   const whereBase = {
+    sourceKind: donorKind,
     isUsed: false,
     OR: [
       { donorChannelId: { in: donorDbIds } },
@@ -721,16 +744,21 @@ export async function buildTodayCandidates(input: { limit?: number } = {}) {
   return fallback;
 }
 
-export async function addSuperUploadDonor(input: { sourceUrl: string }) {
-  const result = await analyzeYoutubeSource({ sourceUrl: input.sourceUrl });
+export async function addSuperUploadDonor(input: { sourceUrl: string; donorKind?: FactoryDonorKind }) {
+  const donorKind = input.donorKind ?? SUPER_UPLOAD_DONOR_KIND;
+  const result = await analyzeYoutubeSource({ sourceUrl: input.sourceUrl, donorKind });
 
   const donor = await withDbRetry(() =>
     prisma.factoryDonorChannel.upsert({
       where: {
-        channelId: result.channel.id,
+        channelId_donorKind: {
+          channelId: result.channel.id,
+          donorKind,
+        },
       },
       create: {
         channelId: result.channel.id,
+        donorKind,
         channelTitle: result.channel.title,
         sourceUrl: input.sourceUrl,
         uploadsPlaylistId: result.channel.uploadsPlaylistId,
@@ -759,6 +787,7 @@ export async function addSuperUploadDonor(input: { sourceUrl: string }) {
     prisma.factorySourceVideo.updateMany({
       where: {
         channelId: result.channel.id,
+        sourceKind: donorKind,
       },
       data: {
         donorChannelId: donor.id,
@@ -784,7 +813,7 @@ export async function checkSuperUploadDonor(input: { donorId: string }) {
   }
 
   try {
-    const result = await analyzeYoutubeSource({ sourceUrl: donor.sourceUrl });
+    const result = await analyzeYoutubeSource({ sourceUrl: donor.sourceUrl, donorKind: donor.donorKind });
 
     const updatedDonor = await withDbRetry(() =>
       prisma.factoryDonorChannel.update({
@@ -805,6 +834,7 @@ export async function checkSuperUploadDonor(input: { donorId: string }) {
       prisma.factorySourceVideo.updateMany({
         where: {
           channelId: result.channel.id,
+          sourceKind: donor.donorKind,
         },
         data: {
           donorChannelId: donor.id,
@@ -831,10 +861,11 @@ export async function checkSuperUploadDonor(input: { donorId: string }) {
   }
 }
 
-export async function checkAllSuperUploadDonors() {
+export async function checkAllSuperUploadDonors(input: { donorKind?: FactoryDonorKind } = {}) {
+  const donorKind = input.donorKind ?? SUPER_UPLOAD_DONOR_KIND;
   const donors = await withDbRetry(() =>
     prisma.factoryDonorChannel.findMany({
-      where: { isActive: true },
+      where: { isActive: true, donorKind },
       orderBy: { createdAt: "asc" },
     }),
   );
@@ -855,7 +886,7 @@ export async function checkAllSuperUploadDonors() {
     }
   }
 
-  const candidates = await buildTodayCandidates({ limit: 10 });
+  const candidates = await buildTodayCandidates({ limit: 10, donorKind });
 
   return {
     checked,

@@ -15,9 +15,21 @@ type Candidate = {
   isUsed: boolean;
 };
 type MusicSummary = { mood: string; count: number };
+type StoryDonor = {
+  id: string;
+  channelId: string;
+  channelTitle: string;
+  sourceUrl: string;
+  subscriberCount: string;
+  videoCount: string;
+  isActive: boolean;
+  lastCheckedAt: string | null;
+  lastError: string | null;
+};
 
 type PageData = {
   accounts: Account[];
+  donors: StoryDonor[];
   candidates: Candidate[];
   musicSummary: MusicSummary[];
   storyStyles: string[];
@@ -82,6 +94,8 @@ export default function StoryShortsPage() {
   const [intervalMax, setIntervalMax] = useState(30);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [donorUrl, setDonorUrl] = useState("");
+  const [donorLoading, setDonorLoading] = useState(false);
 
   async function load() {
     const response = await fetch("/api/factory/story-shorts", { cache: "no-store" });
@@ -106,6 +120,77 @@ export default function StoryShortsPage() {
       hour: Number.isFinite(hour) ? hour : 21,
       minute: Number.isFinite(minute) ? minute : 30,
     };
+  }
+
+  async function addDonor() {
+    if (!donorUrl.trim()) {
+      setMessage("Вставь ссылку на Story donor");
+      return;
+    }
+
+    setDonorLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/factory/story-shorts/donors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceUrl: donorUrl }),
+      });
+      const json = await response.json();
+
+      if (!response.ok) throw new Error(json.error ?? "Не получилось добавить Story donor");
+
+      setDonorUrl("");
+      setMessage(json.message ?? "Story donor добавлен");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не получилось добавить Story donor");
+    } finally {
+      setDonorLoading(false);
+    }
+  }
+
+  async function checkDonors() {
+    setDonorLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/factory/story-shorts/donors/check", { method: "POST" });
+      const json = await response.json();
+
+      if (!response.ok) throw new Error(json.error ?? "Не получилось проверить Story donors");
+
+      setMessage(`Story donors проверены: ${json.checked ?? 0}, ошибок: ${json.errors?.length ?? 0}`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не получилось проверить Story donors");
+    } finally {
+      setDonorLoading(false);
+    }
+  }
+
+  async function disableDonor(id: string) {
+    setDonorLoading(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/factory/story-shorts/donors", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const json = await response.json();
+
+      if (!response.ok) throw new Error(json.error ?? "Не получилось выключить Story donor");
+
+      setMessage(json.message ?? "Story donor выключен");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Не получилось выключить Story donor");
+    } finally {
+      setDonorLoading(false);
+    }
   }
 
   async function createPackage() {
@@ -151,6 +236,19 @@ export default function StoryShortsPage() {
 
   return (
     <main className="factory-shell">
+        <nav className="nav">
+          <Link href="/factory">Завод</Link>
+          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/story-shorts">Story Shorts</Link>
+          <Link href="/factory/music">Музыка</Link>
+          <Link href="/factory/long-video">Видео 16:9</Link>
+          <Link href="/factory/analytics">Аналитика</Link>
+          <Link href="/factory/assets">Видео персонажей</Link>
+          <Link href="/factory/templates">Шаблоны</Link>
+          <Link href="/factory/thumbnails">Превью</Link>
+          <Link href="/factory/accounts">Аккаунты</Link>
+        </nav>
+
       <section className="factory-panel factory-panel-wide">
         <div className="factory-eyebrow">ROBLOX STORY SHORTS</div>
         <h1>Простые вирусные Roblox Shorts без Amelia</h1>
@@ -158,9 +256,49 @@ export default function StoryShortsPage() {
           AI сам ищет story-моменты в длинных 16:9 донорах, сам выбирает длину 10–35 сек, пишет крупный текст, эмодзи, выбирает музыку и публикует в выбранное окно New York.
         </p>
         <div className="factory-row-actions">
-          <Link href="/factory/super-upload">Горячие доноры</Link>
+          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ / Amelia</Link>
           <Link href="/factory/music">Музыка по темам</Link>
           <Link href="/factory">Задачи</Link>
+        </div>
+      </section>
+
+      <section className="factory-panel factory-panel-wide">
+        <div className="factory-row-between">
+          <div>
+            <div className="factory-eyebrow">STORY DONORS</div>
+            <h2>Отдельные доноры для Roblox Story Shorts</h2>
+            <p className="factory-muted">
+              Это отдельный список каналов. Он не смешивается с донорами из СУПЕР ЗАЛИВА для Amelia Reaction.
+            </p>
+          </div>
+          <button type="button" className="factory-secondary-button" disabled={donorLoading} onClick={checkDonors}>
+            Проверить Story donors
+          </button>
+        </div>
+        <div className="factory-inline-form">
+          <input
+            value={donorUrl}
+            onChange={(event) => setDonorUrl(event.target.value)}
+            placeholder="https://www.youtube.com/@storydonor или ссылка на видео"
+          />
+          <button type="button" className="factory-secondary-button" disabled={donorLoading} onClick={addDonor}>
+            + Добавить Story donor
+          </button>
+        </div>
+        <div className="factory-grid-cards factory-grid-cards-small">
+          {(data?.donors ?? []).map((donor) => (
+            <article className="factory-card" key={donor.id}>
+              <h3>{donor.channelTitle}</h3>
+              <p>{formatNumber(Number(donor.subscriberCount))} subs · {formatNumber(Number(donor.videoCount))} videos</p>
+              <p className="factory-muted">
+                {donor.lastCheckedAt ? `check: ${new Date(donor.lastCheckedAt).toLocaleString("ru-RU")}` : "еще не проверялся"}
+              </p>
+              {donor.lastError ? <p className="factory-error-text">{donor.lastError}</p> : null}
+              <button type="button" className="factory-secondary-button" disabled={donorLoading || !donor.isActive} onClick={() => disableDonor(donor.id)}>
+                {donor.isActive ? "Выключить" : "Выключен"}
+              </button>
+            </article>
+          ))}
         </div>
       </section>
 

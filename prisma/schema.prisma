@@ -73,6 +73,11 @@ enum FactoryRenderFormat {
   LONG_16_9
 }
 
+enum FactoryDonorKind {
+  SUPER_UPLOAD
+  STORY_SHORTS
+}
+
 model FactoryMusicTrack {
   id           String   @id @default(cuid())
   title        String
@@ -492,7 +497,8 @@ model FactoryVideoAnalysis {
 model FactoryDonorChannel {
   id                String   @id @default(cuid())
 
-  channelId         String   @unique
+  channelId         String
+  donorKind         FactoryDonorKind @default(SUPER_UPLOAD)
   channelTitle      String
   sourceUrl         String
   uploadsPlaylistId String?
@@ -510,6 +516,8 @@ model FactoryDonorChannel {
 
   sourceVideos      FactorySourceVideo[]
 
+  @@unique([channelId, donorKind])
+  @@index([donorKind])
   @@index([isActive])
   @@index([lastCheckedAt])
   @@index([createdAt])
@@ -518,7 +526,8 @@ model FactoryDonorChannel {
 model FactorySourceVideo {
   id              String   @id @default(cuid())
 
-  sourceVideoId   String   @unique
+  sourceVideoId   String
+  sourceKind      FactoryDonorKind @default(SUPER_UPLOAD)
   sourceUrl       String
   channelId       String?
   channelTitle    String?
@@ -554,6 +563,8 @@ model FactorySourceVideo {
 
   packages        FactorySuperUploadPackage[]
 
+  @@unique([sourceVideoId, sourceKind])
+  @@index([sourceKind])
   @@index([donorChannelId])
   @@index([channelId])
   @@index([sourceScore])
