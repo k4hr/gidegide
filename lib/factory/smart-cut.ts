@@ -1,6 +1,6 @@
 import { readCommand } from "@/lib/factory/video";
 
-export type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI";
+export type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI" | "ROBLOX_STORY_AI";
 
 export type SmartCutCandidate = {
   startSec: number;

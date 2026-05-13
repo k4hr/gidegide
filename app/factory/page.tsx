@@ -24,7 +24,7 @@ type FactoryPublishTiming =
   | "NY_22"
   | "USA_SMART";
 
-type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI";
+type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI" | "ROBLOX_STORY_AI";
 type PublishAction = "DEFAULT" | "USA_SMART";
 
 type FactoryTemplate = {
@@ -70,6 +70,9 @@ type FactoryJob = {
   smartCandidates: number;
   smartMinGapSeconds: number;
   hookPreviewSeconds: number;
+  storyStyle?: string;
+  storyMinSeconds?: number;
+  storyMaxSeconds?: number;
   renderFormat?: "SHORTS_9_16" | "LONG_16_9";
   longVideoTitle?: string | null;
   cancelRequested: boolean;
@@ -1062,9 +1065,11 @@ export default function FactoryPage() {
                     <p className="muted">
                       {job.renderFormat === "LONG_16_9"
                         ? "Видео 16:9 · full video · facecam reaction"
-                        : job.cutMode === "SMART_HOOK_AI"
-                          ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
-                          : job.cutMode === "SMART_LITE"
+                        : job.cutMode === "ROBLOX_STORY_AI"
+                          ? `Roblox Story Shorts · AI длина ${job.storyMinSeconds ?? 10}-${job.storyMaxSeconds ?? 35} сек · ${job.storyStyle ?? "AUTO"}`
+                          : job.cutMode === "SMART_HOOK_AI"
+                            ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
+                            : job.cutMode === "SMART_LITE"
                             ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
                             : "Обычная нарезка подряд"}
                     </p>

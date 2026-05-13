@@ -6,6 +6,7 @@ import type { FactoryGame } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
   FACTORY_LANA_DIR,
+  FACTORY_MUSIC_DIR,
   FACTORY_SOURCE_DIR,
   FACTORY_THUMBNAILS_DIR,
 } from "@/lib/factory/paths";
@@ -14,6 +15,7 @@ import {
   getSourceDuration,
   renderFactoryClip,
   renderLongVideo16x9,
+  renderRobloxStoryShort,
   type FactoryRenderTemplate,
 } from "@/lib/factory/render";
 import { uploadYoutubeShort, uploadYoutubeVideo } from "@/lib/factory/youtube";
@@ -35,6 +37,10 @@ import {
   buildAiHookCutCandidates,
   type AiHookCutCandidate,
 } from "@/lib/factory/ai-hook-cut";
+import {
+  buildRobloxStoryShortCandidates,
+  type RobloxStoryCandidate,
+} from "@/lib/factory/story-shorts";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -329,6 +335,47 @@ function makeJobTitleUnique(input: {
   return candidate;
 }
 
+
+function makeStoryTitleUnique(input: {
+  title: string;
+  clipIndex: number;
+  usedTitles: Set<string>;
+}) {
+  const fallbackTitles = [
+    "He picked MONEY instead of love.. 😭💔",
+    "The ending made me cry.. 😭",
+    "Who would you save?! 😳💔",
+    "They BULLIED him, so he...",
+    "She thought he was evil.. 😳",
+    "He picked the wrong gift.. 🎁😱",
+    "The system made him poor forever.. 💔",
+    "Bacon did nothing wrong... 😢",
+    "Roblox gave him one choice.. 😱",
+    "The poor noob got revenge.. 😭",
+  ];
+  let title = input.title.replace(/\s+/g, " ").trim();
+
+  if (!title || /^roblox\s+(choice|system|story|horror|moment|game):/i.test(title)) {
+    title = fallbackTitles[input.clipIndex % fallbackTitles.length];
+  }
+
+  let candidate = title.slice(0, 90);
+  let attempt = 0;
+
+  while (input.usedTitles.has(candidate.toLowerCase())) {
+    attempt += 1;
+    candidate = fallbackTitles[(input.clipIndex + attempt) % fallbackTitles.length].slice(0, 90);
+    if (attempt > fallbackTitles.length + 2) {
+      candidate = `${title.replace(/[.\s]+$/g, "")} #${attempt}`.slice(0, 90);
+      break;
+    }
+  }
+
+  input.usedTitles.add(candidate.toLowerCase());
+
+  return candidate;
+}
+
 async function selectFactoryThumbnail(input: {
   game: string;
   seed: string;
@@ -429,6 +476,81 @@ async function ensureLocalThumbnailFile(input: {
   }
 
   return localPath;
+}
+
+
+async function selectFactoryMusicTrack(input: { mood: string; seed: string }) {
+  const normalizedMood = input.mood.trim().toLowerCase();
+
+  const tracks = await db(() =>
+    prisma.factoryMusicTrack.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { mood: normalizedMood },
+          { mood: "dramatic" },
+          { mood: "suspense" },
+        ],
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+  );
+
+  if (tracks.length === 0) return null;
+
+  const exact = tracks.filter((track) => track.mood === normalizedMood);
+  const pool = exact.length > 0 ? exact : tracks;
+  const hash = hashString(`${input.mood}:${input.seed}`);
+
+  return pool[(hash >>> 0) % pool.length];
+}
+
+async function ensureLocalMusicFile(input: { mood: string; seed: string }) {
+  const track = await selectFactoryMusicTrack(input);
+
+  if (!track) return null;
+
+  if (track.filePath && fs.existsSync(track.filePath)) {
+    return track.filePath;
+  }
+
+  if (!isR2Enabled() || !track.storageKey) {
+    console.warn(`Music track "${track.title}" not found locally and R2 is not available`);
+    return null;
+  }
+
+  await mkdir(FACTORY_MUSIC_DIR, { recursive: true });
+  const ext = path.extname(track.originalName ?? track.filePath) || ".mp3";
+  const localPath = path.join(FACTORY_MUSIC_DIR, `${track.id}${ext}`);
+
+  if (fs.existsSync(localPath)) return localPath;
+
+  try {
+    await downloadR2ObjectToFile({
+      key: track.storageKey,
+      filePath: localPath,
+      purpose: `music ${track.mood} / ${track.title}`,
+    });
+    return localPath;
+  } catch (error) {
+    if (isMissingR2ObjectError(error)) {
+      console.warn(`Music track "${track.title}" is missing in R2. Disabling it.`, {
+        trackId: track.id,
+        storageKey: track.storageKey,
+      });
+
+      await safeDb(() =>
+        prisma.factoryMusicTrack.update({
+          where: { id: track.id },
+          data: { isActive: false },
+        }),
+      );
+
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 async function ensureLocalJobThumbnailFile(job: {
@@ -651,17 +773,19 @@ async function processOneJob() {
       throw new Error("У задачи нет выбранных аккаунтов публикации");
     }
 
-    for (const target of targets) {
-      if (!target.template) {
-        throw new Error(
-          `Для аккаунта "${target.account.name}" не выбран шаблон.`,
-        );
-      }
+    if (job.cutMode !== "ROBLOX_STORY_AI") {
+      for (const target of targets) {
+        if (!target.template) {
+          throw new Error(
+            `Для аккаунта "${target.account.name}" не выбран шаблон.`,
+          );
+        }
 
-      if (!target.template.asset) {
-        throw new Error(
-          `Для шаблона "${target.template.name}" не выбрано видео персонажа.`,
-        );
+        if (!target.template.asset) {
+          throw new Error(
+            `Для шаблона "${target.template.name}" не выбрано видео персонажа.`,
+          );
+        }
       }
     }
 
@@ -705,6 +829,7 @@ async function processOneJob() {
     const clipStartIndex = Math.max(0, job.clipStartIndex ?? 0);
     let clipStarts: number[] = [];
     const aiHookPlanByStart = new Map<number, AiHookCutCandidate>();
+    const storyPlanByStart = new Map<number, RobloxStoryCandidate>();
 
     if (job.cutMode === "SMART_HOOK_AI") {
       await updateJobProgress(
@@ -778,6 +903,80 @@ async function processOneJob() {
         job.id,
         55,
         `AI Hook Cut: выбрано сильных моментов ${clipStarts.length}`,
+      );
+
+    } else if (job.cutMode === "ROBLOX_STORY_AI") {
+      await updateJobProgress(
+        job.id,
+        31,
+        "Roblox Story Shorts: ищу story-моменты и подбираю текст/музыку",
+      );
+
+      await safeDb(() =>
+        prisma.factoryClipCandidate.deleteMany({
+          where: {
+            jobId: job.id,
+          },
+        }),
+      );
+
+      const candidates = await buildRobloxStoryShortCandidates({
+        sourcePath,
+        duration,
+        maxClips,
+        minSeconds: job.storyMinSeconds ?? 10,
+        maxSeconds: job.storyMaxSeconds ?? 35,
+        storyStyle: job.storyStyle ?? "AUTO",
+        sourceTitle: job.sourceOriginalName,
+        useEmojis: job.storyUseEmojis ?? true,
+        stepSeconds: job.smartStepSeconds ?? 6,
+        maxCandidates: job.smartCandidates ?? 90,
+        minGapSeconds: job.smartMinGapSeconds ?? 24,
+        isCanceled: () => isJobCanceled(job.id),
+        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+      });
+
+      if (candidates.length > 0) {
+        await safeDb(() =>
+          prisma.factoryClipCandidate.createMany({
+            data: candidates.map((candidate) => ({
+              jobId: job.id,
+              startSec: candidate.startSec,
+              endSec: candidate.endSec,
+              durationSec: candidate.durationSec,
+              motionScore: candidate.motionScore,
+              audioScore: candidate.audioScore,
+              firstFrameScore: 0,
+              sceneScore: candidate.sceneScore,
+              finalScore: candidate.finalScore,
+              aiScore: candidate.aiScore,
+              hookMomentSec: candidate.hookMomentSec,
+              hookPreviewStartSec: candidate.startSec,
+              hookPreviewDurationSec: candidate.durationSec,
+              overlayText: candidate.overlayText,
+              aiTitle: candidate.title,
+              momentType: `${candidate.storyStyle}:${candidate.musicMood}`,
+              selected: candidate.selected,
+              reason: candidate.reason,
+            })),
+          }),
+        );
+      }
+
+      const selectedStoryCandidates = candidates
+        .filter((candidate) => candidate.selected)
+        .sort((a, b) => a.startSec - b.startSec);
+
+      for (const candidate of selectedStoryCandidates) {
+        storyPlanByStart.set(candidate.startSec, candidate);
+      }
+
+      clipStarts = selectedStoryCandidates.map((candidate) => candidate.startSec);
+
+      await updateJobProgress(
+        job.id,
+        55,
+        `Roblox Story Shorts: выбрано сюжетных моментов ${clipStarts.length}`,
       );
     } else if (job.cutMode === "SMART_LITE") {
       await updateJobProgress(
@@ -884,23 +1083,31 @@ async function processOneJob() {
       const localClipNumber = i + 1;
       const clipIndex = clipStartIndex + localClipNumber;
       const startSec = clipStarts[i];
-      const endSec = startSec + job.clipSeconds;
+      const storyPlan = storyPlanByStart.get(startSec);
+      const effectiveClipSeconds = storyPlan?.durationSec ?? job.clipSeconds;
+      const endSec = startSec + effectiveClipSeconds;
 
       const aiHookPlan = aiHookPlanByStart.get(startSec);
-      const rawBaseTitle = aiHookPlan?.title ?? buildClipTitle({
+      const rawBaseTitle = storyPlan?.title ?? aiHookPlan?.title ?? buildClipTitle({
         game: job.game,
         clipIndex,
         customPrefix: job.titlePrefix,
         seedHint: `${job.id}:${clipIndex}:base`,
         sourceTitle: job.sourceOriginalName,
       });
-      const baseTitle = makeJobTitleUnique({
-        title: rawBaseTitle,
-        game: job.game,
-        sourceTitle: job.sourceOriginalName,
-        clipIndex,
-        usedTitles: usedPackageTitles,
-      });
+      const baseTitle = storyPlan
+        ? makeStoryTitleUnique({
+            title: rawBaseTitle,
+            clipIndex,
+            usedTitles: usedPackageTitles,
+          })
+        : makeJobTitleUnique({
+            title: rawBaseTitle,
+            game: job.game,
+            sourceTitle: job.sourceOriginalName,
+            clipIndex,
+            usedTitles: usedPackageTitles,
+          });
 
       const clip = await db(() =>
         prisma.factoryClip.create({
@@ -941,31 +1148,58 @@ async function processOneJob() {
           `Рендер ${localClipNumber}/${clipStarts.length} для ${target.account.name}`,
         );
 
-        const characterVideoPath = await ensureLocalTemplateAssetFile(target);
+        let outputPath: string;
 
-        const thumbnailPath = await ensureLocalThumbnailFile({
-          game: job.game,
-          seed: `${job.id}:${target.accountId}:${clipIndex}`,
-        });
+        if (storyPlan) {
+          const selectedMood =
+            job.storyMusicMood && job.storyMusicMood !== "AUTO"
+              ? job.storyMusicMood
+              : storyPlan.musicMood;
+          const musicPath = await ensureLocalMusicFile({
+            mood: selectedMood,
+            seed: `${job.id}:${clipIndex}:${storyPlan.musicMood}`,
+          });
 
-        const outputPath = await renderFactoryClip({
-          jobId: job.id,
-          clipIndex,
-          sourcePath,
-          lanaPath: characterVideoPath,
-          startSec,
-          clipSeconds: job.clipSeconds,
-          template: getTargetTemplate(target),
-          thumbnailPath: aiHookPlan ? null : thumbnailPath,
-          hookPreview: aiHookPlan
-            ? {
-                startSec: aiHookPlan.hookPreviewStartSec,
-                durationSec: aiHookPlan.hookPreviewDurationSec,
-                overlayText: aiHookPlan.overlayText,
-              }
-            : null,
-          isCanceled: () => isJobCanceled(job.id),
-        });
+          outputPath = await renderRobloxStoryShort({
+            jobId: job.id,
+            clipIndex,
+            sourcePath,
+            startSec: storyPlan.startSec,
+            clipSeconds: storyPlan.durationSec,
+            overlayText: storyPlan.overlayText,
+            secondaryText: storyPlan.secondaryText,
+            musicPath,
+            sourceAudioVolumePercent: job.storySourceVolume ?? 10,
+            musicStartSec: Math.max(0, Math.round(storyPlan.hookMomentSec - storyPlan.startSec - 8)),
+            isCanceled: () => isJobCanceled(job.id),
+          });
+        } else {
+          const characterVideoPath = await ensureLocalTemplateAssetFile(target);
+
+          const thumbnailPath = await ensureLocalThumbnailFile({
+            game: job.game,
+            seed: `${job.id}:${target.accountId}:${clipIndex}`,
+          });
+
+          outputPath = await renderFactoryClip({
+            jobId: job.id,
+            clipIndex,
+            sourcePath,
+            lanaPath: characterVideoPath,
+            startSec,
+            clipSeconds: job.clipSeconds,
+            template: getTargetTemplate(target),
+            thumbnailPath: aiHookPlan ? null : thumbnailPath,
+            hookPreview: aiHookPlan
+              ? {
+                  startSec: aiHookPlan.hookPreviewStartSec,
+                  durationSec: aiHookPlan.hookPreviewDurationSec,
+                  overlayText: aiHookPlan.overlayText,
+                }
+              : null,
+            isCanceled: () => isJobCanceled(job.id),
+          });
+        }
 
         try {
           await assertNotCanceled(job.id);

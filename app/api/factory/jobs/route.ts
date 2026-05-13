@@ -34,7 +34,7 @@ const publishTimingSchema = z
   .default("NOW");
 
 const cutModeSchema = z
-  .enum(["SEQUENTIAL", "SMART_LITE", "SMART_HOOK_AI"])
+  .enum(["SEQUENTIAL", "SMART_LITE", "SMART_HOOK_AI", "ROBLOX_STORY_AI"])
   .default("SEQUENTIAL");
 
 const packageModeSchema = z

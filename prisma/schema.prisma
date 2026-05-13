@@ -53,6 +53,7 @@ enum FactoryCutMode {
   SEQUENTIAL
   SMART_LITE
   SMART_HOOK_AI
+  ROBLOX_STORY_AI
 }
 
 enum FactoryTemplateKind {
@@ -70,6 +71,26 @@ enum FactoryFacecamPosition {
 enum FactoryRenderFormat {
   SHORTS_9_16
   LONG_16_9
+}
+
+model FactoryMusicTrack {
+  id           String   @id @default(cuid())
+  title        String
+  mood         String
+  filePath     String
+  storageKey   String?
+  originalName String?
+  mimeType     String?
+  sizeBytes    Int?
+  isActive     Boolean  @default(true)
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([mood])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([storageKey])
 }
 
 model FactoryAsset {
@@ -199,6 +220,12 @@ model FactoryJob {
   hookPreviewSeconds Int               @default(8)
 
   renderFormat       FactoryRenderFormat @default(SHORTS_9_16)
+  storyStyle         String @default("AUTO")
+  storyMinSeconds    Int @default(10)
+  storyMaxSeconds    Int @default(35)
+  storyMusicMood     String @default("AUTO")
+  storySourceVolume  Int @default(10)
+  storyUseEmojis     Boolean @default(true)
   longVideoTitle     String?
   longVideoDescription String?
   longVideoThumbnailPath String?
@@ -232,6 +259,7 @@ model FactoryJob {
   @@index([cutMode])
   @@index([hookPreviewSeconds])
   @@index([renderFormat])
+  @@index([storyStyle])
   @@index([superUploadPackageId])
 }
 

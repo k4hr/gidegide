@@ -635,3 +635,172 @@ export async function renderLongVideo16x9(input: {
 
   return outputPath;
 }
+
+function buildStoryCropChain() {
+  return [
+    "scale=1080:1920:force_original_aspect_ratio=increase",
+    "crop=1080:1920:(iw-1080)/2:(ih-1920)/2",
+    "setsar=1",
+    "format=yuv420p",
+    "fps=30",
+  ].join(",");
+}
+
+function buildStoryDrawText(input: { text: string; y: number; fontSize: number }) {
+  const safeText = escapeDrawText(input.text || "WATCH THIS").replace(/\n/g, "\\n");
+
+  return [
+    `drawtext=text='${safeText}'`,
+    "fontcolor=white",
+    `fontsize=${input.fontSize}`,
+    "borderw=8",
+    "bordercolor=black",
+    "shadowcolor=black@0.8",
+    "shadowx=4",
+    "shadowy=4",
+    "line_spacing=12",
+    "x=(w-text_w)/2",
+    `y=${input.y}`,
+  ].join(":");
+}
+
+function buildStoryVideoFilter(input: { overlayText: string; secondaryText?: string | null }) {
+  const filters = [`[0:v]${buildStoryCropChain()},${buildStoryDrawText({ text: input.overlayText, y: 150, fontSize: 78 })}`];
+
+  if (input.secondaryText) {
+    filters.push(buildStoryDrawText({ text: input.secondaryText, y: 1510, fontSize: 56 }));
+  }
+
+  filters.push("format=yuv420p[v]");
+
+  return filters.join(",");
+}
+
+export async function renderRobloxStoryShort(input: {
+  jobId: string;
+  clipIndex: number;
+  sourcePath: string;
+  startSec: number;
+  clipSeconds: number;
+  overlayText: string;
+  secondaryText?: string | null;
+  musicPath?: string | null;
+  sourceAudioVolumePercent?: number | null;
+  musicStartSec?: number | null;
+  isCanceled?: CancelCheck;
+}) {
+  await ensureFactoryDirs();
+
+  const outputPath = path.join(
+    FACTORY_OUTPUT_DIR,
+    `${input.jobId}-story-${String(input.clipIndex).padStart(4, "0")}.mp4`,
+  );
+
+  const sourceVolume = Math.max(0, Math.min(100, input.sourceAudioVolumePercent ?? 10)) / 100;
+
+  if (input.musicPath) {
+    const musicStart = Math.max(0, Math.round(input.musicStartSec ?? 0));
+    const audioFilter = [
+      `[0:a]asetpts=PTS-STARTPTS,volume=${sourceVolume.toFixed(2)}[srca]`,
+      `[1:a]atrim=start=${musicStart}:duration=${input.clipSeconds},asetpts=PTS-STARTPTS,volume=0.95,afade=t=in:st=0:d=0.25,afade=t=out:st=${Math.max(0, input.clipSeconds - 1)}:d=1[musica]`,
+      "[srca][musica]amix=inputs=2:duration=first:dropout_transition=0,volume=1.0[a]",
+    ].join(";");
+
+    await runCommand(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        String(input.startSec),
+        "-t",
+        String(input.clipSeconds),
+        "-i",
+        input.sourcePath,
+        "-stream_loop",
+        "-1",
+        "-i",
+        input.musicPath,
+        "-filter_complex",
+        `${buildStoryVideoFilter({ overlayText: input.overlayText, secondaryText: input.secondaryText })};${audioFilter}`,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-t",
+        String(input.clipSeconds),
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "160k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
+    );
+  } else {
+    await runCommand(
+      "ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-ss",
+        String(input.startSec),
+        "-t",
+        String(input.clipSeconds),
+        "-i",
+        input.sourcePath,
+        "-filter_complex",
+        `${buildStoryVideoFilter({ overlayText: input.overlayText, secondaryText: input.secondaryText })};[0:a]volume=${sourceVolume.toFixed(2)}[a]`,
+        "-map",
+        "[v]",
+        "-map",
+        "[a]",
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-b:a",
+        "128k",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-movflags",
+        "+faststart",
+        outputPath,
+      ],
+      { logPrefix: `ffmpeg-story-${input.clipIndex}`, isCanceled: input.isCanceled },
+    );
+  }
+
+  await assertVideoHasAudio(outputPath);
+  return outputPath;
+}
