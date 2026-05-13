@@ -21,6 +21,9 @@ export type RobloxStoryCandidate = {
   aiScore: number;
   selected: boolean;
   overlayText: string;
+  conflictText: string;
+  escalationText: string;
+  punchlineText: string;
   secondaryText: string;
   title: string;
   description: string;
@@ -51,6 +54,9 @@ type AiStoryReview = {
   musicMood: string;
   durationSec: number;
   overlayText: string;
+  conflictText: string;
+  escalationText: string;
+  punchlineText: string;
   secondaryText: string;
   title: string;
   reason: string;
@@ -125,6 +131,39 @@ const FALLBACK_TITLES = [
   "He should not have opened it.. 😨",
 ];
 
+const FALLBACK_CONFLICTS = [
+  "HE HAD\nONE CHOICE 😳",
+  "EVERYONE\nLAUGHED AT HIM 💔",
+  "SHE OPENED\nTHE DOOR... 😨",
+  "THE SYSTEM\nSAID NO 😭",
+  "HE PICKED\nTHE LEFT SIDE 👀",
+  "THE GIFT\nLOOKED NORMAL 🎁",
+  "SHE TRUSTED\nTHE WRONG GUY 😳",
+  "BACON WAS\nALL ALONE 😢",
+];
+
+const FALLBACK_ESCALATIONS = [
+  "THEN IT GOT\nEVEN WORSE 😭",
+  "WAIT...\nWHAT?! 😱",
+  "HE WAS\nTOO LATE 💀",
+  "THEY MADE\nA BIG MISTAKE 😳",
+  "EVERYTHING\nCHANGED... 💔",
+  "THE TRAP\nWAS REAL 😨",
+  "SHE SHOULD\nRUN NOW 😱",
+  "HE LOST\nEVERYTHING 😭",
+];
+
+const FALLBACK_PUNCHLINES = [
+  "THE ENDING\nIS SO SAD 😭",
+  "BIGGEST\nMISTAKE... 💔",
+  "HE GOT\nREVENGE 😳",
+  "I DID NOT\nEXPECT THAT 😱",
+  "SHE WAS\nNOT EVIL 😭",
+  "THE GIFT\nWAS CURSED 🎁",
+  "WHO WOULD\nYOU SAVE?! 😳",
+  "COMMENT\nYOUR CHOICE 👇",
+];
+
 function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
@@ -160,6 +199,12 @@ function normalizeOverlay(value: string, useEmojis = true) {
 
   if (!text) return useEmojis ? "WATCH THIS 😳" : "WATCH THIS";
   return text.slice(0, 90);
+}
+
+function normalizeOptionalOverlay(value: unknown, useEmojis = true) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return normalizeOverlay(raw, useEmojis);
 }
 
 function normalizeTitle(value: string, seed: number, usedTitles: Set<string>) {
@@ -257,16 +302,18 @@ async function reviewStoryCandidateWithOpenAi(input: {
       text: [
         "You are creating viral Roblox Story Shorts for a young audience.",
         "This is NOT normal gameplay and NOT a facecam reaction. The final video is full-screen vertical Roblox gameplay with huge text, emojis, and music.",
-        "Choose moments that can become an instantly understandable mini story in 0.3 seconds: love or money, gift, choice, system message, poor vs rich, good vs evil, horror warning, bullying/revenge, rescue, funny fail, surprise ending.",
-        "Reject boring running, random movement, or unclear gameplay unless it can become a simple story.",
+        "You must think like short viral Roblox mini-stories: HOOK -> CONFLICT -> ESCALATION -> PUNCHLINE.",
+        "Choose only moments that can become an instantly understandable mini story in 0.3 seconds: love or money, gift, choice, system message, poor vs rich, good vs evil, horror warning, bullying/revenge, rescue, funny fail, surprise ending.",
+        "Reject boring running, random movement, or unclear gameplay unless it can become a simple story with a clear conflict and payoff.",
         `Requested story style: ${input.storyStyle}`,
         `Source title: ${input.sourceTitle ?? "unknown"}`,
-        `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Prefer 20-35 seconds. Never over ${input.maxSeconds}.`,
-        "Overlay text rules: 2-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested.",
+        `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Prefer 18-32 seconds. Never over ${input.maxSeconds}.`,
+        "Overlay timeline rules: create 3-4 big text beats for the video, not one generic caption. Each beat is 1-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested.",
+        "Beat 1 HOOK: visible at the start, instantly understandable. Beat 2 CONFLICT: what is the problem/choice. Beat 3 ESCALATION: it gets worse/weirder. Beat 4 PUNCHLINE: ending/payoff/question.",
         "Title rules: viral Roblox Shorts style, emotional, simple, with emojis and suspense. Do NOT write dry SEO titles like 'Roblox choice: He picked the wrong life'. Good: 'He picked MONEY instead of love.. 😭💔', 'Who would you save?! 😳💔', 'They BULLIED him, so he...'.",
         "Music mood must be one of: sad, emotional, suspense, horror, funny, chaos, epic, cute, magical, gift, choice, rich, poor, love, bullying, revenge, system, mystery, surprise, dramatic.",
         "Return strict JSON only.",
-        "Schema: {\"score\":0-100,\"storyStyle\":\"short_snake_case\",\"musicMood\":\"suspense\",\"durationSec\":25,\"overlayText\":\"LINE 1\\nLINE 2 😳\",\"secondaryText\":\"optional second text\",\"title\":\"viral title\",\"reason\":\"one short sentence\"}",
+        "Schema: {\"score\":0-100,\"storyStyle\":\"short_snake_case\",\"musicMood\":\"suspense\",\"durationSec\":25,\"overlayText\":\"HOOK LINE 1\\nHOOK LINE 2 😳\",\"conflictText\":\"CONFLICT TEXT\",\"escalationText\":\"ESCALATION TEXT\",\"punchlineText\":\"PUNCHLINE TEXT\",\"secondaryText\":\"optional small text\",\"title\":\"viral title\",\"reason\":\"one short sentence explaining hook-conflict-escalation-punchline\"}",
       ].join("\n"),
     },
     ...input.frames.map((frame) => ({
@@ -304,7 +351,10 @@ async function reviewStoryCandidateWithOpenAi(input: {
     musicMood: normalizeMusicMood(String(parsed.musicMood ?? "suspense")),
     durationSec: clamp(Math.round(Number(parsed.durationSec ?? 25)), input.minSeconds, input.maxSeconds),
     overlayText: normalizeOverlay(String(parsed.overlayText ?? ""), input.useEmojis),
-    secondaryText: normalizeOverlay(String(parsed.secondaryText ?? ""), input.useEmojis),
+    conflictText: normalizeOptionalOverlay(parsed.conflictText ?? parsed.secondaryText, input.useEmojis),
+    escalationText: normalizeOptionalOverlay(parsed.escalationText, input.useEmojis),
+    punchlineText: normalizeOptionalOverlay(parsed.punchlineText, input.useEmojis),
+    secondaryText: normalizeOptionalOverlay(parsed.secondaryText, input.useEmojis),
     title: String(parsed.title ?? ""),
     reason: String(parsed.reason ?? "AI selected this as a clear Roblox story moment.").slice(0, 240),
   } satisfies AiStoryReview;
@@ -324,9 +374,12 @@ function buildFallbackReview(input: {
     musicMood: pick(["suspense", "dramatic", "surprise", "funny", "sad"], input.seed),
     durationSec: clamp(22 + (Math.abs(input.seed) % 12), input.minSeconds, input.maxSeconds),
     overlayText: normalizeOverlay(pick(FALLBACK_OVERLAYS, input.seed), input.useEmojis),
+    conflictText: normalizeOverlay(pick(FALLBACK_CONFLICTS, input.seed + 3), input.useEmojis),
+    escalationText: normalizeOverlay(pick(FALLBACK_ESCALATIONS, input.seed + 7), input.useEmojis),
+    punchlineText: normalizeOverlay(pick(FALLBACK_PUNCHLINES, input.seed + 11), input.useEmojis),
     secondaryText: "",
     title: pick(FALLBACK_TITLES, input.seed),
-    reason: "Fallback: selected by motion/scene/audio and packaged as a Roblox story.",
+    reason: "Fallback: selected by motion/scene/audio and packaged as hook-conflict-escalation-punchline Roblox story.",
   } satisfies AiStoryReview;
 }
 
@@ -465,6 +518,9 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
         aiScore: finalReview.score,
         selected: false,
         overlayText: finalReview.overlayText,
+        conflictText: finalReview.conflictText,
+        escalationText: finalReview.escalationText,
+        punchlineText: finalReview.punchlineText,
         secondaryText: finalReview.secondaryText,
         title: normalizeTitle(finalReview.title, index + finalScore, usedTitles),
         description: finalReview.reason,
@@ -473,6 +529,7 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
         reason: [
           `Story AI ${finalReview.score}/100`,
           finalReview.reason,
+          `arc hook/conflict/escalation/punchline`,
           `style ${finalReview.storyStyle}`,
           `music ${finalReview.musicMood}`,
           `duration ${timing.durationSec}s`,

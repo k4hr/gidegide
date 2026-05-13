@@ -646,10 +646,15 @@ function buildStoryCropChain() {
   ].join(",");
 }
 
-function buildStoryDrawText(input: { text: string; y: number; fontSize: number }) {
+function buildStoryDrawText(input: {
+  text: string;
+  y: number;
+  fontSize: number;
+  startSec?: number;
+  endSec?: number;
+}) {
   const safeText = escapeDrawText(input.text || "WATCH THIS").replace(/\n/g, "\\n");
-
-  return [
+  const parts = [
     `drawtext=text='${safeText}'`,
     "fontcolor=white",
     `fontsize=${input.fontSize}`,
@@ -661,14 +666,88 @@ function buildStoryDrawText(input: { text: string; y: number; fontSize: number }
     "line_spacing=12",
     "x=(w-text_w)/2",
     `y=${input.y}`,
-  ].join(":");
+  ];
+
+  if (typeof input.startSec === "number" && typeof input.endSec === "number") {
+    parts.push(
+      `enable='between(t,${Math.max(0, input.startSec).toFixed(2)},${Math.max(input.startSec + 0.2, input.endSec).toFixed(2)})'`,
+    );
+  }
+
+  return parts.join(":");
 }
 
-function buildStoryVideoFilter(input: { overlayText: string; secondaryText?: string | null }) {
-  const filters = [`[0:v]${buildStoryCropChain()},${buildStoryDrawText({ text: input.overlayText, y: 150, fontSize: 78 })}`];
+function buildStoryVideoFilter(input: {
+  clipSeconds: number;
+  overlayText: string;
+  conflictText?: string | null;
+  escalationText?: string | null;
+  punchlineText?: string | null;
+  secondaryText?: string | null;
+}) {
+  const clipSeconds = Math.max(10, input.clipSeconds);
+  const hookEnd = Math.max(3.5, Math.min(clipSeconds * 0.32, 9));
+  const conflictStart = Math.max(2.5, hookEnd - 0.4);
+  const conflictEnd = Math.max(conflictStart + 2.5, Math.min(clipSeconds * 0.58, hookEnd + 8));
+  const escalationStart = Math.max(conflictStart + 2, conflictEnd - 0.35);
+  const escalationEnd = Math.max(escalationStart + 2.5, Math.min(clipSeconds * 0.82, escalationStart + 8));
+  const punchlineStart = Math.max(escalationStart + 2, escalationEnd - 0.35);
 
-  if (input.secondaryText) {
-    filters.push(buildStoryDrawText({ text: input.secondaryText, y: 1510, fontSize: 56 }));
+  const filters = [
+    `[0:v]${buildStoryCropChain()}`,
+    buildStoryDrawText({
+      text: input.overlayText,
+      y: 135,
+      fontSize: 80,
+      startSec: 0,
+      endSec: hookEnd,
+    }),
+  ];
+
+  if (input.conflictText) {
+    filters.push(
+      buildStoryDrawText({
+        text: input.conflictText,
+        y: 210,
+        fontSize: 72,
+        startSec: conflictStart,
+        endSec: conflictEnd,
+      }),
+    );
+  }
+
+  if (input.escalationText) {
+    filters.push(
+      buildStoryDrawText({
+        text: input.escalationText,
+        y: 210,
+        fontSize: 72,
+        startSec: escalationStart,
+        endSec: escalationEnd,
+      }),
+    );
+  }
+
+  if (input.punchlineText) {
+    filters.push(
+      buildStoryDrawText({
+        text: input.punchlineText,
+        y: 1280,
+        fontSize: 70,
+        startSec: punchlineStart,
+        endSec: clipSeconds + 0.1,
+      }),
+    );
+  } else if (input.secondaryText) {
+    filters.push(
+      buildStoryDrawText({
+        text: input.secondaryText,
+        y: 1510,
+        fontSize: 56,
+        startSec: punchlineStart,
+        endSec: clipSeconds + 0.1,
+      }),
+    );
   }
 
   filters.push("format=yuv420p[v]");
@@ -683,6 +762,9 @@ export async function renderRobloxStoryShort(input: {
   startSec: number;
   clipSeconds: number;
   overlayText: string;
+  conflictText?: string | null;
+  escalationText?: string | null;
+  punchlineText?: string | null;
   secondaryText?: string | null;
   musicPath?: string | null;
   sourceAudioVolumePercent?: number | null;
@@ -724,7 +806,7 @@ export async function renderRobloxStoryShort(input: {
         "-i",
         input.musicPath,
         "-filter_complex",
-        `${buildStoryVideoFilter({ overlayText: input.overlayText, secondaryText: input.secondaryText })};${audioFilter}`,
+        `${buildStoryVideoFilter({ clipSeconds: input.clipSeconds, overlayText: input.overlayText, conflictText: input.conflictText, escalationText: input.escalationText, punchlineText: input.punchlineText, secondaryText: input.secondaryText })};${audioFilter}`,
         "-map",
         "[v]",
         "-map",
@@ -770,7 +852,7 @@ export async function renderRobloxStoryShort(input: {
         "-i",
         input.sourcePath,
         "-filter_complex",
-        `${buildStoryVideoFilter({ overlayText: input.overlayText, secondaryText: input.secondaryText })};[0:a]volume=${sourceVolume.toFixed(2)}[a]`,
+        `${buildStoryVideoFilter({ clipSeconds: input.clipSeconds, overlayText: input.overlayText, conflictText: input.conflictText, escalationText: input.escalationText, punchlineText: input.punchlineText, secondaryText: input.secondaryText })};[0:a]volume=${sourceVolume.toFixed(2)}[a]`,
         "-map",
         "[v]",
         "-map",

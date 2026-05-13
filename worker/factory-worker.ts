@@ -953,7 +953,14 @@ async function processOneJob() {
               hookMomentSec: candidate.hookMomentSec,
               hookPreviewStartSec: candidate.startSec,
               hookPreviewDurationSec: candidate.durationSec,
-              overlayText: candidate.overlayText,
+              overlayText: [
+                candidate.overlayText,
+                candidate.conflictText,
+                candidate.escalationText,
+                candidate.punchlineText,
+              ]
+                .filter(Boolean)
+                .join("\n---\n"),
               aiTitle: candidate.title,
               momentType: `${candidate.storyStyle}:${candidate.musicMood}`,
               selected: candidate.selected,
@@ -1167,10 +1174,13 @@ async function processOneJob() {
             startSec: storyPlan.startSec,
             clipSeconds: storyPlan.durationSec,
             overlayText: storyPlan.overlayText,
+            conflictText: storyPlan.conflictText,
+            escalationText: storyPlan.escalationText,
+            punchlineText: storyPlan.punchlineText,
             secondaryText: storyPlan.secondaryText,
             musicPath,
             sourceAudioVolumePercent: job.storySourceVolume ?? 10,
-            musicStartSec: Math.max(0, Math.round(storyPlan.hookMomentSec - storyPlan.startSec - 8)),
+            musicStartSec: Math.max(0, Math.round(storyPlan.hookMomentSec - storyPlan.startSec - Math.max(6, storyPlan.durationSec * 0.55))),
             isCanceled: () => isJobCanceled(job.id),
           });
         } else {
