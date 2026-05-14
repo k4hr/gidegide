@@ -77,6 +77,11 @@ function numberValue(value: unknown, fallback: number, min = 0, max = 100) {
   return clamp(number, min, max);
 }
 
+function toPrismaJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+}
+
+
 export async function ensureViralLabDirs() {
   await ensureFactoryDirs();
   await Promise.all([
@@ -301,15 +306,15 @@ export async function analyzeViralReference(referenceId: string) {
           hookType: analysis.hookType,
           hookLengthSec: analysis.hookLengthSec,
           storyType: analysis.storyType,
-          plotStructure: analysis.plotStructure,
-          overlayTextStyle: analysis.overlayTextStyle,
-          emojiStyle: analysis.emojiStyle,
+          plotStructure: toPrismaJson(analysis.plotStructure),
+          overlayTextStyle: toPrismaJson(analysis.overlayTextStyle),
+          emojiStyle: toPrismaJson(analysis.emojiStyle),
           pacingStyle: analysis.pacingStyle,
           musicMood: analysis.musicMood,
           endingLogic: analysis.endingLogic,
           titlePattern: analysis.titlePattern,
           viralScore: analysis.viralScore,
-          extractedFormula: {
+          extractedFormula: toPrismaJson({
             formulaName: analysis.formulaName,
             hookType: analysis.hookType,
             storyType: analysis.storyType,
@@ -321,22 +326,22 @@ export async function analyzeViralReference(referenceId: string) {
             pacingStyle: analysis.pacingStyle,
             endingLogic: analysis.endingLogic,
             formulaNotes: analysis.formulaNotes,
-          },
-          rawAiAnalysis: analysis.raw,
+          }),
+          rawAiAnalysis: toPrismaJson(analysis.raw),
         },
         update: {
           hookType: analysis.hookType,
           hookLengthSec: analysis.hookLengthSec,
           storyType: analysis.storyType,
-          plotStructure: analysis.plotStructure,
-          overlayTextStyle: analysis.overlayTextStyle,
-          emojiStyle: analysis.emojiStyle,
+          plotStructure: toPrismaJson(analysis.plotStructure),
+          overlayTextStyle: toPrismaJson(analysis.overlayTextStyle),
+          emojiStyle: toPrismaJson(analysis.emojiStyle),
           pacingStyle: analysis.pacingStyle,
           musicMood: analysis.musicMood,
           endingLogic: analysis.endingLogic,
           titlePattern: analysis.titlePattern,
           viralScore: analysis.viralScore,
-          extractedFormula: {
+          extractedFormula: toPrismaJson({
             formulaName: analysis.formulaName,
             hookType: analysis.hookType,
             storyType: analysis.storyType,
@@ -348,8 +353,8 @@ export async function analyzeViralReference(referenceId: string) {
             pacingStyle: analysis.pacingStyle,
             endingLogic: analysis.endingLogic,
             formulaNotes: analysis.formulaNotes,
-          },
-          rawAiAnalysis: analysis.raw,
+          }),
+          rawAiAnalysis: toPrismaJson(analysis.raw),
         },
       }),
     );
@@ -405,10 +410,10 @@ async function upsertFormulaFromAnalysis(analysis: ReturnType<typeof normalizeAn
         data: {
           name: analysis.formulaName,
           titlePattern: analysis.titlePattern,
-          overlayTextPattern: analysis.overlayTextStyle,
-          emojiPattern: analysis.emojiStyle,
-          plotBeats: analysis.plotStructure,
-          pacing: { style: analysis.pacingStyle, hookLengthSec: analysis.hookLengthSec },
+          overlayTextPattern: toPrismaJson(analysis.overlayTextStyle),
+          emojiPattern: toPrismaJson(analysis.emojiStyle),
+          plotBeats: toPrismaJson(analysis.plotStructure),
+          pacing: toPrismaJson({ style: analysis.pacingStyle, hookLengthSec: analysis.hookLengthSec }),
           endingLogic: analysis.endingLogic,
           confidenceScore,
           sourceCount,
@@ -427,10 +432,10 @@ async function upsertFormulaFromAnalysis(analysis: ReturnType<typeof normalizeAn
         storyType: analysis.storyType,
         musicMood: analysis.musicMood,
         titlePattern: analysis.titlePattern,
-        overlayTextPattern: analysis.overlayTextStyle,
-        emojiPattern: analysis.emojiStyle,
-        plotBeats: analysis.plotStructure,
-        pacing: { style: analysis.pacingStyle, hookLengthSec: analysis.hookLengthSec },
+        overlayTextPattern: toPrismaJson(analysis.overlayTextStyle),
+        emojiPattern: toPrismaJson(analysis.emojiStyle),
+        plotBeats: toPrismaJson(analysis.plotStructure),
+        pacing: toPrismaJson({ style: analysis.pacingStyle, hookLengthSec: analysis.hookLengthSec }),
         endingLogic: analysis.endingLogic,
         confidenceScore: analysis.viralScore,
         sourceCount: 1,
@@ -482,16 +487,16 @@ export async function rebuildViralBrainSnapshot(niche: "ROBLOX" = "ROBLOX") {
         niche,
         referencesCount,
         formulasCount: formulas.length,
-        topHookTypes,
-        topStoryTypes,
-        topMusicMoods,
-        titlePatterns,
-        overlayPatterns,
-        emojiPatterns,
-        pacingRules,
-        endingRules,
+        topHookTypes: toPrismaJson(topHookTypes),
+        topStoryTypes: toPrismaJson(topStoryTypes),
+        topMusicMoods: toPrismaJson(topMusicMoods),
+        titlePatterns: toPrismaJson(titlePatterns),
+        overlayPatterns: toPrismaJson(overlayPatterns),
+        emojiPatterns: toPrismaJson(emojiPatterns),
+        pacingRules: toPrismaJson(pacingRules),
+        endingRules: toPrismaJson(endingRules),
         promptContext,
-        rawSummary: { formulaIds: formulas.map((item) => item.id) },
+        rawSummary: toPrismaJson({ formulaIds: formulas.map((item) => item.id) }),
       },
     }),
   );
