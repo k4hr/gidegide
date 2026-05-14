@@ -82,7 +82,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "ENDING",
       templates: [
-        "Wait for the ending",
+        "The final moment changed everything",
         "Nobody expected this ending",
         "The ending changed everything",
         "The last second was insane",
@@ -90,7 +90,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
         "It all comes down to the end",
         "The final jump decided everything",
         "The ending is actually wild",
-        "Watch the ending closely",
+        "The last move changed everything",
         "The last move saved the run",
       ],
     },
@@ -288,7 +288,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "ENDING",
       templates: [
-        "Wait for the ending",
+        "The final moment changed everything",
         "Nobody expected this ending",
         "The ending changed everything",
         "The last second was insane",
@@ -537,7 +537,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "ENDING",
       templates: [
-        "Wait for the ending",
+        "The final moment changed everything",
         "Nobody expected this ending",
         "The ending changed everything",
         "The last second was insane",

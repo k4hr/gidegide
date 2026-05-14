@@ -5,6 +5,11 @@ import { nanoid } from "nanoid";
 import { FACTORY_TEMP_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
 import { readCommand, runCommand, safeFileName } from "@/lib/factory/video";
 import { buildSmartClipCandidates } from "@/lib/factory/smart-cut";
+import {
+  getUsedTextList,
+  makeUniqueRobloxOverlay,
+  makeUniqueRobloxStoryTitle,
+} from "@/lib/factory/roblox-story-uniqueness";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -147,7 +152,6 @@ const FALLBACK_TITLES = [
   "He picked the wrong gift.. 🎁😱",
   "The system made him poor forever.. 💔",
   "Bacon did nothing wrong... 😢",
-  "Roblox gave him one choice.. 😱",
   "The poor noob got revenge.. 😭",
   "This gift changed everything.. 🎁",
   "He should not have opened it.. 😨",
@@ -229,28 +233,48 @@ function normalizeOptionalOverlay(value: unknown, useEmojis = true) {
   return normalizeOverlay(raw, useEmojis);
 }
 
-function normalizeTitle(value: string, seed: number, usedTitles: Set<string>) {
-  let title = value.replace(/\s+/g, " ").trim();
-  const tooDry = /^roblox\s+(choice|system|story|horror|moment|game):/i.test(title);
-  const generic = !title || tooDry || /wait for (the )?ending/i.test(title);
+function normalizeTitle(input: {
+  value: string;
+  seed: number;
+  usedTitles: Set<string>;
+  sourceTitle?: string | null;
+  storyStyle?: string | null;
+  musicMood?: string | null;
+  clipIndex?: number;
+}) {
+  return makeUniqueRobloxStoryTitle({
+    title: input.value,
+    sourceTitle: input.sourceTitle,
+    storyStyle: input.storyStyle,
+    musicMood: input.musicMood,
+    clipIndex: input.clipIndex,
+    seed: input.seed,
+    usedTitles: input.usedTitles,
+  });
+}
 
-  if (generic) title = pick(FALLBACK_TITLES, seed);
-
-  title = title.slice(0, 90);
-  let candidate = title;
-  let attempt = 0;
-
-  while (usedTitles.has(candidate.toLowerCase())) {
-    attempt += 1;
-    candidate = pick(FALLBACK_TITLES, seed + attempt).slice(0, 90);
-    if (attempt > FALLBACK_TITLES.length + 3) {
-      candidate = `${title.replace(/[.\s]+$/g, "")} #${attempt}`.slice(0, 90);
-      break;
-    }
-  }
-
-  usedTitles.add(candidate.toLowerCase());
-  return candidate;
+function normalizeStoryOverlay(input: {
+  value: string;
+  seed: number;
+  usedOverlays: Set<string>;
+  sourceTitle?: string | null;
+  storyStyle?: string | null;
+  musicMood?: string | null;
+  clipIndex?: number;
+  useEmojis: boolean;
+  fallbackRole: "hook" | "conflict" | "escalation" | "punchline";
+}) {
+  return makeUniqueRobloxOverlay({
+    text: input.value,
+    sourceTitle: input.sourceTitle,
+    storyStyle: input.storyStyle,
+    musicMood: input.musicMood,
+    clipIndex: input.clipIndex,
+    seed: input.seed,
+    usedOverlays: input.usedOverlays,
+    useEmojis: input.useEmojis,
+    fallbackRole: input.fallbackRole,
+  });
 }
 
 async function assertNotCanceled(isCanceled?: CancelCheck) {
@@ -316,6 +340,8 @@ async function reviewStoryCandidateWithOpenAi(input: {
   useEmojis: boolean;
   viralBrainPromptContext?: string | null;
   viralFormula?: unknown;
+  usedTitles?: string[];
+  usedOverlays?: string[];
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -331,15 +357,19 @@ async function reviewStoryCandidateWithOpenAi(input: {
         "Reject boring running, random movement, or unclear gameplay unless it can become a simple story with a clear conflict and payoff.",
         `Requested story style: ${input.storyStyle}`,
         `Source title: ${input.sourceTitle ?? "unknown"}`,
+        input.usedTitles?.length ? `Already used titles in this batch, DO NOT reuse or lightly rewrite them:
+${input.usedTitles.map((item) => `- ${item}`).join("\n")}` : "Already used titles in this batch: none.",
+        input.usedOverlays?.length ? `Already used overlay hooks in this batch, DO NOT reuse or lightly rewrite them:
+${input.usedOverlays.map((item) => `- ${item}`).join("\n")}` : "Already used overlay hooks in this batch: none.",
         input.viralBrainPromptContext ? `Viral Lab brain context:
 ${input.viralBrainPromptContext}` : "Viral Lab brain context: no learned formulas yet; use safe fallback Roblox story patterns.",
         input.viralFormula ? `Selected reusable viral formula for this donor moment:
 ${JSON.stringify(input.viralFormula).slice(0, 3500)}` : "Selected reusable viral formula: none.",
         "Use the Viral Lab formula as direction for structure, title pattern, emotional logic, emojis, pacing, and music mood. Do NOT copy any specific reference video. Create original text for this donor gameplay.",
         `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Prefer 18-32 seconds. Never over ${input.maxSeconds}.`,
-        "Overlay timeline rules: create 3-4 big text beats for the video, not one generic caption. Each beat is 1-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested.",
+        "Overlay timeline rules: create 3-4 big text beats for the video, not one generic caption. Each beat is 1-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested. Never repeat the same hook overlay in this batch. Never use BACON WAS ALL ALONE as default text.",
         "Beat 1 HOOK: visible at the start, instantly understandable. Beat 2 CONFLICT: what is the problem/choice. Beat 3 ESCALATION: it gets worse/weirder. Beat 4 PUNCHLINE: ending/payoff/question.",
-        "Title rules: viral Roblox Shorts style, emotional, simple, with emojis and suspense. Do NOT write dry SEO titles like 'Roblox choice: He picked the wrong life'. Good: 'He picked MONEY instead of love.. 😭💔', 'Who would you save?! 😳💔', 'They BULLIED him, so he...'.",
+        "Title rules: viral Roblox Shorts style, emotional, simple, with emojis and suspense. Title MUST contain Roblox and MUST be unique in the batch. Never output: Roblox gave him one choice.. 😱, Roblox: Wait for the ending, Wait for it, Roblox story, Roblox moment. Do NOT write dry SEO titles like 'Roblox choice: He picked the wrong life'. Good: 'Roblox made him pick love or money.. 😭💔', 'Roblox Bacon had 10 seconds to choose 😳', 'They bullied Bacon in Roblox and regretted it 😭'.",
         "Music mood must be one of: sad, emotional, suspense, horror, scary, funny, chaos, epic, victory, fail, cute, magical, gift, choice, rich, poor, love, bullying, revenge, system, mystery, surprise, dramatic, chase, chill, explaining, finale, happy, hype, intense, other, random, riser, sneaky.",
         "Return strict JSON only.",
         "Schema: {\"score\":0-100,\"storyStyle\":\"short_snake_case\",\"musicMood\":\"suspense\",\"durationSec\":25,\"overlayText\":\"HOOK LINE 1\\nHOOK LINE 2 😳\",\"conflictText\":\"CONFLICT TEXT\",\"escalationText\":\"ESCALATION TEXT\",\"punchlineText\":\"PUNCHLINE TEXT\",\"secondaryText\":\"optional small text\",\"title\":\"viral title\",\"reason\":\"one short sentence explaining hook-conflict-escalation-punchline\"}",
@@ -359,7 +389,7 @@ ${JSON.stringify(input.viralFormula).slice(0, 3500)}` : "Selected reusable viral
     },
     body: JSON.stringify({
       model: OPENAI_MODEL,
-      temperature: 0.45,
+      temperature: 0.82,
       response_format: { type: "json_object" },
       messages: [{ role: "user", content }],
     }),
@@ -471,6 +501,7 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
   await mkdir(tempDir, { recursive: true });
 
   const usedTitles = new Set<string>();
+  const usedOverlays = new Set<string>();
 
   try {
     const candidates: RobloxStoryCandidate[] = [];
@@ -515,6 +546,8 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
           storyStyle,
           viralBrainPromptContext: input.viralBrainPromptContext,
           viralFormula: input.viralFormula,
+          usedTitles: getUsedTextList(usedTitles),
+          usedOverlays: getUsedTextList(usedOverlays),
           minSeconds,
           maxSeconds,
           useEmojis: input.useEmojis ?? true,
@@ -548,12 +581,60 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
         finalScore,
         aiScore: finalReview.score,
         selected: false,
-        overlayText: finalReview.overlayText,
-        conflictText: finalReview.conflictText,
-        escalationText: finalReview.escalationText,
-        punchlineText: finalReview.punchlineText,
+        overlayText: normalizeStoryOverlay({
+          value: finalReview.overlayText,
+          seed: index + finalScore,
+          usedOverlays,
+          sourceTitle: input.sourceTitle,
+          storyStyle: finalReview.storyStyle,
+          musicMood: finalReview.musicMood,
+          clipIndex: index + 1,
+          useEmojis: input.useEmojis ?? true,
+          fallbackRole: "hook",
+        }),
+        conflictText: normalizeStoryOverlay({
+          value: finalReview.conflictText,
+          seed: index + finalScore + 31,
+          usedOverlays,
+          sourceTitle: input.sourceTitle,
+          storyStyle: finalReview.storyStyle,
+          musicMood: finalReview.musicMood,
+          clipIndex: index + 1,
+          useEmojis: input.useEmojis ?? true,
+          fallbackRole: "conflict",
+        }),
+        escalationText: normalizeStoryOverlay({
+          value: finalReview.escalationText,
+          seed: index + finalScore + 63,
+          usedOverlays,
+          sourceTitle: input.sourceTitle,
+          storyStyle: finalReview.storyStyle,
+          musicMood: finalReview.musicMood,
+          clipIndex: index + 1,
+          useEmojis: input.useEmojis ?? true,
+          fallbackRole: "escalation",
+        }),
+        punchlineText: normalizeStoryOverlay({
+          value: finalReview.punchlineText,
+          seed: index + finalScore + 97,
+          usedOverlays,
+          sourceTitle: input.sourceTitle,
+          storyStyle: finalReview.storyStyle,
+          musicMood: finalReview.musicMood,
+          clipIndex: index + 1,
+          useEmojis: input.useEmojis ?? true,
+          fallbackRole: "punchline",
+        }),
         secondaryText: finalReview.secondaryText,
-        title: normalizeTitle(finalReview.title, index + finalScore, usedTitles),
+        title: normalizeTitle({
+          value: finalReview.title,
+          seed: index + finalScore,
+          usedTitles,
+          sourceTitle: input.sourceTitle,
+          storyStyle: finalReview.storyStyle,
+          musicMood: finalReview.musicMood,
+          clipIndex: index + 1,
+        }),
         description: finalReview.reason,
         storyStyle: finalReview.storyStyle,
         musicMood: finalReview.musicMood,

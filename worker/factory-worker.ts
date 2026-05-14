@@ -41,6 +41,7 @@ import {
   buildRobloxStoryShortCandidates,
   type RobloxStoryCandidate,
 } from "@/lib/factory/story-shorts";
+import { makeUniqueRobloxStoryTitle } from "@/lib/factory/roblox-story-uniqueness";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -338,42 +339,21 @@ function makeJobTitleUnique(input: {
 
 function makeStoryTitleUnique(input: {
   title: string;
+  sourceTitle?: string | null;
+  storyStyle?: string | null;
+  musicMood?: string | null;
   clipIndex: number;
   usedTitles: Set<string>;
 }) {
-  const fallbackTitles = [
-    "He picked MONEY instead of love.. 😭💔",
-    "The ending made me cry.. 😭",
-    "Who would you save?! 😳💔",
-    "They BULLIED him, so he...",
-    "She thought he was evil.. 😳",
-    "He picked the wrong gift.. 🎁😱",
-    "The system made him poor forever.. 💔",
-    "Bacon did nothing wrong... 😢",
-    "Roblox gave him one choice.. 😱",
-    "The poor noob got revenge.. 😭",
-  ];
-  let title = input.title.replace(/\s+/g, " ").trim();
-
-  if (!title || /^roblox\s+(choice|system|story|horror|moment|game):/i.test(title)) {
-    title = fallbackTitles[input.clipIndex % fallbackTitles.length];
-  }
-
-  let candidate = title.slice(0, 90);
-  let attempt = 0;
-
-  while (input.usedTitles.has(candidate.toLowerCase())) {
-    attempt += 1;
-    candidate = fallbackTitles[(input.clipIndex + attempt) % fallbackTitles.length].slice(0, 90);
-    if (attempt > fallbackTitles.length + 2) {
-      candidate = `${title.replace(/[.\s]+$/g, "")} #${attempt}`.slice(0, 90);
-      break;
-    }
-  }
-
-  input.usedTitles.add(candidate.toLowerCase());
-
-  return candidate;
+  return makeUniqueRobloxStoryTitle({
+    title: input.title,
+    sourceTitle: input.sourceTitle,
+    storyStyle: input.storyStyle,
+    musicMood: input.musicMood,
+    clipIndex: input.clipIndex,
+    seed: `${input.sourceTitle ?? "source"}:${input.storyStyle ?? "auto"}:${input.musicMood ?? "mood"}:${input.clipIndex}`,
+    usedTitles: input.usedTitles,
+  });
 }
 
 async function selectFactoryThumbnail(input: {
@@ -1161,6 +1141,9 @@ async function processOneJob() {
       const baseTitle = storyPlan
         ? makeStoryTitleUnique({
             title: rawBaseTitle,
+            sourceTitle: job.sourceOriginalName,
+            storyStyle: storyPlan.storyStyle,
+            musicMood: storyPlan.musicMood,
             clipIndex,
             usedTitles: usedPackageTitles,
           })
@@ -1171,6 +1154,16 @@ async function processOneJob() {
             clipIndex,
             usedTitles: usedPackageTitles,
           });
+
+      if (storyPlan) {
+        console.log("[story-shorts] title generated", {
+          jobId: job.id,
+          clipIndex,
+          title: baseTitle,
+          storyType: storyPlan.storyStyle,
+          musicMood: storyPlan.musicMood,
+        });
+      }
 
       const clip = await db(() =>
         prisma.factoryClip.create({
@@ -1221,6 +1214,16 @@ async function processOneJob() {
           const musicPath = await ensureLocalMusicFile({
             mood: selectedMood,
             seed: `${job.id}:${clipIndex}:${storyPlan.musicMood}`,
+          });
+
+          console.log("[story-shorts] overlay generated", {
+            jobId: job.id,
+            clipIndex,
+            overlayText: storyPlan.overlayText,
+            conflictText: storyPlan.conflictText,
+            escalationText: storyPlan.escalationText,
+            punchlineText: storyPlan.punchlineText,
+            storyType: storyPlan.storyStyle,
           });
 
           outputPath = await renderRobloxStoryShort({
