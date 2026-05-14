@@ -7,6 +7,18 @@ import { analyzeViralReference, rebuildViralBrainSnapshot } from "@/lib/factory/
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+function apiError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : "";
+
+  if (code === "P2021" || code === "P2022" || message.includes("does not exist") || message.includes("Unknown arg")) {
+    return `${message}. Проверь, что на Railway выполнен npx prisma db push --accept-data-loss && npx prisma generate.`;
+  }
+
+  return message;
+}
+
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as { id?: string; limit?: number };
@@ -51,6 +63,6 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Ошибка анализа" }, { status: 500 });
+    return NextResponse.json({ error: apiError(error, "Ошибка анализа") }, { status: 500 });
   }
 }

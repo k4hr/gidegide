@@ -89,6 +89,32 @@ function formatSeconds(value: number | null) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+async function readJsonResponse<T>(response: Response): Promise<T> {
+  const text = await response.text();
+
+  if (!text.trim()) {
+    throw new Error(`Пустой ответ API (${response.status}). Проверь /api/factory/viral-lab в логах Railway.`);
+  }
+
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const preview = text.replace(/\s+/g, " ").slice(0, 260);
+    throw new Error(`API вернул не JSON (${response.status}): ${preview}`);
+  }
+}
+
+async function fetchApiJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+  const response = await fetch(input, init);
+  const json = await readJsonResponse<{ error?: string } & T>(response);
+
+  if (!response.ok) {
+    throw new Error(json.error ?? `Ошибка API ${response.status}`);
+  }
+
+  return json;
+}
+
 export default function ViralLabPage() {
   const [data, setData] = useState<PageData | null>(null);
   const [files, setFiles] = useState<FileList | null>(null);
@@ -99,9 +125,7 @@ export default function ViralLabPage() {
   const [message, setMessage] = useState<string | null>(null);
 
   async function load() {
-    const response = await fetch("/api/factory/viral-lab", { cache: "no-store" });
-    const json = await response.json();
-    if (!response.ok) throw new Error(json.error ?? "Не получилось загрузить Viral Lab");
+    const json = await fetchApiJson<PageData>("/api/factory/viral-lab", { cache: "no-store" });
     setData(json);
   }
 
@@ -133,12 +157,10 @@ export default function ViralLabPage() {
       Array.from(files).forEach((file) => formData.append("files", file));
       formData.append("analyzeNow", String(analyzeNow));
 
-      const response = await fetch("/api/factory/viral-lab", {
+      const json = await fetchApiJson<{ message?: string }>("/api/factory/viral-lab", {
         method: "POST",
         body: formData,
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Не получилось загрузить референсы");
       setMessage(json.message ?? "Референсы загружены");
       setFiles(null);
       await load();
@@ -160,13 +182,11 @@ export default function ViralLabPage() {
     setMessage(null);
 
     try {
-      const response = await fetch("/api/factory/viral-lab", {
+      const json = await fetchApiJson<{ message?: string }>("/api/factory/viral-lab", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ urls: list }),
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Не получилось сохранить ссылки");
       setUrls("");
       setMessage(json.message ?? "Ссылки сохранены");
       await load();
@@ -182,13 +202,11 @@ export default function ViralLabPage() {
     setMessage(null);
 
     try {
-      const response = await fetch("/api/factory/viral-lab/analyze", {
+      const json = await fetchApiJson<{ message?: string }>("/api/factory/viral-lab/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(id ? { id } : { limit: 100 }),
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Не получилось проанализировать");
       setMessage(json.message ?? "Анализ завершен");
       await load();
     } catch (error) {
@@ -203,13 +221,11 @@ export default function ViralLabPage() {
     setMessage(null);
 
     try {
-      const response = await fetch("/api/factory/viral-lab", {
+      const json = await fetchApiJson<{ message?: string }>("/api/factory/viral-lab", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error ?? "Не получилось удалить");
       setMessage(json.message ?? "Удалено");
       await load();
     } catch (error) {

@@ -23,6 +23,18 @@ export const dynamic = "force-dynamic";
 
 const VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".m4v", ".webm"]);
 
+function apiError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : fallback;
+  const code = typeof error === "object" && error !== null && "code" in error ? String((error as { code?: unknown }).code) : "";
+
+  if (code === "P2021" || code === "P2022" || message.includes("does not exist") || message.includes("Unknown arg")) {
+    return `${message}. Проверь, что на Railway выполнен npx prisma db push --accept-data-loss && npx prisma generate.`;
+  }
+
+  return message;
+}
+
+
 function extensionOf(name: string) {
   const match = name.toLowerCase().match(/\.[a-z0-9]+$/);
   return match?.[0] ?? "";
@@ -227,7 +239,12 @@ async function listData() {
 }
 
 export async function GET() {
-  return NextResponse.json(await listData());
+  try {
+    return NextResponse.json(await listData());
+  } catch (error) {
+    console.error(error);
+    return NextResponse.json({ error: apiError(error, "Не получилось загрузить Viral Lab") }, { status: 500 });
+  }
 }
 
 export async function POST(request: Request) {
@@ -294,7 +311,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error(error);
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Ошибка Viral Lab" }, { status: 500 });
+    return NextResponse.json({ error: apiError(error, "Ошибка Viral Lab") }, { status: 500 });
   }
 }
 
@@ -306,6 +323,6 @@ export async function DELETE(request: Request) {
     await rebuildViralBrainSnapshot("ROBLOX").catch(() => null);
     return NextResponse.json({ message: "Референс удален", data: await listData() });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Не получилось удалить" }, { status: 500 });
+    return NextResponse.json({ error: apiError(error, "Не получилось удалить") }, { status: 500 });
   }
 }
