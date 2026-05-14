@@ -730,7 +730,11 @@ function buildStoryVideoFilter(input: {
     for (let emojiIndex = 0; emojiIndex < beat.emojiFilePaths.length; emojiIndex += 1) {
       const movieLabel = `storyemo${sequence}_${emojiIndex}`;
       const nextLabel = `storyov${sequence}_${emojiIndex}`;
-      const emojiX = `(w-overlay_w)/2+${beat.emojiBaseX + emojiIndex * (beat.emojiSize + 14)}`;
+      const emojiSpacing = beat.emojiSize + 14;
+      const centerOffset = Math.round(
+        (emojiIndex - (beat.emojiFilePaths.length - 1) / 2) * emojiSpacing,
+      );
+      const emojiX = `(w-overlay_w)/2${centerOffset >= 0 ? `+${centerOffset}` : `${centerOffset}`}`;
       filters.push(
         `movie='${escapeFilterPath(beat.emojiFilePaths[emojiIndex])}',scale=${beat.emojiSize}:-1[${movieLabel}]`,
       );
@@ -769,8 +773,8 @@ async function prepareStoryBeatAssets(input: {
       rawText: input.overlayText,
       y: 120,
       fontSize: 82,
-      emojiY: 118,
-      emojiBaseX: 250,
+      emojiY: 1480,
+      emojiBaseX: 0,
       emojiSize: 94,
       startSec: 0,
       endSec: hookEnd,
@@ -780,8 +784,8 @@ async function prepareStoryBeatAssets(input: {
       rawText: input.conflictText ?? "",
       y: 215,
       fontSize: 72,
-      emojiY: 215,
-      emojiBaseX: 255,
+      emojiY: 1480,
+      emojiBaseX: 0,
       emojiSize: 88,
       startSec: conflictStart,
       endSec: conflictEnd,
@@ -791,8 +795,8 @@ async function prepareStoryBeatAssets(input: {
       rawText: input.escalationText ?? "",
       y: 215,
       fontSize: 72,
-      emojiY: 215,
-      emojiBaseX: 255,
+      emojiY: 1480,
+      emojiBaseX: 0,
       emojiSize: 88,
       startSec: escalationStart,
       endSec: escalationEnd,
@@ -802,8 +806,8 @@ async function prepareStoryBeatAssets(input: {
       rawText: input.punchlineText || input.secondaryText || "",
       y: input.punchlineText ? 1260 : 1490,
       fontSize: input.punchlineText ? 70 : 56,
-      emojiY: input.punchlineText ? 1268 : 1492,
-      emojiBaseX: input.punchlineText ? 235 : 230,
+      emojiY: 150,
+      emojiBaseX: 0,
       emojiSize: input.punchlineText ? 88 : 74,
       startSec: punchlineStart,
       endSec: clipSeconds + 0.1,
