@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
@@ -28,6 +29,11 @@ const bodySchema = z.object({
 
 function normalizeUpper(value: string) {
   return value.trim().toUpperCase().replace(/[^A-Z0-9_]+/g, "_").replace(/^_+|_+$/g, "") || "AUTO";
+}
+
+function toPrismaJson(value: unknown): Prisma.InputJsonValue | undefined {
+  if (value === null || value === undefined) return undefined;
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 }
 
 export async function GET() {
@@ -232,8 +238,8 @@ export async function POST(request: Request) {
             cancelRequested: false,
             superUploadPackageId: pack.id,
             viralFormulaId: selectedFormula?.id ?? null,
-            viralFormulaSnapshot: selectedFormula ?? undefined,
-            viralBrainSnapshot: viralBrain.snapshot ?? undefined,
+            viralFormulaSnapshot: toPrismaJson(selectedFormula),
+            viralBrainSnapshot: toPrismaJson(viralBrain.snapshot),
             targets: {
               create: {
                 accountId: account.id,

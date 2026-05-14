@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
@@ -20,10 +21,10 @@ export type ViralFormulaContext = {
   storyType: string;
   musicMood: string;
   titlePattern: string;
-  overlayTextPattern: unknown;
-  emojiPattern: unknown;
-  plotBeats: unknown;
-  pacing: unknown;
+  overlayTextPattern: Prisma.JsonValue;
+  emojiPattern: Prisma.JsonValue;
+  plotBeats: Prisma.JsonValue;
+  pacing: Prisma.JsonValue;
   endingLogic: string;
   confidenceScore: number;
   sourceCount: number;
@@ -35,14 +36,14 @@ export type ViralBrainContext = {
   snapshot: {
     referencesCount: number;
     formulasCount: number;
-    topHookTypes: unknown;
-    topStoryTypes: unknown;
-    topMusicMoods: unknown;
-    titlePatterns: unknown;
-    overlayPatterns: unknown;
-    emojiPatterns: unknown;
-    pacingRules: unknown;
-    endingRules: unknown;
+    topHookTypes: Prisma.JsonValue;
+    topStoryTypes: Prisma.JsonValue;
+    topMusicMoods: Prisma.JsonValue;
+    titlePatterns: Prisma.JsonValue;
+    overlayPatterns: Prisma.JsonValue;
+    emojiPatterns: Prisma.JsonValue;
+    pacingRules: Prisma.JsonValue;
+    endingRules: Prisma.JsonValue;
     promptContext: string;
   } | null;
 };
