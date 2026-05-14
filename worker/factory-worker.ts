@@ -970,6 +970,7 @@ async function processOneJob() {
         }),
       );
 
+      const viralBrainSnapshot = job.viralBrainSnapshot as { promptContext?: unknown } | null;
       const candidates = await buildRobloxStoryShortCandidates({
         sourcePath,
         duration,
@@ -979,6 +980,8 @@ async function processOneJob() {
         storyStyle: job.storyStyle ?? "AUTO",
         sourceTitle: job.sourceOriginalName,
         useEmojis: job.storyUseEmojis ?? true,
+        viralBrainPromptContext: viralBrainSnapshot?.promptContext ? String(viralBrainSnapshot.promptContext) : null,
+        viralFormula: job.viralFormulaSnapshot,
         stepSeconds: job.smartStepSeconds ?? 6,
         maxCandidates: job.smartCandidates ?? 90,
         minGapSeconds: job.smartMinGapSeconds ?? 24,
@@ -1014,7 +1017,10 @@ async function processOneJob() {
               aiTitle: candidate.title,
               momentType: `${candidate.storyStyle}:${candidate.musicMood}`,
               selected: candidate.selected,
-              reason: candidate.reason,
+              reason: [
+                candidate.reason,
+                job.viralFormulaId ? `viralFormula ${job.viralFormulaId}` : "viralFormula none",
+              ].join(" · "),
             })),
           }),
         );

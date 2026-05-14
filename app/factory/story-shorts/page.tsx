@@ -32,6 +32,14 @@ type PageData = {
   donors: StoryDonor[];
   candidates: Candidate[];
   musicSummary: MusicSummary[];
+  viralBrain?: {
+    formulasCount: number;
+    referencesCount: number;
+    topStoryTypes: Array<{ name: string; count: number }>;
+    topHookTypes: Array<{ name: string; count: number }>;
+    topMusicMoods: Array<{ name: string; count: number }>;
+    promptContext: string | null;
+  };
   storyStyles: string[];
   musicMoods: string[];
 };
@@ -45,6 +53,12 @@ const styleLabels: Record<string, string> = {
   GOOD_EVIL: "Good vs Evil",
   HORROR_WARNING: "Horror / Warning",
   BULLYING_REVENGE: "Bullying / Revenge",
+  BULLIED_BACON: "Bullied Bacon",
+  SAVE_MOM_OR_MONEY: "Save mom or money",
+  CHOICE_PUNISHMENT: "Choice / Punishment",
+  REVENGE: "Revenge",
+  GIFT_BETRAYAL: "Gift / Betrayal",
+  HORROR_ESCAPE: "Horror Escape",
   FUNNY_FAIL: "Funny Fail",
   SAVE_SOMEONE: "Who would you save",
   YEAR_COMPARISON: "2024 / 2025",
@@ -253,6 +267,7 @@ export default function StoryShortsPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
           <Link href="/factory/story-shorts">Story Shorts</Link>
           <Link href="/factory/music">Музыка</Link>
           <Link href="/factory/long-video">Видео 16:9</Link>
@@ -270,9 +285,29 @@ export default function StoryShortsPage() {
           AI сам ищет story-моменты в длинных 16:9 донорах, сам выбирает длину 10–35 сек, пишет крупный текст, эмодзи, выбирает музыку и публикует в выбранное окно New York.
         </p>
         <div className="factory-row-actions">
+          <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ / Amelia</Link>
           <Link href="/factory/music">Музыка по темам</Link>
           <Link href="/factory">Задачи</Link>
+        </div>
+      </section>
+
+      <section className="factory-panel factory-panel-wide">
+        <div className="factory-row-between">
+          <div>
+            <div className="factory-eyebrow">VIRAL LAB BRAIN</div>
+            <h2>Подключенные формулы</h2>
+            <p className="factory-muted">
+              Story Shorts теперь берет накопленные формулы из Вирусной лаборатории и подбирает их под донорское видео.
+            </p>
+          </div>
+          <Link className="factory-secondary-button" href="/factory/viral-lab">Открыть лабораторию</Link>
+        </div>
+        <div className="analytics-summary-grid viral-summary-grid">
+          <div className="factory-stat-card"><strong>{data?.viralBrain?.referencesCount ?? 0}</strong><span>референсов изучено</span></div>
+          <div className="factory-stat-card"><strong>{data?.viralBrain?.formulasCount ?? 0}</strong><span>формул активно</span></div>
+          <div className="factory-stat-card"><strong>{data?.viralBrain?.topStoryTypes?.[0]?.name ?? "AUTO"}</strong><span>топ story type</span></div>
+          <div className="factory-stat-card"><strong>{data?.viralBrain?.topMusicMoods?.[0]?.name ?? "AUTO"}</strong><span>топ музыка</span></div>
         </div>
       </section>
 

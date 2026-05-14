@@ -78,6 +78,26 @@ enum FactoryDonorKind {
   STORY_SHORTS
 }
 
+
+enum ViralReferenceStatus {
+  UPLOADED
+  QUEUED
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+enum ViralReferenceSourceType {
+  FILE
+  ZIP
+  URL
+}
+
+enum ViralFormulaStatus {
+  ACTIVE
+  ARCHIVED
+}
+
 model FactoryMusicTrack {
   id              String   @id @default(cuid())
   title           String
@@ -265,6 +285,11 @@ model FactoryJob {
   superUploadPackageId String?
   superUploadPackage   FactorySuperUploadPackage? @relation(fields: [superUploadPackageId], references: [id], onDelete: SetNull)
 
+  viralFormulaId     String?
+  viralFormula       ViralFormula? @relation(fields: [viralFormulaId], references: [id], onDelete: SetNull)
+  viralFormulaSnapshot Json?
+  viralBrainSnapshot   Json?
+
   createdAt          DateTime          @default(now())
   updatedAt          DateTime          @updatedAt
 
@@ -282,6 +307,7 @@ model FactoryJob {
   @@index([renderFormat])
   @@index([storyStyle])
   @@index([superUploadPackageId])
+  @@index([viralFormulaId])
 }
 
 model FactoryJobTarget {
@@ -620,5 +646,122 @@ model FactorySuperUploadPackage {
   @@index([sourceVideoId])
   @@index([accountId])
   @@index([status])
+  @@index([createdAt])
+}
+
+
+model ViralReference {
+  id              String                    @id @default(cuid())
+  title           String?
+  sourceType      ViralReferenceSourceType  @default(FILE)
+  sourceUrl       String?
+  filePath        String?
+  storageKey      String?
+  originalName    String?
+  mimeType        String?
+  sizeBytes       Int?
+  thumbnailPath   String?
+  niche           FactoryGame               @default(ROBLOX)
+
+  durationSec     Int?
+  status          ViralReferenceStatus      @default(UPLOADED)
+  errorMessage    String?
+  analyzedAt      DateTime?
+
+  analysis        ViralReferenceAnalysis?
+
+  createdAt       DateTime                  @default(now())
+  updatedAt       DateTime                  @updatedAt
+
+  @@index([niche])
+  @@index([status])
+  @@index([sourceType])
+  @@index([createdAt])
+}
+
+model ViralReferenceAnalysis {
+  id                String         @id @default(cuid())
+  referenceId       String         @unique
+  reference         ViralReference @relation(fields: [referenceId], references: [id], onDelete: Cascade)
+
+  hookType          String?
+  hookLengthSec     Int?
+  storyType         String?
+  plotStructure     Json?
+  overlayTextStyle  Json?
+  emojiStyle        Json?
+  pacingStyle       String?
+  musicMood         String?
+  endingLogic       String?
+  titlePattern      String?
+  viralScore        Int            @default(50)
+
+  extractedFormula  Json
+  rawAiAnalysis     Json?
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@index([storyType])
+  @@index([hookType])
+  @@index([musicMood])
+  @@index([viralScore])
+}
+
+model ViralFormula {
+  id                 String             @id @default(cuid())
+  niche              FactoryGame         @default(ROBLOX)
+  name               String
+  status             ViralFormulaStatus  @default(ACTIVE)
+
+  hookType           String
+  storyType          String
+  musicMood          String
+  titlePattern       String
+  overlayTextPattern Json
+  emojiPattern       Json
+  plotBeats          Json
+  pacing             Json
+  endingLogic        String
+
+  confidenceScore    Int                @default(50)
+  usageCount         Int                @default(0)
+  lastUsedAt         DateTime?
+  sourceCount        Int                @default(1)
+  notes              String?
+
+  jobs               FactoryJob[]
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([niche])
+  @@index([status])
+  @@index([storyType])
+  @@index([hookType])
+  @@index([musicMood])
+  @@index([confidenceScore])
+  @@index([lastUsedAt])
+}
+
+model ViralBrainSnapshot {
+  id                 String      @id @default(cuid())
+  niche              FactoryGame  @default(ROBLOX)
+  formulasCount      Int         @default(0)
+  referencesCount    Int         @default(0)
+  topHookTypes       Json
+  topStoryTypes      Json
+  topMusicMoods      Json
+  titlePatterns      Json
+  overlayPatterns    Json
+  emojiPatterns      Json
+  pacingRules        Json
+  endingRules        Json
+  promptContext      String
+  rawSummary         Json?
+
+  createdAt          DateTime    @default(now())
+
+  @@index([niche])
   @@index([createdAt])
 }

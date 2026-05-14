@@ -644,6 +644,7 @@ export default function FactoryPage() {
         <nav className="nav">
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
           <Link href="/factory/story-shorts">Story Shorts</Link>
           <Link href="/factory/music">Музыка</Link>
           <Link href="/factory/long-video">Видео 16:9</Link>

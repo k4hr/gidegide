@@ -41,6 +41,8 @@ type BuildRobloxStoryInput = {
   storyStyle?: string | null;
   sourceTitle?: string | null;
   useEmojis?: boolean;
+  viralBrainPromptContext?: string | null;
+  viralFormula?: unknown;
   stepSeconds: number;
   maxCandidates: number;
   minGapSeconds: number;
@@ -75,6 +77,12 @@ const STORY_STYLES = [
   "good_evil",
   "horror_warning",
   "bullying_revenge",
+  "bullied_bacon",
+  "save_mom_or_money",
+  "choice_punishment",
+  "revenge",
+  "gift_betrayal",
+  "horror_escape",
   "funny_fail",
   "save_someone",
   "year_comparison",
@@ -306,6 +314,8 @@ async function reviewStoryCandidateWithOpenAi(input: {
   minSeconds: number;
   maxSeconds: number;
   useEmojis: boolean;
+  viralBrainPromptContext?: string | null;
+  viralFormula?: unknown;
 }) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -321,6 +331,11 @@ async function reviewStoryCandidateWithOpenAi(input: {
         "Reject boring running, random movement, or unclear gameplay unless it can become a simple story with a clear conflict and payoff.",
         `Requested story style: ${input.storyStyle}`,
         `Source title: ${input.sourceTitle ?? "unknown"}`,
+        input.viralBrainPromptContext ? `Viral Lab brain context:
+${input.viralBrainPromptContext}` : "Viral Lab brain context: no learned formulas yet; use safe fallback Roblox story patterns.",
+        input.viralFormula ? `Selected reusable viral formula for this donor moment:
+${JSON.stringify(input.viralFormula).slice(0, 3500)}` : "Selected reusable viral formula: none.",
+        "Use the Viral Lab formula as direction for structure, title pattern, emotional logic, emojis, pacing, and music mood. Do NOT copy any specific reference video. Create original text for this donor gameplay.",
         `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Prefer 18-32 seconds. Never over ${input.maxSeconds}.`,
         "Overlay timeline rules: create 3-4 big text beats for the video, not one generic caption. Each beat is 1-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested.",
         "Beat 1 HOOK: visible at the start, instantly understandable. Beat 2 CONFLICT: what is the problem/choice. Beat 3 ESCALATION: it gets worse/weirder. Beat 4 PUNCHLINE: ending/payoff/question.",
@@ -498,6 +513,8 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
           frames: frameDataUrls,
           sourceTitle: input.sourceTitle,
           storyStyle,
+          viralBrainPromptContext: input.viralBrainPromptContext,
+          viralFormula: input.viralFormula,
           minSeconds,
           maxSeconds,
           useEmojis: input.useEmojis ?? true,

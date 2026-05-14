@@ -1596,3 +1596,83 @@ button:disabled {
   color: rgba(255,255,255,.84);
   font-weight: 800;
 }
+
+.factory-textarea {
+  width: 100%;
+  min-height: 132px;
+  resize: vertical;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(9, 9, 11, 0.8);
+  color: #fafafa;
+  border-radius: 16px;
+  padding: 14px 16px;
+  outline: none;
+  margin: 10px 0 14px;
+  font: inherit;
+}
+
+.viral-lab-hero {
+  background:
+    radial-gradient(circle at top left, rgba(34, 197, 94, 0.16), transparent 34%),
+    radial-gradient(circle at top right, rgba(236, 72, 153, 0.16), transparent 34%),
+    rgba(24, 24, 27, 0.82);
+}
+
+.viral-summary-grid {
+  margin-bottom: 0;
+}
+
+.viral-brain-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.viral-prompt-card {
+  grid-column: 1 / -1;
+}
+
+.viral-prompt-card pre {
+  margin: 0;
+  white-space: pre-wrap;
+  color: #d4d4d8;
+  line-height: 1.55;
+  font-size: 13px;
+}
+
+.viral-reference-list {
+  display: grid;
+  gap: 12px;
+}
+
+.viral-reference-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.viral-analysis-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.viral-analysis-line span {
+  display: inline-flex;
+  padding: 6px 9px;
+  border-radius: 999px;
+  color: #dbeafe;
+  background: rgba(37, 99, 235, 0.16);
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+@media (max-width: 920px) {
+  .viral-brain-grid,
+  .viral-reference-card {
+    grid-template-columns: 1fr;
+  }
+}

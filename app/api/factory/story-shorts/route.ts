@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
 import { buildSuperUploadSchedule, buildTodayCandidates, listSuperUploadDonors, STORY_SHORTS_DONOR_KIND } from "@/lib/factory/super-upload";
+import { getViralBrainContext, selectBestFormulaForSource } from "@/lib/factory/viral-lab";
 
 export const runtime = "nodejs";
 
@@ -30,7 +31,7 @@ function normalizeUpper(value: string) {
 }
 
 export async function GET() {
-  const [accounts, donors, candidates, musicSummary] = await Promise.all([
+  const [accounts, donors, candidates, musicSummary, viralBrain] = await Promise.all([
     withDbRetry(() =>
       prisma.factoryAccount.findMany({
         where: { platform: "YOUTUBE" },
@@ -52,6 +53,7 @@ export async function GET() {
         _count: { _all: true },
       }),
     ),
+    getViralBrainContext("ROBLOX"),
   ]);
 
   return NextResponse.json({
@@ -64,6 +66,14 @@ export async function GET() {
     })),
     candidates,
     musicSummary: musicSummary.map((item) => ({ mood: item.mood, count: item._count._all })),
+    viralBrain: {
+      formulasCount: viralBrain.formulas.length,
+      referencesCount: viralBrain.snapshot?.referencesCount ?? 0,
+      topStoryTypes: viralBrain.snapshot?.topStoryTypes ?? [],
+      topHookTypes: viralBrain.snapshot?.topHookTypes ?? [],
+      topMusicMoods: viralBrain.snapshot?.topMusicMoods ?? [],
+      promptContext: viralBrain.snapshot?.promptContext ?? null,
+    },
     storyStyles: [
       "AUTO",
       "LOVE_MONEY",
@@ -73,6 +83,12 @@ export async function GET() {
       "GOOD_EVIL",
       "HORROR_WARNING",
       "BULLYING_REVENGE",
+      "BULLIED_BACON",
+      "SAVE_MOM_OR_MONEY",
+      "CHOICE_PUNISHMENT",
+      "REVENGE",
+      "GIFT_BETRAYAL",
+      "HORROR_ESCAPE",
       "FUNNY_FAIL",
       "SAVE_SOMEONE",
       "YEAR_COMPARISON",
@@ -154,10 +170,18 @@ export async function POST(request: Request) {
       fitInsideWindow: body.fitInsideWindow,
     });
 
+    const viralBrain = await getViralBrainContext("ROBLOX");
     const jobs = [];
     const packages = [];
 
     for (const [index, sourceVideo] of candidates.entries()) {
+      const selectedFormula = selectBestFormulaForSource({
+        title: sourceVideo.title,
+        formulas: viralBrain.formulas,
+      });
+      const effectiveStoryStyle = normalizeUpper(body.storyStyle === "AUTO" && selectedFormula ? selectedFormula.storyType : body.storyStyle);
+      const effectiveMusicMood = body.storyMusicMood === "AUTO" && selectedFormula ? selectedFormula.musicMood : body.storyMusicMood;
+
       const slot = schedule.slots[index];
       const pack = await withDbRetry(() =>
         prisma.factorySuperUploadPackage.create({
@@ -172,10 +196,10 @@ export async function POST(request: Request) {
             intervalMin: body.intervalMin,
             intervalMax: body.intervalMax,
             scheduleMode: "ROBLOX_STORY_WINDOW",
-            hookMode: normalizeUpper(body.storyStyle),
+            hookMode: effectiveStoryStyle,
             titlePrefix: "roblox story shorts",
             status: "CREATED",
-            recommendation: `Roblox Story Shorts: AI сам выбирает длину ${body.storyMinSeconds}-${body.storyMaxSeconds} сек, стиль ${normalizeUpper(body.storyStyle)}, музыка ${body.storyMusicMood}. ${slot.label} NY.`,
+            recommendation: `Roblox Story Shorts: AI сам выбирает длину ${body.storyMinSeconds}-${body.storyMaxSeconds} сек, стиль ${effectiveStoryStyle}, музыка ${effectiveMusicMood}. ${slot.label} NY.`,
           },
         }),
       );
@@ -199,14 +223,17 @@ export async function POST(request: Request) {
             smartStepSeconds: 5,
             smartCandidates: 90,
             smartMinGapSeconds: 24,
-            storyStyle: normalizeUpper(body.storyStyle),
+            storyStyle: effectiveStoryStyle,
             storyMinSeconds: body.storyMinSeconds,
             storyMaxSeconds: body.storyMaxSeconds,
-            storyMusicMood: body.storyMusicMood,
+            storyMusicMood: effectiveMusicMood,
             storySourceVolume: body.storySourceVolume,
             storyUseEmojis: body.storyUseEmojis,
             cancelRequested: false,
             superUploadPackageId: pack.id,
+            viralFormulaId: selectedFormula?.id ?? null,
+            viralFormulaSnapshot: selectedFormula ?? undefined,
+            viralBrainSnapshot: viralBrain.snapshot ?? undefined,
             targets: {
               create: {
                 accountId: account.id,
@@ -236,7 +263,7 @@ export async function POST(request: Request) {
       jobs,
       schedule: schedule.slots,
       candidates,
-      message: `Roblox Story Shorts создано: ${jobs.length}. AI сам выберет длину ${body.storyMinSeconds}-${body.storyMaxSeconds} сек и музыку.`,
+      message: `Roblox Story Shorts создано: ${jobs.length}. Viral Lab формул подключено: ${viralBrain.formulas.length}. AI сам выберет длину ${body.storyMinSeconds}-${body.storyMaxSeconds} сек и музыку.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
