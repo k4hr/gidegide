@@ -9,12 +9,41 @@ export const runtime = "nodejs";
 
 const RANDOM_TEMPLATE_ID = "RANDOM";
 
+function normalizeClipRange(input: {
+  clipSeconds: number;
+  clipMinSeconds?: number;
+  clipMaxSeconds?: number;
+}) {
+  const rawMin = Number(input.clipMinSeconds ?? input.clipSeconds);
+  const rawMax = Number(input.clipMaxSeconds ?? input.clipSeconds);
+  const min = Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMin) ? rawMin : input.clipSeconds)));
+  const max = Math.max(min, Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMax) ? rawMax : input.clipSeconds))));
+
+  return {
+    min,
+    max,
+    label: min === max ? `${max} сек` : `${min}–${max} сек`,
+  };
+}
+
+function pickClipSeconds(index: number, min: number, max: number) {
+  if (max <= min) return max;
+
+  const ratios = [0, 0.35, 0.7, 1, 0.2, 0.55, 0.9, 0.1, 0.45, 0.8, 0.3, 0.65, 0.95];
+  const ratio = ratios[index % ratios.length] ?? 0.5;
+
+  return Math.max(min, Math.min(max, Math.round(min + (max - min) * ratio)));
+}
+
 const bodySchema = z.object({
   sourceVideoDbId: z.string().min(1),
   accountId: z.string().min(1),
   templateId: z.string().min(1),
   clipsCount: z.coerce.number().int().min(1).max(30).default(10),
-  clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
+  clipSeconds: z.coerce.number().int().min(10).max(60).default(60),
+  clipMinSeconds: z.coerce.number().int().min(10).max(60).optional(),
+  clipMaxSeconds: z.coerce.number().int().min(10).max(60).optional(),
+  clipLengthMode: z.string().max(40).default("FULL"),
   hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
   intervalMin: z.coerce.number().int().min(5).max(180).default(45),
   intervalMax: z.coerce.number().int().min(5).max(240).default(60),
@@ -93,6 +122,7 @@ async function resolveTemplates(templateId: string) {
 export async function POST(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
+    const clipRange = normalizeClipRange(body);
 
     const sourceVideo = await withDbRetry(() =>
       prisma.factorySourceVideo.findUnique({
@@ -163,7 +193,7 @@ export async function POST(request: Request) {
           accountName: account.name,
           game: "ROBLOX",
           clipsCount: body.clipsCount,
-          clipSeconds: body.clipSeconds,
+          clipSeconds: clipRange.max,
           hookPreviewSeconds: body.hookPreviewSeconds,
           intervalMin: body.intervalMin,
           intervalMax: body.intervalMax,
@@ -171,7 +201,7 @@ export async function POST(request: Request) {
           hookMode: body.hookMode,
           titlePrefix,
           status: "CREATED",
-          recommendation: `Окно New York: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}. Hook preview ${body.hookPreviewSeconds} сек. Все ${body.clipsCount} роликов распределяются внутри выбранного окна.`,
+          recommendation: `Окно New York: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}. Длина: ${clipRange.label}. Hook preview ${body.hookPreviewSeconds} сек. Все ${body.clipsCount} роликов распределяются внутри выбранного окна.`,
         },
       }),
     );
@@ -180,6 +210,7 @@ export async function POST(request: Request) {
 
     for (const slot of schedule.slots) {
       const template = templates[(slot.index - 1) % templates.length];
+      const jobClipSeconds = pickClipSeconds(slot.index - 1, clipRange.min, clipRange.max);
 
       const job = await withDbRetry(() =>
         prisma.factoryJob.create({
@@ -189,7 +220,7 @@ export async function POST(request: Request) {
             sourceStorageKey: null,
             sourceOriginalName: sourceVideo.title,
             sourceSizeBytes: null,
-            clipSeconds: body.clipSeconds,
+            clipSeconds: jobClipSeconds,
             hookPreviewSeconds: body.hookPreviewSeconds,
             clipStartIndex: slot.index - 1,
             titlePrefix,
@@ -199,13 +230,13 @@ export async function POST(request: Request) {
             status: "QUEUED",
             totalClips: 0,
             progress: 0,
-            progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · hook ${body.hookPreviewSeconds} сек`,
+            progressLabel: `СУПЕР ЗАЛИВ ${slot.index}/${schedule.slots.length}: ${slot.label} New York · ${jobClipSeconds} сек · hook ${body.hookPreviewSeconds} сек`,
             publishTiming: "USA_SMART",
             scheduledAt: slot.scheduledAt,
             cutMode: "SMART_HOOK_AI",
             smartStepSeconds: 6,
             smartCandidates: 60,
-            smartMinGapSeconds: Math.max(30, body.clipSeconds),
+            smartMinGapSeconds: Math.max(30, jobClipSeconds),
             cancelRequested: false,
             superUploadPackageId: pack.id,
             targets: {

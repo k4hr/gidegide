@@ -1154,13 +1154,23 @@ async function processOneJob() {
             clipIndex,
             usedTitles: usedPackageTitles,
           })
-        : makeJobTitleUnique({
-            title: rawBaseTitle,
-            game: job.game,
-            sourceTitle: job.sourceOriginalName,
-            clipIndex,
-            usedTitles: usedPackageTitles,
-          });
+        : job.game === "ROBLOX"
+          ? sanitizeFinalRobloxStoryTitle({
+              title: rawBaseTitle,
+              sourceTitle: job.sourceOriginalName,
+              storyStyle: "auto",
+              musicMood: "AUTO",
+              clipIndex,
+              seed: `${job.id}:${clipIndex}:package`,
+              usedTitles: usedPackageTitles,
+            })
+          : makeJobTitleUnique({
+              title: rawBaseTitle,
+              game: job.game,
+              sourceTitle: job.sourceOriginalName,
+              clipIndex,
+              usedTitles: usedPackageTitles,
+            });
 
       if (storyPlan) {
         console.log("[story-shorts] title generated", {
@@ -1203,15 +1213,25 @@ async function processOneJob() {
               seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
               usedTitles: usedPublishTitles,
             })
-          : makeJobTitleUnique({
-              title: baseTitle,
-              game: job.game,
-              sourceTitle: job.sourceOriginalName,
-              clipIndex: clipIndex + 1000,
-              usedTitles: usedPublishTitles,
-            });
+          : job.game === "ROBLOX"
+            ? sanitizeFinalRobloxStoryTitle({
+                title: baseTitle,
+                sourceTitle: job.sourceOriginalName,
+                storyStyle: "auto",
+                musicMood: "AUTO",
+                clipIndex: clipIndex + 1000,
+                seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
+                usedTitles: usedPublishTitles,
+              })
+            : makeJobTitleUnique({
+                title: baseTitle,
+                game: job.game,
+                sourceTitle: job.sourceOriginalName,
+                clipIndex: clipIndex + 1000,
+                usedTitles: usedPublishTitles,
+              });
 
-        if (storyPlan) {
+        if (storyPlan || job.game === "ROBLOX") {
           console.log("[youtube-upload] final title before upload", {
             jobId: job.id,
             clipIndex,

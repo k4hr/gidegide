@@ -112,6 +112,35 @@ type PackageResponse = {
 };
 
 type SchedulePace = "SAFE" | "NORMAL" | "AGGRESSIVE";
+type ClipLengthMode = "SHORT" | "MEDIUM" | "LONG" | "FULL" | "CUSTOM";
+
+
+const clipLengthPresets: Record<Exclude<ClipLengthMode, "CUSTOM">, { title: string; min: number; max: number }> = {
+  SHORT: { title: "15–25 сек — быстрый тест", min: 15, max: 25 },
+  MEDIUM: { title: "25–35 сек — средний", min: 25, max: 35 },
+  LONG: { title: "35–45 сек — длиннее", min: 35, max: 45 },
+  FULL: { title: "45–60 сек — как раньше", min: 45, max: 60 },
+};
+
+function clampClipSeconds(value: number, fallback: number) {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.max(10, Math.min(60, Math.round(value)));
+}
+
+function getClipLengthRange(input: {
+  mode: ClipLengthMode;
+  customMin: number;
+  customMax: number;
+}) {
+  if (input.mode !== "CUSTOM") {
+    return clipLengthPresets[input.mode];
+  }
+
+  const min = clampClipSeconds(input.customMin, 15);
+  const max = Math.max(min, clampClipSeconds(input.customMax, 25));
+
+  return { title: `Своя длина: ${min}–${max} сек`, min, max };
+}
 
 const schedulePaces: Record<
   SchedulePace,
@@ -231,7 +260,9 @@ export default function SuperUploadPage() {
   const [selectedVideo, setSelectedVideo] = useState<SourceVideo | null>(null);
   const [isDailyPackageModalOpen, setIsDailyPackageModalOpen] = useState(false);
   const [clipsCount, setClipsCount] = useState(10);
-  const [clipSeconds, setClipSeconds] = useState<30 | 45 | 60>(60);
+  const [clipLengthMode, setClipLengthMode] = useState<ClipLengthMode>("FULL");
+  const [customClipMinSeconds, setCustomClipMinSeconds] = useState(15);
+  const [customClipMaxSeconds, setCustomClipMaxSeconds] = useState(25);
   const [hookPreviewSeconds, setHookPreviewSeconds] = useState<7 | 8 | 10>(8);
   const [schedulePace, setSchedulePace] = useState<SchedulePace>("NORMAL");
   const [intervalMin, setIntervalMin] = useState(45);
@@ -319,6 +350,16 @@ export default function SuperUploadPage() {
       best,
     };
   }, [data]);
+
+  const clipLengthRange = useMemo(
+    () =>
+      getClipLengthRange({
+        mode: clipLengthMode,
+        customMin: customClipMinSeconds,
+        customMax: customClipMaxSeconds,
+      }),
+    [clipLengthMode, customClipMinSeconds, customClipMaxSeconds],
+  );
 
   async function addDonor() {
     setIsAddingDonor(true);
@@ -424,7 +465,7 @@ export default function SuperUploadPage() {
     setSelectedVideo(null);
     setIsDailyPackageModalOpen(true);
     setClipsCount(nextClipsCount);
-    setClipSeconds(60);
+    setClipLengthMode("FULL");
     setHookPreviewSeconds(8);
     setHookMode("AUTO_BEST_MIX");
     setSchedulePace(nextPace);
@@ -452,6 +493,11 @@ export default function SuperUploadPage() {
 
       const windowStart = parseNyTime(windowStartTime, { hour: 21, minute: 30 });
       const windowEnd = parseNyTime(windowEndTime, { hour: 23, minute: 45 });
+      const clipRange = getClipLengthRange({
+        mode: clipLengthMode,
+        customMin: customClipMinSeconds,
+        customMax: customClipMaxSeconds,
+      });
 
       const response = await fetch("/api/factory/super-upload/daily-package", {
         method: "POST",
@@ -462,7 +508,10 @@ export default function SuperUploadPage() {
           accountId: selectedAccountId,
           templateId: selectedTemplateId,
           candidatesCount: clipsCount,
-          clipSeconds,
+          clipSeconds: clipRange.max,
+          clipMinSeconds: clipRange.min,
+          clipMaxSeconds: clipRange.max,
+          clipLengthMode,
           hookPreviewSeconds,
           intervalMin,
           intervalMax,
@@ -577,7 +626,7 @@ export default function SuperUploadPage() {
     setSelectedVideo(video);
     setClipsCount(nextClipsCount);
     setHookMode(video.suggestedHookMode || "AUTO_BEST_MIX");
-    setClipSeconds(60);
+    setClipLengthMode("FULL");
     setHookPreviewSeconds(8);
     setSchedulePace(nextPace);
     setIntervalMin(paceSettings.intervalMin);
@@ -606,6 +655,11 @@ export default function SuperUploadPage() {
 
       const windowStart = parseNyTime(windowStartTime, { hour: 21, minute: 30 });
       const windowEnd = parseNyTime(windowEndTime, { hour: 23, minute: 45 });
+      const clipRange = getClipLengthRange({
+        mode: clipLengthMode,
+        customMin: customClipMinSeconds,
+        customMax: customClipMaxSeconds,
+      });
 
       const response = await fetch("/api/factory/super-upload/create-package", {
         method: "POST",
@@ -617,7 +671,10 @@ export default function SuperUploadPage() {
           accountId: selectedAccountId,
           templateId: selectedTemplateId,
           clipsCount,
-          clipSeconds,
+          clipSeconds: clipRange.max,
+          clipMinSeconds: clipRange.min,
+          clipMaxSeconds: clipRange.max,
+          clipLengthMode,
           hookPreviewSeconds,
           intervalMin,
           intervalMax,
@@ -959,12 +1016,41 @@ export default function SuperUploadPage() {
 
                 <label>
                   Длина ролика
-                  <select value={clipSeconds} onChange={(event) => setClipSeconds(Number(event.target.value) as 30 | 45 | 60)}>
-                    <option value={30}>30 секунд</option>
-                    <option value={45}>45 секунд</option>
-                    <option value={60}>60 секунд</option>
+                  <select value={clipLengthMode} onChange={(event) => setClipLengthMode(event.target.value as ClipLengthMode)}>
+                    <option value="SHORT">15–25 секунд</option>
+                    <option value="MEDIUM">25–35 секунд</option>
+                    <option value="LONG">35–45 секунд</option>
+                    <option value="FULL">45–60 секунд</option>
+                    <option value="CUSTOM">Своя длина</option>
                   </select>
+                  <small className="muted">Сейчас: {clipLengthRange.min}–{clipLengthRange.max} сек. Worker раздаст разную длину внутри диапазона.</small>
                 </label>
+
+                {clipLengthMode === "CUSTOM" ? (
+                  <>
+                    <label>
+                      Минимум секунд
+                      <input
+                        type="number"
+                        min={10}
+                        max={60}
+                        value={customClipMinSeconds}
+                        onChange={(event) => setCustomClipMinSeconds(clampClipSeconds(Number(event.target.value), 15))}
+                      />
+                    </label>
+
+                    <label>
+                      Максимум секунд
+                      <input
+                        type="number"
+                        min={10}
+                        max={60}
+                        value={customClipMaxSeconds}
+                        onChange={(event) => setCustomClipMaxSeconds(clampClipSeconds(Number(event.target.value), 25))}
+                      />
+                    </label>
+                  </>
+                ) : null}
 
                 <label>
                   Длина начального AI hook
@@ -1051,7 +1137,7 @@ export default function SuperUploadPage() {
               <div className="super-plan-box">
                 <b>AI Hook Cut</b>
                 <span>
-                  Будет взято {clipsCount} кандидатов дня. Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст, потом gameplay + выбранная Amelia. Финал приходит к hook-моменту.
+                  Будет взято {clipsCount} кандидатов дня. Длина: {clipLengthRange.min}–{clipLengthRange.max} сек с вариацией между роликами. Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст, потом gameplay + выбранная Amelia. Финал приходит к hook-моменту.
                 </span>
               </div>
 
@@ -1129,12 +1215,41 @@ export default function SuperUploadPage() {
 
                 <label>
                   Длина клипа
-                  <select value={clipSeconds} onChange={(event) => setClipSeconds(Number(event.target.value) as 30 | 45 | 60)}>
-                    <option value={30}>30 секунд</option>
-                    <option value={45}>45 секунд</option>
-                    <option value={60}>60 секунд</option>
+                  <select value={clipLengthMode} onChange={(event) => setClipLengthMode(event.target.value as ClipLengthMode)}>
+                    <option value="SHORT">15–25 секунд</option>
+                    <option value="MEDIUM">25–35 секунд</option>
+                    <option value="LONG">35–45 секунд</option>
+                    <option value="FULL">45–60 секунд</option>
+                    <option value="CUSTOM">Своя длина</option>
                   </select>
+                  <small className="muted">Сейчас: {clipLengthRange.min}–{clipLengthRange.max} сек. Worker раздаст разную длину внутри диапазона.</small>
                 </label>
+
+                {clipLengthMode === "CUSTOM" ? (
+                  <>
+                    <label>
+                      Минимум секунд
+                      <input
+                        type="number"
+                        min={10}
+                        max={60}
+                        value={customClipMinSeconds}
+                        onChange={(event) => setCustomClipMinSeconds(clampClipSeconds(Number(event.target.value), 15))}
+                      />
+                    </label>
+
+                    <label>
+                      Максимум секунд
+                      <input
+                        type="number"
+                        min={10}
+                        max={60}
+                        value={customClipMaxSeconds}
+                        onChange={(event) => setCustomClipMaxSeconds(clampClipSeconds(Number(event.target.value), 25))}
+                      />
+                    </label>
+                  </>
+                ) : null}
 
                 <label>
                   Длина начального AI hook
@@ -1221,7 +1336,7 @@ export default function SuperUploadPage() {
               <div className="super-plan-box">
                 <b>AI Hook Cut</b>
                 <span>
-                  Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст,
+                  Длина роликов: {clipLengthRange.min}–{clipLengthRange.max} сек с вариацией между задачами. Каждый ролик: 0–{hookPreviewSeconds} сек full-screen Roblox hook + крупный текст,
                   потом split-screen gameplay + Amelia. Основная часть начинается раньше
                   и заканчивается тем самым hook-моментом.
                 </span>

@@ -9,11 +9,40 @@ export const runtime = "nodejs";
 
 const RANDOM_TEMPLATE_ID = "RANDOM";
 
+function normalizeClipRange(input: {
+  clipSeconds: number;
+  clipMinSeconds?: number;
+  clipMaxSeconds?: number;
+}) {
+  const rawMin = Number(input.clipMinSeconds ?? input.clipSeconds);
+  const rawMax = Number(input.clipMaxSeconds ?? input.clipSeconds);
+  const min = Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMin) ? rawMin : input.clipSeconds)));
+  const max = Math.max(min, Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMax) ? rawMax : input.clipSeconds))));
+
+  return {
+    min,
+    max,
+    label: min === max ? `${max} сек` : `${min}–${max} сек`,
+  };
+}
+
+function pickClipSeconds(index: number, min: number, max: number) {
+  if (max <= min) return max;
+
+  const ratios = [0, 0.35, 0.7, 1, 0.2, 0.55, 0.9, 0.1, 0.45, 0.8, 0.3, 0.65, 0.95];
+  const ratio = ratios[index % ratios.length] ?? 0.5;
+
+  return Math.max(min, Math.min(max, Math.round(min + (max - min) * ratio)));
+}
+
 const bodySchema = z.object({
   accountId: z.string().min(1),
   templateId: z.string().min(1),
   candidatesCount: z.coerce.number().int().min(1).max(30).default(10),
-  clipSeconds: z.union([z.literal(30), z.literal(45), z.literal(60)]).default(60),
+  clipSeconds: z.coerce.number().int().min(10).max(60).default(60),
+  clipMinSeconds: z.coerce.number().int().min(10).max(60).optional(),
+  clipMaxSeconds: z.coerce.number().int().min(10).max(60).optional(),
+  clipLengthMode: z.string().max(40).default("FULL"),
   hookPreviewSeconds: z.coerce.number().int().min(3).max(10).default(8),
   intervalMin: z.coerce.number().int().min(5).max(180).default(45),
   intervalMax: z.coerce.number().int().min(5).max(240).default(60),
@@ -81,6 +110,7 @@ async function resolveTemplates(templateId: string) {
 export async function POST(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
+    const clipRange = normalizeClipRange(body);
 
     const account = await withDbRetry(() =>
       prisma.factoryAccount.findUnique({
@@ -125,6 +155,7 @@ export async function POST(request: Request) {
       const slot = schedule.slots[index];
       const template = templates[index % templates.length];
       const titlePrefix = hookPrefixFromMode(sourceVideo.suggestedHookMode);
+      const jobClipSeconds = pickClipSeconds(index, clipRange.min, clipRange.max);
 
       const pack = await withDbRetry(() =>
         prisma.factorySuperUploadPackage.create({
@@ -134,7 +165,7 @@ export async function POST(request: Request) {
             accountName: account.name,
             game: "ROBLOX",
             clipsCount: 1,
-            clipSeconds: body.clipSeconds,
+            clipSeconds: jobClipSeconds,
             hookPreviewSeconds: body.hookPreviewSeconds,
             intervalMin: body.intervalMin,
             intervalMax: body.intervalMax,
@@ -142,7 +173,7 @@ export async function POST(request: Request) {
             hookMode: sourceVideo.suggestedHookMode,
             titlePrefix,
             status: "CREATED",
-            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Hook preview: ${body.hookPreviewSeconds} сек. Окно: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")} NY. Hook mode: ${sourceVideo.suggestedHookMode}.`,
+            recommendation: `Пакет дня: кандидат #${index + 1}. Шанс ${sourceVideo.viralChance}/100. ${slot.label} New York. Длина: ${clipRange.label}. Hook preview: ${body.hookPreviewSeconds} сек. Окно: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")} NY. Hook mode: ${sourceVideo.suggestedHookMode}.`,
           },
         }),
       );
@@ -155,7 +186,7 @@ export async function POST(request: Request) {
             sourceStorageKey: null,
             sourceOriginalName: sourceVideo.title,
             sourceSizeBytes: null,
-            clipSeconds: body.clipSeconds,
+            clipSeconds: jobClipSeconds,
             hookPreviewSeconds: body.hookPreviewSeconds,
             clipStartIndex: 0,
             titlePrefix,
@@ -165,13 +196,13 @@ export async function POST(request: Request) {
             status: "QUEUED",
             totalClips: 0,
             progress: 0,
-            progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100 · hook ${body.hookPreviewSeconds} сек`,
+            progressLabel: `ПАКЕТ ДНЯ ${index + 1}/${selected.length}: ${slot.label} New York · ${sourceVideo.viralChance}/100 · ${jobClipSeconds} сек · hook ${body.hookPreviewSeconds} сек`,
             publishTiming: "USA_SMART",
             scheduledAt: slot.scheduledAt,
             cutMode: "SMART_HOOK_AI",
             smartStepSeconds: 6,
             smartCandidates: 60,
-            smartMinGapSeconds: Math.max(30, body.clipSeconds),
+            smartMinGapSeconds: Math.max(30, jobClipSeconds),
             cancelRequested: false,
             superUploadPackageId: pack.id,
             targets: {
@@ -204,7 +235,7 @@ export async function POST(request: Request) {
       schedule: schedule.slots,
       bestHour: schedule.bestHour,
       candidates: selected,
-      message: `Пакет дня создан: ${jobs.length} задач. Длина: ${body.clipSeconds} сек. Hook: ${body.hookPreviewSeconds} сек. Окно NY: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}.`,
+      message: `Пакет дня создан: ${jobs.length} задач. Длина: ${clipRange.label}. Hook: ${body.hookPreviewSeconds} сек. Окно NY: ${String(body.windowStartHour).padStart(2, "0")}:${String(body.windowStartMinute).padStart(2, "0")}–${String(body.windowEndHour).padStart(2, "0")}:${String(body.windowEndMinute).padStart(2, "0")}.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
