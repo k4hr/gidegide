@@ -126,28 +126,28 @@ function getTitleThemeLabel(sourceTitle?: string | null, momentType?: string | n
 }
 
 const TITLE_HOOKS = [
-  "Nobody expected this ending",
-  "This got way too close",
-  "He almost lost everything",
-  "The last second changed it all",
-  "This looked impossible",
-  "He should not have survived",
-  "This moment got chaotic fast",
-  "The final move saved the run",
-  "This went wrong so fast",
-  "The timing was actually wild",
-  "This was harder than it looked",
-  "The ending was pure chaos",
-  "He panicked at the worst time",
-  "This clip turned insane",
-  "That save was way too lucky",
+  "Bacon had one jump left",
+  "The timer hit 1 second",
+  "The door was a trap",
+  "He escaped with 1 HP",
+  "The admin lied to everyone",
+  "This obby turned into chaos",
+  "He picked the wrong button",
+  "Robux changed the whole story",
+  "The escape path disappeared",
+  "The boss spawned too early",
+  "He found a secret shortcut",
+  "The fake floor got him",
+  "This jump changed the run",
+  "The last door was cursed",
+  "The checkpoint was fake",
 ];
 
 function buildFallbackTitle(sourceTitle?: string | null, momentType?: string | null, salt = 0) {
   const theme = getTitleThemeLabel(sourceTitle, momentType);
   const hook = TITLE_HOOKS[Math.abs(salt) % TITLE_HOOKS.length];
 
-  return `Roblox ${theme}: ${hook}`.replace(/\s+/g, " ").slice(0, 95);
+  return `Roblox ${hook}`.replace(/\s+/g, " ").slice(0, 95);
 }
 
 function normalizeUniqueTitle(input: {
@@ -161,20 +161,26 @@ function normalizeUniqueTitle(input: {
   const rawLower = raw.toLowerCase();
   const generic =
     /^(roblox:\s*)?(wait for (the )?ending|watch till the end|wait for it|insane roblox moment)$/i.test(raw) ||
-    /^roblox\s+(moment|game|clip)?:?\s*(wait for (the )?ending|watch till the end|wait for it|nobody expected this ending|this got way too close)$/i.test(raw) ||
+    /^roblox\s+(moment|moments|game|clip)?:?/i.test(raw) ||
     rawLower === "roblox: nobody expected this ending" ||
     rawLower === "roblox: this got way too close" ||
     rawLower === "roblox: the ending changed everything" ||
     rawLower.includes("wait for the ending") ||
-    rawLower.includes("watch till the end");
+    rawLower.includes("watch till the end") ||
+    rawLower.includes("he should not have survived") ||
+    rawLower.includes("he almost lost everything") ||
+    rawLower.includes("the final move saved the run") ||
+    rawLower.includes("this clip turned insane") ||
+    rawLower.includes("roblox moment");
   let base = !raw || generic ? buildFallbackTitle(input.sourceTitle, input.momentType, input.salt ?? 0) : raw;
 
   if (!/roblox/i.test(base)) {
-    base = `Roblox ${getTitleThemeLabel(input.sourceTitle, input.momentType)}: ${base}`;
+    base = `Roblox ${base}`;
   }
 
   base = base
-    .replace(/^Roblox:\s*/i, `Roblox ${getTitleThemeLabel(input.sourceTitle, input.momentType)}: `)
+    .replace(/^Roblox:\s*/i, "Roblox ")
+    .replace(/^Roblox\s+moment\s*:?\s*/i, "Roblox ")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 95);

@@ -139,13 +139,13 @@ const FALLBACK_OVERLAYS = [
   "BACON DID\nNOTHING WRONG 😭",
   "THE ENDING\nMADE ME CRY 😭",
   "SHE THOUGHT\nHE WAS EVIL 😳",
-  "ROBLOX GAVE HIM\nONE CHOICE 😱",
+  "BACON HAD\n10 SECONDS 😳",
   "THEY BULLIED HIM\nSO HE... 💔",
 ];
 
 const FALLBACK_TITLES = [
   "He picked MONEY instead of love.. 😭💔",
-  "The ending made me cry.. 😭",
+  "This Roblox ending was unfair 😭",
   "Who would you save?! 😳💔",
   "They BULLIED him, so he...",
   "She thought he was evil.. 😳",
@@ -154,7 +154,7 @@ const FALLBACK_TITLES = [
   "Bacon did nothing wrong... 😢",
   "The poor noob got revenge.. 😭",
   "This gift changed everything.. 🎁",
-  "He should not have opened it.. 😨",
+  "Roblox warned him too late 😨",
 ];
 
 const FALLBACK_CONFLICTS = [
@@ -165,7 +165,7 @@ const FALLBACK_CONFLICTS = [
   "HE PICKED\nTHE LEFT SIDE 👀",
   "THE GIFT\nLOOKED NORMAL 🎁",
   "SHE TRUSTED\nTHE WRONG GUY 😳",
-  "BACON WAS\nALL ALONE 😢",
+  "NOBODY\nHELPED HIM 😢",
 ];
 
 const FALLBACK_ESCALATIONS = [
@@ -366,10 +366,10 @@ ${input.viralBrainPromptContext}` : "Viral Lab brain context: no learned formula
         input.viralFormula ? `Selected reusable viral formula for this donor moment:
 ${JSON.stringify(input.viralFormula).slice(0, 3500)}` : "Selected reusable viral formula: none.",
         "Use the Viral Lab formula as direction for structure, title pattern, emotional logic, emojis, pacing, and music mood. Do NOT copy any specific reference video. Create original text for this donor gameplay.",
-        `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Prefer 18-32 seconds. Never over ${input.maxSeconds}.`,
+        `Duration must be between ${input.minSeconds} and ${input.maxSeconds} seconds. Respect the creator's selected range; do not hard-code a fixed length. Never over ${input.maxSeconds}.`,
         "Overlay timeline rules: create 3-4 big text beats for the video, not one generic caption. Each beat is 1-3 short lines, huge, simple, emotional, child-readable. Emojis are allowed if requested. Never repeat the same hook overlay in this batch. Never use BACON WAS ALL ALONE as default text.",
         "Beat 1 HOOK: visible at the start, instantly understandable. Beat 2 CONFLICT: what is the problem/choice. Beat 3 ESCALATION: it gets worse/weirder. Beat 4 PUNCHLINE: ending/payoff/question.",
-        "Title rules: viral Roblox Shorts style, emotional, simple, with emojis and suspense. Title MUST contain Roblox and MUST be unique in the batch. Never output: Roblox gave him one choice.. 😱, Roblox: Wait for the ending, Wait for it, Roblox story, Roblox moment. Do NOT write dry SEO titles like 'Roblox choice: He picked the wrong life'. Good: 'Roblox made him pick love or money.. 😭💔', 'Roblox Bacon had 10 seconds to choose 😳', 'They bullied Bacon in Roblox and regretted it 😭'.",
+        "Title rules: viral Roblox Shorts style, emotional, simple, with emojis and suspense. Title MUST contain Roblox and MUST be unique in the batch. Hard ban: never start with or include 'Roblox moment:', 'Roblox moments:', 'He should not have survived', 'He almost lost everything', 'The final move saved the run', 'This clip turned insane', 'Wait for the ending', 'Wait for it', or generic SEO titles. Good: 'Roblox Bacon had 1 HP left 😭', 'This Roblox door was a trap 😳', 'They bullied Bacon in Roblox and regretted it 😭'.",
         "Music mood must be one of: sad, emotional, suspense, horror, scary, funny, chaos, epic, victory, fail, cute, magical, gift, choice, rich, poor, love, bullying, revenge, system, mystery, surprise, dramatic, chase, chill, explaining, finale, happy, hype, intense, other, random, riser, sneaky.",
         "Return strict JSON only.",
         "Schema: {\"score\":0-100,\"storyStyle\":\"short_snake_case\",\"musicMood\":\"suspense\",\"durationSec\":25,\"overlayText\":\"HOOK LINE 1\\nHOOK LINE 2 😳\",\"conflictText\":\"CONFLICT TEXT\",\"escalationText\":\"ESCALATION TEXT\",\"punchlineText\":\"PUNCHLINE TEXT\",\"secondaryText\":\"optional small text\",\"title\":\"viral title\",\"reason\":\"one short sentence explaining hook-conflict-escalation-punchline\"}",
@@ -448,7 +448,7 @@ function buildTiming(input: {
   duration: number;
   selectedDuration: number;
 }) {
-  const clipSeconds = clamp(input.selectedDuration, 10, 35);
+  const clipSeconds = clamp(input.selectedDuration, 10, 60);
   const safeHook = clamp(input.roughHookSec, 2, Math.max(2, input.duration - 1));
   const startSec = clamp(
     Math.round(safeHook - Math.min(clipSeconds - 2, Math.max(6, Math.floor(clipSeconds * 0.65)))),
@@ -473,8 +473,8 @@ export async function buildRobloxStoryShortCandidates(input: BuildRobloxStoryInp
   await ensureFactoryDirs();
   await assertNotCanceled(input.isCanceled);
 
-  const minSeconds = clamp(input.minSeconds, 10, 30);
-  const maxSeconds = clamp(Math.max(input.maxSeconds, minSeconds), minSeconds, 35);
+  const minSeconds = clamp(input.minSeconds, 10, 55);
+  const maxSeconds = clamp(Math.max(input.maxSeconds, minSeconds), minSeconds, 60);
   const storyStyle = normalizeStoryStyle(input.storyStyle);
 
   const technicalCandidates = await buildSmartClipCandidates({

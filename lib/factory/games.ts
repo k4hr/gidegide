@@ -83,26 +83,26 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "The final moment changed everything",
-        "Nobody expected this ending",
-        "The ending changed everything",
-        "The last second was insane",
-        "This ending made no sense",
-        "It all comes down to the end",
-        "The final jump decided everything",
-        "The ending is actually wild",
-        "The last move changed everything",
-        "The last move saved the run",
+        "Bacon had one jump left",
+        "The fake door opened",
+        "The timer hit 1 second",
+        "The ending was a trap",
+        "One choice decided the run",
+        "This jump changed the run",
+        "The secret ending appeared",
+        "The last door was cursed",
+        "The checkpoint was fake",
       ],
     },
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
-        "How did he survive that",
+        "He escaped with 1 HP",
+        "How did Bacon dodge that",
         "He survived with one second left",
-        "This save was way too lucky",
-        "He almost lost everything here",
-        "That survival was actually impossible",
+        "This dodge was way too close",
+        "Bacon lost the checkpoint here",
+        "That escape was almost impossible",
         "He was one mistake away from losing",
         "This Roblox player got too lucky",
         "He somehow stayed alive",
@@ -176,12 +176,12 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
         "Bro forgot how to jump",
         "This was the dumbest way to lose",
         "He panicked so hard",
-        "This Roblox moment was too random",
+        "This Roblox trap came out of nowhere",
         "That was not supposed to happen",
         "Roblox chose violence today",
         "This clip got weird fast",
         "The timing was accidentally perfect",
-        "This Roblox moment is pure chaos",
+        "This Roblox round turned into chaos",
       ],
     },
     {
@@ -206,7 +206,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "Wait for the final fight",
-        "Nobody expected this ending",
+        "Bacon had one jump left",
         "The last shot changed everything",
         "This ending was too close",
         "The final move was perfect",
@@ -215,7 +215,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
+        "He escaped with 1 HP",
         "How did he live through that",
         "This save was unreal",
         "He survived with no time left",
@@ -289,19 +289,19 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "The final moment changed everything",
-        "Nobody expected this ending",
-        "The ending changed everything",
-        "The last second was insane",
+        "Bacon had one jump left",
+        "The fake door opened",
+        "The timer hit 1 second",
         "This Minecraft ending made no sense",
       ],
     },
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
-        "How did he survive that",
+        "He escaped with 1 HP",
+        "How did Bacon dodge that",
         "He survived with one heart",
-        "This save was way too lucky",
+        "This dodge was way too close",
         "That escape should not have worked",
       ],
     },
@@ -372,7 +372,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "Wait for the final fight",
-        "Nobody expected this ending",
+        "Bacon had one jump left",
         "The last second changed everything",
         "This ending was too close",
         "The final move was perfect",
@@ -381,8 +381,8 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
-        "How did he survive that",
+        "He escaped with 1 HP",
+        "How did Bacon dodge that",
         "This save was unreal",
         "He survived with no health",
         "That escape was way too clean",
@@ -455,7 +455,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "Wait for the final fight",
-        "Nobody expected this ending",
+        "Bacon had one jump left",
         "The last spell changed everything",
         "This ending was too close",
         "The final move was perfect",
@@ -464,7 +464,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
+        "He escaped with 1 HP",
         "How did he live through that",
         "This save was unreal",
         "He survived with no HP",
@@ -538,19 +538,19 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
       category: "ENDING",
       templates: [
         "The final moment changed everything",
-        "Nobody expected this ending",
-        "The ending changed everything",
-        "The last second was insane",
-        "This ending made no sense",
+        "Bacon had one jump left",
+        "The fake door opened",
+        "The timer hit 1 second",
+        "The ending was a trap",
       ],
     },
     {
       category: "SURVIVAL",
       templates: [
-        "He should not have survived this",
-        "How did he survive that",
-        "This save was way too lucky",
-        "He almost lost everything here",
+        "He escaped with 1 HP",
+        "How did Bacon dodge that",
+        "This dodge was way too close",
+        "Bacon lost the checkpoint here",
         "That escape should not have worked",
       ],
     },
@@ -601,7 +601,7 @@ const HOOK_MIX: Record<FactoryGame, HookTemplate[]> = {
         "Bro forgot how to play",
         "This was the dumbest way to lose",
         "He panicked so hard",
-        "This moment was pure chaos",
+        "This round turned into chaos",
       ],
     },
     {
@@ -656,6 +656,8 @@ function pickRandom<T>(items: T[]) {
 
 function normalizeTitle(value: string) {
   return value
+    .replace(/^\s*Roblox\s+moments?\s*:?\s*/i, "Roblox ")
+    .replace(/^\s*Roblox\s*:\s*/i, "Roblox ")
     .replace(/\s+/g, " ")
     .replace(/\s+([?!.,:])/g, "$1")
     .replace(/[|]+/g, " ")
@@ -836,7 +838,8 @@ function buildAutoMixTitle(input: {
     const topic = getRobloxSourceTopic(input.sourceTitle);
     const cleanedTemplate = template.replace(/^Roblox\s+/i, "").trim();
 
-    return normalizeTitle(`${topic}: ${cleanedTemplate}${suffix}`);
+    const title = `${cleanedTemplate}${suffix}`.trim();
+    return normalizeTitle(/roblox/i.test(title) ? title : `Roblox ${title}`);
   }
 
   return normalizeTitle(`${template}${suffix}`);

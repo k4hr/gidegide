@@ -112,12 +112,13 @@ export default function StoryShortsPage() {
   const [count, setCount] = useState(10);
   const [storyStyle, setStoryStyle] = useState("AUTO");
   const [musicMood, setMusicMood] = useState("AUTO");
-  const [minSeconds, setMinSeconds] = useState(10);
-  const [maxSeconds, setMaxSeconds] = useState(35);
+  const [durationPreset, setDurationPreset] = useState("15-25");
+  const [minSeconds, setMinSeconds] = useState(15);
+  const [maxSeconds, setMaxSeconds] = useState(25);
   const [sourceVolume, setSourceVolume] = useState(10);
   const [useEmojis, setUseEmojis] = useState(true);
-  const [windowStart, setWindowStart] = useState("21:30");
-  const [windowEnd, setWindowEnd] = useState("23:45");
+  const [windowStart, setWindowStart] = useState("15:00");
+  const [windowEnd, setWindowEnd] = useState("19:00");
   const [intervalMin, setIntervalMin] = useState(20);
   const [intervalMax, setIntervalMax] = useState(30);
   const [loading, setLoading] = useState(false);
@@ -148,6 +149,28 @@ export default function StoryShortsPage() {
       hour: Number.isFinite(hour) ? hour : 21,
       minute: Number.isFinite(minute) ? minute : 30,
     };
+  }
+
+  function applyDurationPreset(value: string) {
+    setDurationPreset(value);
+
+    if (value === "15-25") {
+      setMinSeconds(15);
+      setMaxSeconds(25);
+      return;
+    }
+
+    if (value === "25-35") {
+      setMinSeconds(25);
+      setMaxSeconds(35);
+      return;
+    }
+
+    if (value === "35-45") {
+      setMinSeconds(35);
+      setMaxSeconds(45);
+      return;
+    }
   }
 
   async function addDonor() {
@@ -282,7 +305,7 @@ export default function StoryShortsPage() {
         <div className="factory-eyebrow">ROBLOX STORY SHORTS</div>
         <h1>Простые вирусные Roblox Shorts без Amelia</h1>
         <p className="factory-muted">
-          AI сам ищет story-моменты в длинных 16:9 донорах, сам выбирает длину 10–35 сек, пишет крупный текст, эмодзи, выбирает музыку и публикует в выбранное окно New York.
+          AI ищет story-моменты в длинных 16:9 донорах, держит выбранный тобой диапазон длины, пишет крупный текст, эмодзи, выбирает музыку и публикует в выбранное окно New York.
         </p>
         <div className="factory-row-actions">
           <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
@@ -383,12 +406,21 @@ export default function StoryShortsPage() {
             </select>
           </label>
           <label>
+            Длина ролика
+            <select value={durationPreset} onChange={(event) => applyDurationPreset(event.target.value)}>
+              <option value="15-25">15–25 сек — быстрый тест</option>
+              <option value="25-35">25–35 сек — средний</option>
+              <option value="35-45">35–45 сек — длиннее</option>
+              <option value="custom">Своя длина</option>
+            </select>
+          </label>
+          <label>
             Минимум секунд
-            <input type="number" min={10} max={30} value={minSeconds} onChange={(event) => setMinSeconds(Number(event.target.value))} />
+            <input type="number" min={10} max={55} value={minSeconds} onChange={(event) => { setDurationPreset("custom"); setMinSeconds(Number(event.target.value)); }} />
           </label>
           <label>
             Максимум секунд
-            <input type="number" min={10} max={35} value={maxSeconds} onChange={(event) => setMaxSeconds(Number(event.target.value))} />
+            <input type="number" min={10} max={60} value={maxSeconds} onChange={(event) => { setDurationPreset("custom"); setMaxSeconds(Number(event.target.value)); }} />
           </label>
           <label>
             Звук исходника, %
@@ -419,7 +451,7 @@ export default function StoryShortsPage() {
           </label>
         </div>
         <div className="factory-blue-box">
-          <strong>AI длина auto:</strong> ты не выбираешь 20/30/45 вручную. AI сам подбирает длительность под момент, но держит границы {minSeconds}–{maxSeconds} сек.
+          <strong>Длина под твоим контролем:</strong> выбери пресет или свою вилку. AI подбирает точную длительность под момент, но не выходит за границы {minSeconds}–{maxSeconds} сек.
         </div>
         <button className="factory-primary-button" disabled={loading || !accountId} onClick={createPackage}>
           {loading ? "Создаю..." : "Создать Roblox Story Shorts"}

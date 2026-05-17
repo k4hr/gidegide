@@ -30,8 +30,20 @@ const BAD_TITLE_PARTS = [
   "the ending changed everything",
   "roblox story",
   "roblox moment",
+  "roblox moments",
   "roblox game",
   "roblox clip",
+  "he should not have survived",
+  "he almost lost everything",
+  "the final move saved the run",
+  "the last second changed it",
+  "this looked impossible",
+  "this clip turned insane",
+  "this moment got chaotic",
+  "that save was way too lucky",
+  "final move saved",
+  "almost lost everything",
+  "should not have survived",
 ];
 
 const BAD_OVERLAY_PARTS = [
@@ -40,6 +52,8 @@ const BAD_OVERLAY_PARTS = [
   "wait for it",
   "roblox gave him one choice",
   "the ending made me cry",
+  "roblox moment",
+  "starting soon",
 ];
 
 const STYLE_TITLE_BANK: Record<string, string[]> = {
@@ -133,7 +147,7 @@ const STYLE_TITLE_BANK: Record<string, string[]> = {
     "This Roblox ending actually hurt 😭",
     "He found the secret Roblox choice 💀",
     "Roblox made him choose the wrong person 😱",
-    "This Roblox moment became a whole story 😳",
+    "Roblox Bacon had one chance left 😳",
     "He lost everything in Roblox for one mistake 💔",
     "Roblox Bacon found out the truth too late 😭",
   ],
@@ -213,7 +227,7 @@ function hashValue(value: string) {
   return hash >>> 0;
 }
 
-function normalizeKey(value: string) {
+export function normalizeRobloxTextKey(value: string) {
   return value
     .toLowerCase()
     .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, " ")
@@ -255,21 +269,21 @@ function seedNumber(seed?: number | string | null, clipIndex = 1) {
 }
 
 function isBadTitle(value: string) {
-  const key = normalizeKey(value);
+  const key = normalizeRobloxTextKey(value);
 
   if (!key || key === "roblox") return true;
   if (/^roblox (choice|system|story|horror|moment|game|clip)(\s|$)/i.test(key)) return true;
 
-  return BAD_TITLE_PARTS.some((part) => key.includes(normalizeKey(part)));
+  return BAD_TITLE_PARTS.some((part) => key.includes(normalizeRobloxTextKey(part)));
 }
 
 function isBadOverlay(value: string) {
-  const key = normalizeKey(value);
+  const key = normalizeRobloxTextKey(value);
 
   if (!key) return true;
   if (key.length <= 4) return true;
 
-  return BAD_OVERLAY_PARTS.some((part) => key.includes(normalizeKey(part)));
+  return BAD_OVERLAY_PARTS.some((part) => key.includes(normalizeRobloxTextKey(part)));
 }
 
 function storyTitlePool(storyStyle?: string | null) {
@@ -302,7 +316,7 @@ export function makeUniqueRobloxStoryTitle(input: RobloxStoryUniqueInput) {
   candidate = cleanInline(candidate).slice(0, 95);
 
   let attempt = 0;
-  while (input.usedTitles.has(normalizeKey(candidate)) || isBadTitle(candidate)) {
+  while (input.usedTitles.has(normalizeRobloxTextKey(candidate)) || isBadTitle(candidate)) {
     attempt += 1;
     const fallback = pool[(seed + attempt * 7) % pool.length];
     candidate = cleanInline(/roblox/i.test(fallback) ? fallback : `Roblox ${fallback}`).slice(0, 95);
@@ -313,7 +327,7 @@ export function makeUniqueRobloxStoryTitle(input: RobloxStoryUniqueInput) {
     }
   }
 
-  input.usedTitles.add(normalizeKey(candidate));
+  input.usedTitles.add(normalizeRobloxTextKey(candidate));
 
   return candidate;
 }
@@ -331,7 +345,7 @@ export function makeUniqueRobloxOverlay(input: RobloxOverlayUniqueInput) {
   }
 
   let attempt = 0;
-  while (input.usedOverlays.has(normalizeKey(candidate)) || isBadOverlay(candidate)) {
+  while (input.usedOverlays.has(normalizeRobloxTextKey(candidate)) || isBadOverlay(candidate)) {
     attempt += 1;
     candidate = cleanOverlay(pool[(seed + attempt * 5) % pool.length], input.useEmojis ?? true);
 
@@ -342,11 +356,20 @@ export function makeUniqueRobloxOverlay(input: RobloxOverlayUniqueInput) {
     }
   }
 
-  input.usedOverlays.add(normalizeKey(candidate));
+  input.usedOverlays.add(normalizeRobloxTextKey(candidate));
 
   return candidate;
 }
 
 export function getUsedTextList(values: Set<string>, limit = 20) {
   return Array.from(values).slice(-limit);
+}
+
+
+export function sanitizeFinalRobloxStoryTitle(input: RobloxStoryUniqueInput) {
+  return makeUniqueRobloxStoryTitle(input);
+}
+
+export function isBlockedRobloxStoryTitle(title: string) {
+  return isBadTitle(title);
 }

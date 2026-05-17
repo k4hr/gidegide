@@ -28,6 +28,7 @@ import {
   uploadFileToR2,
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
+import { sanitizeFinalRobloxStoryTitle } from "@/lib/factory/roblox-story-uniqueness";
 import { withDbRetry } from "@/lib/factory/db-retry";
 import {
   buildSequentialClipStarts,
@@ -299,13 +300,18 @@ function makeJobTitleUnique(input: {
   const isGenericTitle =
     !title ||
     /^roblox:\s*wait for (the )?ending$/i.test(title) ||
-    /^roblox\s+(moment|game|clip)?:?\s*(wait for (the )?ending|watch till the end|wait for it|nobody expected this ending|this got way too close)$/i.test(title) ||
+    /^roblox\s+(moment|moments|game|clip)?:?/i.test(title) ||
     titleLower === "roblox" ||
     titleLower === "roblox: nobody expected this ending" ||
     titleLower === "roblox: this got way too close" ||
     titleLower === "roblox: the ending changed everything" ||
     titleLower.includes("wait for the ending") ||
-    titleLower.includes("watch till the end");
+    titleLower.includes("watch till the end") ||
+    titleLower.includes("he should not have survived") ||
+    titleLower.includes("he almost lost everything") ||
+    titleLower.includes("the final move saved the run") ||
+    titleLower.includes("this clip turned insane") ||
+    titleLower.includes("roblox moment");
 
   if (isGenericTitle) {
     title = buildClipTitle({
@@ -1119,6 +1125,7 @@ async function processOneJob() {
 
     let completedRenders = 0;
     const usedPackageTitles = new Set<string>();
+    const usedPublishTitles = new Set<string>();
 
     for (let i = 0; i < clipStarts.length; i += 1) {
       await assertNotCanceled(job.id);
@@ -1186,7 +1193,32 @@ async function processOneJob() {
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
 
-        const title = baseTitle;
+        const title = storyPlan
+          ? sanitizeFinalRobloxStoryTitle({
+              title: baseTitle,
+              sourceTitle: job.sourceOriginalName,
+              storyStyle: storyPlan.storyStyle,
+              musicMood: storyPlan.musicMood,
+              clipIndex,
+              seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
+              usedTitles: usedPublishTitles,
+            })
+          : makeJobTitleUnique({
+              title: baseTitle,
+              game: job.game,
+              sourceTitle: job.sourceOriginalName,
+              clipIndex: clipIndex + 1000,
+              usedTitles: usedPublishTitles,
+            });
+
+        if (storyPlan) {
+          console.log("[youtube-upload] final title before upload", {
+            jobId: job.id,
+            clipIndex,
+            targetId: target.id,
+            title,
+          });
+        }
 
         const description = buildClipDescription({
           game: job.game,
