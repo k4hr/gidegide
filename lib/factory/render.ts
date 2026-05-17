@@ -26,6 +26,9 @@ export type FactoryRenderTemplate = {
   facecamWidthPercent?: number;
   facecamMarginPercent?: number;
   facecamBorderRadius?: number;
+  facecamCropZoomPercent?: number;
+  facecamCropFocusXPercent?: number;
+  facecamCropFocusYPercent?: number;
 };
 
 type RenderVariant = {
@@ -546,9 +549,18 @@ function buildLongVideoFacecamChain(template: FactoryRenderTemplate) {
   const widthPercent = Math.max(12, Math.min(40, template.facecamWidthPercent ?? 24));
   const width = Math.round((1920 * widthPercent) / 100);
   const height = Math.round((width * 9) / 16);
+
+  // 100 = обычный cover. 130-160 = сильнее приблизить реакцию и отрезать боковые края,
+  // чтобы в окне остался центр кадра с персонажем, а не весь широкий 16:9 источник.
+  const zoomPercent = Math.max(100, Math.min(250, template.facecamCropZoomPercent ?? 135));
+  const focusX = Math.max(0, Math.min(100, template.facecamCropFocusXPercent ?? 50));
+  const focusY = Math.max(0, Math.min(100, template.facecamCropFocusYPercent ?? 50));
+  const scaledWidth = Math.round((width * zoomPercent) / 100);
+  const scaledHeight = Math.round((height * zoomPercent) / 100);
+
   return [
-    `scale=${width}:${height}:force_original_aspect_ratio=increase`,
-    `crop=${width}:${height}:(iw-${width})/2:(ih-${height})/2`,
+    `scale=${scaledWidth}:${scaledHeight}:force_original_aspect_ratio=increase`,
+    `crop=${width}:${height}:(iw-${width})*${focusX}/100:(ih-${height})*${focusY}/100`,
     template.mirrorLana ? "hflip" : null,
     "setsar=1",
     "format=rgba",

@@ -227,7 +227,7 @@ export default function FactoryLongVideoPage() {
               </label>
 
               <label>
-                Размер facecam, % ширины
+                Ширина окна реакции, % от ширины итогового видео
                 <input
                   type="number"
                   min={12}
@@ -235,10 +235,11 @@ export default function FactoryLongVideoPage() {
                   value={facecamWidthPercent}
                   onChange={(event) => setFacecamWidthPercent(Number(event.target.value))}
                 />
+                <small className="muted">40 = окно реакции занимает 40% ширины финального 16:9 видео. Для 1920px это примерно 768px.</small>
               </label>
 
               <label>
-                Отступ от края, %
+                Отступ от краев, % от размера итогового видео
                 <input
                   type="number"
                   min={1}
@@ -246,6 +247,7 @@ export default function FactoryLongVideoPage() {
                   value={facecamMarginPercent}
                   onChange={(event) => setFacecamMarginPercent(Number(event.target.value))}
                 />
+                <small className="muted">По X считается от 1920px, по Y — от 1080px.</small>
               </label>
             </div>
 

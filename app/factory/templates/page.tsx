@@ -22,6 +22,9 @@ type FactoryTemplate = {
   facecamWidthPercent: number;
   facecamMarginPercent: number;
   facecamBorderRadius: number;
+  facecamCropZoomPercent: number;
+  facecamCropFocusXPercent: number;
+  facecamCropFocusYPercent: number;
   asset: FactoryAsset | null;
 };
 
@@ -48,6 +51,9 @@ export default function FactoryTemplatesPage() {
   const [facecamWidthPercent, setFacecamWidthPercent] = useState(24);
   const [facecamMarginPercent, setFacecamMarginPercent] = useState(3);
   const [facecamBorderRadius, setFacecamBorderRadius] = useState(18);
+  const [facecamCropZoomPercent, setFacecamCropZoomPercent] = useState(135);
+  const [facecamCropFocusXPercent, setFacecamCropFocusXPercent] = useState(50);
+  const [facecamCropFocusYPercent, setFacecamCropFocusYPercent] = useState(50);
   const [error, setError] = useState("");
 
   const selectedAsset = useMemo(
@@ -103,6 +109,9 @@ export default function FactoryTemplatesPage() {
           facecamWidthPercent,
           facecamMarginPercent,
           facecamBorderRadius,
+          facecamCropZoomPercent: kind === "LONG_16_9" ? facecamCropZoomPercent : 100,
+          facecamCropFocusXPercent,
+          facecamCropFocusYPercent,
         }),
       });
       const data = (await response.json()) as { error?: string };
@@ -187,14 +196,60 @@ export default function FactoryTemplatesPage() {
                     </select>
                   </label>
                   <label>
-                    Размер, % ширины
+                    Ширина окна реакции, % от ширины итогового видео
                     <input type="number" min={12} max={40} value={facecamWidthPercent} onChange={(event) => setFacecamWidthPercent(Number(event.target.value))} />
+                    <small className="muted">Например 40 = окно реакции занимает 40% ширины финального 16:9 ролика. Для 1920px это примерно 768px.</small>
                   </label>
                   <label>
-                    Отступ, %
+                    Отступ от краев, % от размера итогового видео
                     <input type="number" min={1} max={10} value={facecamMarginPercent} onChange={(event) => setFacecamMarginPercent(Number(event.target.value))} />
+                    <small className="muted">Для левого/правого края считается от ширины 1920px, для верхнего/нижнего — от высоты 1080px.</small>
                   </label>
                 </div>
+              ) : null}
+
+              {kind === "LONG_16_9" ? (
+                <div className="grid grid-3">
+                  <label>
+                    Обрезка реакции / приближение центра, %
+                    <input
+                      type="number"
+                      min={100}
+                      max={250}
+                      value={facecamCropZoomPercent}
+                      onChange={(event) => setFacecamCropZoomPercent(Number(event.target.value))}
+                    />
+                    <small className="muted">100 = без дополнительной обрезки. 130–160 обычно хорошо: края видео реакции режутся, в окне остается центр с Амелией.</small>
+                  </label>
+                  <label>
+                    Центр реакции по X, %
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={facecamCropFocusXPercent}
+                      onChange={(event) => setFacecamCropFocusXPercent(Number(event.target.value))}
+                    />
+                    <small className="muted">50 = ровно центр. Меньше — сдвинуть кадр левее, больше — правее.</small>
+                  </label>
+                  <label>
+                    Центр реакции по Y, %
+                    <input
+                      type="number"
+                      min={0}
+                      max={100}
+                      value={facecamCropFocusYPercent}
+                      onChange={(event) => setFacecamCropFocusYPercent(Number(event.target.value))}
+                    />
+                    <small className="muted">50 = середина по высоте. Меньше — выше, больше — ниже.</small>
+                  </label>
+                </div>
+              ) : null}
+
+              {kind === "LONG_16_9" ? (
+                <p className="muted">
+                  Для твоего случая с широким 16:9 видео реакции ставь обрезку примерно 140–160%, X = 50, Y = 50. Так края отрежутся, а Амелия останется по центру.
+                </p>
               ) : null}
 
               <label>
@@ -248,7 +303,7 @@ export default function FactoryTemplatesPage() {
                   <td>{template.kind === "LONG_16_9" ? "Видео 16:9" : "Shorts 9:16"}</td>
                   <td>
                     {template.kind === "LONG_16_9"
-                      ? `${positionLabel(template.facecamPosition)} · ${template.facecamWidthPercent}% · отступ ${template.facecamMarginPercent}%`
+                      ? `${positionLabel(template.facecamPosition)} · окно ${template.facecamWidthPercent}% от ширины видео · отступ ${template.facecamMarginPercent}% · обрезка ${template.facecamCropZoomPercent ?? 135}% · центр X ${template.facecamCropFocusXPercent ?? 50}% / Y ${template.facecamCropFocusYPercent ?? 50}%`
                       : "50/50: игра сверху, персонаж снизу"}
                   </td>
                 </tr>

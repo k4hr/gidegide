@@ -18,6 +18,9 @@ const templateSchema = z.object({
   facecamWidthPercent: z.number().int().min(12).max(40).default(24),
   facecamMarginPercent: z.number().int().min(1).max(10).default(3),
   facecamBorderRadius: z.number().int().min(0).max(64).default(18),
+  facecamCropZoomPercent: z.number().int().min(100).max(250).default(135),
+  facecamCropFocusXPercent: z.number().int().min(0).max(100).default(50),
+  facecamCropFocusYPercent: z.number().int().min(0).max(100).default(50),
   isDefault: z.boolean().default(false),
 });
 
@@ -87,6 +90,9 @@ export async function POST(request: Request) {
         facecamWidthPercent: data.facecamWidthPercent,
         facecamMarginPercent: data.facecamMarginPercent,
         facecamBorderRadius: data.facecamBorderRadius,
+        facecamCropZoomPercent: data.facecamCropZoomPercent,
+        facecamCropFocusXPercent: data.facecamCropFocusXPercent,
+        facecamCropFocusYPercent: data.facecamCropFocusYPercent,
         isDefault: data.isDefault,
       },
       include: {

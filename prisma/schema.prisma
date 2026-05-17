@@ -191,6 +191,9 @@ model FactoryTemplate {
   facecamWidthPercent     Int @default(24)
   facecamMarginPercent    Int @default(3)
   facecamBorderRadius     Int @default(18)
+  facecamCropZoomPercent  Int @default(135)
+  facecamCropFocusXPercent Int @default(50)
+  facecamCropFocusYPercent Int @default(50)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

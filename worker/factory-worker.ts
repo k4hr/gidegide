@@ -192,6 +192,9 @@ function getDefaultTemplate(): FactoryRenderTemplate {
     facecamWidthPercent: 24,
     facecamMarginPercent: 3,
     facecamBorderRadius: 18,
+    facecamCropZoomPercent: 135,
+    facecamCropFocusXPercent: 50,
+    facecamCropFocusYPercent: 50,
   };
 }
 
@@ -202,6 +205,9 @@ function getTargetTemplate(target: {
     facecamWidthPercent?: number;
     facecamMarginPercent?: number;
     facecamBorderRadius?: number;
+    facecamCropZoomPercent?: number;
+    facecamCropFocusXPercent?: number;
+    facecamCropFocusYPercent?: number;
   } | null;
 }): FactoryRenderTemplate {
   if (!target.template) {
@@ -214,6 +220,9 @@ function getTargetTemplate(target: {
     facecamWidthPercent: target.template.facecamWidthPercent ?? 24,
     facecamMarginPercent: target.template.facecamMarginPercent ?? 3,
     facecamBorderRadius: target.template.facecamBorderRadius ?? 18,
+    facecamCropZoomPercent: target.template.facecamCropZoomPercent ?? 135,
+    facecamCropFocusXPercent: target.template.facecamCropFocusXPercent ?? 50,
+    facecamCropFocusYPercent: target.template.facecamCropFocusYPercent ?? 50,
   };
 }
 
