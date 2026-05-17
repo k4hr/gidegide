@@ -211,7 +211,7 @@ export default function FactoryTemplatesPage() {
               {kind === "LONG_16_9" ? (
                 <div className="grid grid-3">
                   <label>
-                    Обрезка реакции / приближение центра, %
+                    Обрезка боков реакции, %
                     <input
                       type="number"
                       min={100}
@@ -219,7 +219,7 @@ export default function FactoryTemplatesPage() {
                       value={facecamCropZoomPercent}
                       onChange={(event) => setFacecamCropZoomPercent(Number(event.target.value))}
                     />
-                    <small className="muted">100 = без дополнительной обрезки. 130–160 обычно хорошо: края видео реакции режутся, в окне остается центр с Амелией.</small>
+                    <small className="muted">100 = без обрезки: обычное окно 16:9. 130–160 = режем только левый и правый край, верх и низ не срезаются.</small>
                   </label>
                   <label>
                     Центр реакции по X, %
@@ -233,22 +233,16 @@ export default function FactoryTemplatesPage() {
                     <small className="muted">50 = ровно центр. Меньше — сдвинуть кадр левее, больше — правее.</small>
                   </label>
                   <label>
-                    Центр реакции по Y, %
-                    <input
-                      type="number"
-                      min={0}
-                      max={100}
-                      value={facecamCropFocusYPercent}
-                      onChange={(event) => setFacecamCropFocusYPercent(Number(event.target.value))}
-                    />
-                    <small className="muted">50 = середина по высоте. Меньше — выше, больше — ниже.</small>
+                    Вертикаль реакции
+                    <input type="text" value="Верх и низ не обрезаются" readOnly />
+                    <small className="muted">Обрезка работает только по бокам. Высота реакции сохраняется полностью.</small>
                   </label>
                 </div>
               ) : null}
 
               {kind === "LONG_16_9" ? (
                 <p className="muted">
-                  Для твоего случая с широким 16:9 видео реакции ставь обрезку примерно 140–160%, X = 50, Y = 50. Так края отрежутся, а Амелия останется по центру.
+                  Для широкого 16:9 видео реакции ставь обрезку боков примерно 130–160% и X = 50. Код режет только левый/правый край — верх и низ не трогает.
                 </p>
               ) : null}
 
@@ -303,7 +297,7 @@ export default function FactoryTemplatesPage() {
                   <td>{template.kind === "LONG_16_9" ? "Видео 16:9" : "Shorts 9:16"}</td>
                   <td>
                     {template.kind === "LONG_16_9"
-                      ? `${positionLabel(template.facecamPosition)} · окно ${template.facecamWidthPercent}% от ширины видео · отступ ${template.facecamMarginPercent}% · обрезка ${template.facecamCropZoomPercent ?? 135}% · центр X ${template.facecamCropFocusXPercent ?? 50}% / Y ${template.facecamCropFocusYPercent ?? 50}%`
+                      ? `${positionLabel(template.facecamPosition)} · окно ${template.facecamWidthPercent}% от ширины видео · отступ ${template.facecamMarginPercent}% · обрезка боков ${template.facecamCropZoomPercent ?? 135}% · центр X ${template.facecamCropFocusXPercent ?? 50}%`
                       : "50/50: игра сверху, персонаж снизу"}
                   </td>
                 </tr>

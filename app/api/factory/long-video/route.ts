@@ -14,13 +14,6 @@ import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
 
 export const runtime = "nodejs";
 
-const facecamPositionSchema = z.enum([
-  "TOP_LEFT",
-  "TOP_RIGHT",
-  "BOTTOM_LEFT",
-  "BOTTOM_RIGHT",
-]);
-
 function parseScheduledAt(value: FormDataEntryValue | null) {
   if (!value || typeof value !== "string" || !value.trim()) return null;
 
@@ -76,9 +69,6 @@ export async function POST(request: Request) {
     const description = z.string().max(5000).optional().parse(formData.get("description") || "");
     const accountId = z.string().min(1).parse(formData.get("accountId"));
     const templateId = z.string().min(1).parse(formData.get("templateId"));
-    const facecamPosition = facecamPositionSchema.parse(formData.get("facecamPosition") || "TOP_LEFT");
-    const facecamWidthPercent = z.coerce.number().int().min(12).max(40).parse(formData.get("facecamWidthPercent") || 24);
-    const facecamMarginPercent = z.coerce.number().int().min(1).max(10).parse(formData.get("facecamMarginPercent") || 3);
     const scheduledAt = parseScheduledAt(formData.get("scheduledAt"));
     const sourceFile = formData.get("sourceFile");
     const thumbnailFile = formData.get("thumbnailFile");
@@ -155,9 +145,6 @@ export async function POST(request: Request) {
         longVideoDescription: description,
         longVideoThumbnailPath: thumbnailPath,
         longVideoThumbnailStorageKey: thumbnailStorageKey,
-        longVideoFacecamPosition: facecamPosition,
-        longVideoFacecamWidthPercent: facecamWidthPercent,
-        longVideoFacecamMarginPercent: facecamMarginPercent,
         progress: 0,
         progressLabel: scheduledAt
           ? `Видео 16:9 создано. Запланировано: ${scheduledAt.toLocaleString("ru-RU")}`
@@ -174,16 +161,6 @@ export async function POST(request: Request) {
       },
       include: {
         targets: true,
-      },
-    });
-
-    await prisma.factoryTemplate.update({
-      where: { id: templateId },
-      data: {
-        kind: "LONG_16_9",
-        facecamPosition,
-        facecamWidthPercent,
-        facecamMarginPercent,
       },
     });
 

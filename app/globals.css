@@ -1676,3 +1676,28 @@ button:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+.template-summary {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  padding: 16px;
+}
+
+.template-summary strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #fff;
+}
+
+.template-summary p {
+  margin: 0 0 10px;
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.55;
+}
+
+.template-summary a {
+  color: #86efac;
+  font-weight: 800;
+  text-decoration: none;
+}

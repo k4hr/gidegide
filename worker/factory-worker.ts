@@ -672,12 +672,7 @@ async function processLongVideoJob(input: {
     jobId: job.id,
     sourcePath,
     reactionPath,
-    template: {
-      ...baseTemplate,
-      facecamPosition: job.longVideoFacecamPosition ?? baseTemplate.facecamPosition,
-      facecamWidthPercent: job.longVideoFacecamWidthPercent ?? baseTemplate.facecamWidthPercent,
-      facecamMarginPercent: job.longVideoFacecamMarginPercent ?? baseTemplate.facecamMarginPercent,
-    },
+    template: baseTemplate,
     isCanceled: () => isJobCanceled(job.id),
   });
 

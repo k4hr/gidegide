@@ -15,14 +15,32 @@ type FactoryTemplate = {
   isDefault: boolean;
   kind?: "SHORTS_9_16" | "LONG_16_9";
   facecamPosition?: "TOP_LEFT" | "TOP_RIGHT" | "BOTTOM_LEFT" | "BOTTOM_RIGHT";
+  facecamWidthPercent?: number;
+  facecamMarginPercent?: number;
+  facecamCropZoomPercent?: number;
+  facecamCropFocusXPercent?: number;
+  facecamCropFocusYPercent?: number;
 };
 
-const positions = [
-  { value: "TOP_LEFT", label: "Слева сверху" },
-  { value: "TOP_RIGHT", label: "Справа сверху" },
-  { value: "BOTTOM_LEFT", label: "Слева снизу" },
-  { value: "BOTTOM_RIGHT", label: "Справа снизу" },
-] as const;
+const positionLabels: Record<NonNullable<FactoryTemplate["facecamPosition"]>, string> = {
+  TOP_LEFT: "слева сверху",
+  TOP_RIGHT: "справа сверху",
+  BOTTOM_LEFT: "слева снизу",
+  BOTTOM_RIGHT: "справа снизу",
+};
+
+function templateSummary(template?: FactoryTemplate) {
+  if (!template) {
+    return "Выбери шаблон — позиция, размер окна, отступ и обрезка реакции подтянутся из него автоматически.";
+  }
+
+  const position = positionLabels[template.facecamPosition ?? "TOP_LEFT"];
+  const width = template.facecamWidthPercent ?? 24;
+  const margin = template.facecamMarginPercent ?? 3;
+  const crop = template.facecamCropZoomPercent ?? 135;
+  const focusX = template.facecamCropFocusXPercent ?? 50;
+  return `Окно реакции: ${position}, ширина ${width}% от 1920px, отступ ${margin}%, обрезка боков ${crop}%, центр X ${focusX}%. Верх и низ реакции не обрезаются. Изменяется только в разделе “Шаблоны”.`;
+}
 
 export default function FactoryLongVideoPage() {
   const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
@@ -34,9 +52,6 @@ export default function FactoryLongVideoPage() {
   const [description, setDescription] = useState("");
   const [accountId, setAccountId] = useState("");
   const [templateId, setTemplateId] = useState("");
-  const [facecamPosition, setFacecamPosition] = useState<(typeof positions)[number]["value"]>("TOP_LEFT");
-  const [facecamWidthPercent, setFacecamWidthPercent] = useState(24);
-  const [facecamMarginPercent, setFacecamMarginPercent] = useState(3);
   const [scheduledAt, setScheduledAt] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState("");
@@ -45,6 +60,16 @@ export default function FactoryLongVideoPage() {
   const youtubeAccounts = useMemo(
     () => accounts.filter((account) => account.platform === "YOUTUBE"),
     [accounts],
+  );
+
+  const longVideoTemplates = useMemo(() => {
+    const longOnly = templates.filter((template) => !template.kind || template.kind === "LONG_16_9");
+    return longOnly.length > 0 ? longOnly : templates;
+  }, [templates]);
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === templateId),
+    [templates, templateId],
   );
 
   async function loadData() {
@@ -59,13 +84,13 @@ export default function FactoryLongVideoPage() {
     setTemplates(templatesData.templates ?? []);
 
     const youtube = accountsData.accounts?.find((account) => account.platform === "YOUTUBE");
-    const longTemplate = templatesData.templates?.find((template) => template.kind === "LONG_16_9") ?? templatesData.templates?.[0];
+    const longTemplate =
+      templatesData.templates?.find((template) => template.kind === "LONG_16_9")
+      ?? templatesData.templates?.find((template) => !template.kind)
+      ?? templatesData.templates?.[0];
 
     if (youtube) setAccountId((current) => current || youtube.id);
-    if (longTemplate) {
-      setTemplateId((current) => current || longTemplate.id);
-      setFacecamPosition(longTemplate.facecamPosition ?? "TOP_LEFT");
-    }
+    if (longTemplate) setTemplateId((current) => current || longTemplate.id);
   }
 
   useEffect(() => {
@@ -89,9 +114,6 @@ export default function FactoryLongVideoPage() {
       formData.set("description", description.trim());
       formData.set("accountId", accountId);
       formData.set("templateId", templateId);
-      formData.set("facecamPosition", facecamPosition);
-      formData.set("facecamWidthPercent", String(facecamWidthPercent));
-      formData.set("facecamMarginPercent", String(facecamMarginPercent));
       formData.set("scheduledAt", scheduledAt);
 
       const response = await fetch("/api/factory/long-video", {
@@ -209,46 +231,18 @@ export default function FactoryLongVideoPage() {
                 Шаблон реакции
                 <select value={templateId} onChange={(event) => setTemplateId(event.target.value)} required>
                   <option value="">Выбери шаблон</option>
-                  {templates.map((template) => (
+                  {longVideoTemplates.map((template) => (
                     <option key={template.id} value={template.id}>{template.name}</option>
                   ))}
                 </select>
+                <small className="muted">Позиция, размер, отступ и обрезка реакции задаются в самом шаблоне.</small>
               </label>
             </div>
 
-            <div className="grid grid-3">
-              <label>
-                Позиция реакции
-                <select value={facecamPosition} onChange={(event) => setFacecamPosition(event.target.value as typeof facecamPosition)}>
-                  {positions.map((position) => (
-                    <option key={position.value} value={position.value}>{position.label}</option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Ширина окна реакции, % от ширины итогового видео
-                <input
-                  type="number"
-                  min={12}
-                  max={40}
-                  value={facecamWidthPercent}
-                  onChange={(event) => setFacecamWidthPercent(Number(event.target.value))}
-                />
-                <small className="muted">40 = окно реакции занимает 40% ширины финального 16:9 видео. Для 1920px это примерно 768px.</small>
-              </label>
-
-              <label>
-                Отступ от краев, % от размера итогового видео
-                <input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={facecamMarginPercent}
-                  onChange={(event) => setFacecamMarginPercent(Number(event.target.value))}
-                />
-                <small className="muted">По X считается от 1920px, по Y — от 1080px.</small>
-              </label>
+            <div className="template-summary">
+              <strong>Настройки выбранного шаблона</strong>
+              <p>{templateSummary(selectedTemplate)}</p>
+              <Link href="/factory/templates">Изменить шаблон</Link>
             </div>
 
             <label>
