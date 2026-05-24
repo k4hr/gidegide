@@ -241,6 +241,7 @@ export default function ViralLabPage() {
         <Link href="/factory">Завод</Link>
         <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
         <Link href="/factory/story-shorts">Story Shorts</Link>
+          <Link href="/factory/movie-moments">Кино моменты</Link>
         <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
         <Link href="/factory/music">Музыка</Link>
         <Link href="/factory/analytics">Аналитика</Link>

@@ -132,7 +132,7 @@ export default function FactoryAssetsPage() {
           <Link href="/factory">Завод</Link>
           <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
           <Link href="/factory/story-shorts">Story Shorts</Link>
-          <Link href="/factory/movie-moments">Movie Moments</Link>
+          <Link href="/factory/movie-moments">Кино моменты</Link>
           <Link href="/factory/music">Музыка</Link>
           <Link href="/factory/long-video">Видео 16:9</Link>
           <Link href="/factory/assets">Видео персонажей</Link>
