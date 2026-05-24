@@ -23,7 +23,7 @@ const deleteSchema = z.object({
 function serializeDonor(donor: {
   id: string;
   channelId: string;
-  donorKind: "SUPER_UPLOAD" | "STORY_SHORTS";
+  donorKind: string;
   channelTitle: string;
   sourceUrl: string;
   uploadsPlaylistId: string | null;
