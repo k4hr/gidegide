@@ -76,6 +76,7 @@ enum FactoryRenderFormat {
 enum FactoryDonorKind {
   SUPER_UPLOAD
   STORY_SHORTS
+  MOVIE_MOMENTS
 }
 
 

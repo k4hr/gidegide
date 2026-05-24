@@ -9,6 +9,7 @@ type UploadYoutubeShortInput = {
   title: string;
   description?: string;
   thumbnailPath?: string | null;
+  categoryId?: string;
 };
 
 export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
@@ -60,7 +61,7 @@ export async function uploadYoutubeShort(input: UploadYoutubeShortInput) {
       snippet: {
         title: input.title,
         description: input.description ?? "",
-        categoryId: "20",
+        categoryId: input.categoryId ?? "20",
       },
       status: {
         privacyStatus: "public",

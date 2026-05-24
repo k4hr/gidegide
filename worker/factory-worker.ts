@@ -43,6 +43,11 @@ import {
   type RobloxStoryCandidate,
 } from "@/lib/factory/story-shorts";
 import { makeUniqueRobloxStoryTitle } from "@/lib/factory/roblox-story-uniqueness";
+import {
+  decodeMovieMomentsTitlePrefix,
+  generateUniqueMovieMomentTitle,
+  isMovieMomentsTitlePrefix,
+} from "@/lib/factory/movie-moments";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -369,6 +374,20 @@ function makeStoryTitleUnique(input: {
     seed: `${input.sourceTitle ?? "source"}:${input.storyStyle ?? "auto"}:${input.musicMood ?? "mood"}:${input.clipIndex}`,
     usedTitles: input.usedTitles,
   });
+}
+
+
+function isMovieMomentsJob(job: { titlePrefix?: string | null }) {
+  return isMovieMomentsTitlePrefix(job.titlePrefix);
+}
+
+function getMovieMomentsTitle(job: { titlePrefix?: string | null; longVideoTitle?: string | null; sourceOriginalName?: string | null }) {
+  return (
+    decodeMovieMomentsTitlePrefix(job.titlePrefix) ??
+    job.longVideoTitle ??
+    job.sourceOriginalName ??
+    "Movie"
+  );
 }
 
 async function selectFactoryThumbnail(input: {
@@ -1142,39 +1161,50 @@ async function processOneJob() {
       const endSec = startSec + effectiveClipSeconds;
 
       const aiHookPlan = aiHookPlanByStart.get(startSec);
-      const rawBaseTitle = storyPlan?.title ?? aiHookPlan?.title ?? buildClipTitle({
-        game: job.game,
-        clipIndex,
-        customPrefix: job.titlePrefix,
-        seedHint: `${job.id}:${clipIndex}:base`,
-        sourceTitle: job.sourceOriginalName,
-      });
+      const movieMomentsJob = isMovieMomentsJob(job);
+      const rawBaseTitle = storyPlan?.title ?? aiHookPlan?.title ?? (movieMomentsJob
+        ? null
+        : buildClipTitle({
+            game: job.game,
+            clipIndex,
+            customPrefix: job.titlePrefix,
+            seedHint: `${job.id}:${clipIndex}:base`,
+            sourceTitle: job.sourceOriginalName,
+          }));
       const baseTitle = storyPlan
         ? makeStoryTitleUnique({
-            title: rawBaseTitle,
+            title: rawBaseTitle ?? "",
             sourceTitle: job.sourceOriginalName,
             storyStyle: storyPlan.storyStyle,
             musicMood: storyPlan.musicMood,
             clipIndex,
             usedTitles: usedPackageTitles,
           })
-        : job.game === "ROBLOX"
-          ? sanitizeFinalRobloxStoryTitle({
+        : movieMomentsJob
+          ? generateUniqueMovieMomentTitle({
               title: rawBaseTitle,
-              sourceTitle: job.sourceOriginalName,
-              storyStyle: "auto",
-              musicMood: "AUTO",
+              movieTitle: getMovieMomentsTitle(job),
               clipIndex,
               seed: `${job.id}:${clipIndex}:package`,
               usedTitles: usedPackageTitles,
             })
-          : makeJobTitleUnique({
-              title: rawBaseTitle,
-              game: job.game,
-              sourceTitle: job.sourceOriginalName,
-              clipIndex,
-              usedTitles: usedPackageTitles,
-            });
+          : job.game === "ROBLOX"
+            ? sanitizeFinalRobloxStoryTitle({
+                title: rawBaseTitle ?? "",
+                sourceTitle: job.sourceOriginalName,
+                storyStyle: "auto",
+                musicMood: "AUTO",
+                clipIndex,
+                seed: `${job.id}:${clipIndex}:package`,
+                usedTitles: usedPackageTitles,
+              })
+            : makeJobTitleUnique({
+                title: rawBaseTitle ?? "",
+                game: job.game,
+                sourceTitle: job.sourceOriginalName,
+                clipIndex,
+                usedTitles: usedPackageTitles,
+              });
 
       if (storyPlan) {
         console.log("[story-shorts] title generated", {
@@ -1217,25 +1247,33 @@ async function processOneJob() {
               seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
               usedTitles: usedPublishTitles,
             })
-          : job.game === "ROBLOX"
-            ? sanitizeFinalRobloxStoryTitle({
+          : movieMomentsJob
+            ? generateUniqueMovieMomentTitle({
                 title: baseTitle,
-                sourceTitle: job.sourceOriginalName,
-                storyStyle: "auto",
-                musicMood: "AUTO",
+                movieTitle: getMovieMomentsTitle(job),
                 clipIndex: clipIndex + 1000,
                 seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
                 usedTitles: usedPublishTitles,
               })
-            : makeJobTitleUnique({
-                title: baseTitle,
-                game: job.game,
-                sourceTitle: job.sourceOriginalName,
-                clipIndex: clipIndex + 1000,
-                usedTitles: usedPublishTitles,
-              });
+            : job.game === "ROBLOX"
+              ? sanitizeFinalRobloxStoryTitle({
+                  title: baseTitle,
+                  sourceTitle: job.sourceOriginalName,
+                  storyStyle: "auto",
+                  musicMood: "AUTO",
+                  clipIndex: clipIndex + 1000,
+                  seed: `${job.id}:${target.accountId}:${clipIndex}:publish`,
+                  usedTitles: usedPublishTitles,
+                })
+              : makeJobTitleUnique({
+                  title: baseTitle,
+                  game: job.game,
+                  sourceTitle: job.sourceOriginalName,
+                  clipIndex: clipIndex + 1000,
+                  usedTitles: usedPublishTitles,
+                });
 
-        if (storyPlan || job.game === "ROBLOX") {
+        if (storyPlan || job.game === "ROBLOX" || movieMomentsJob) {
           console.log("[youtube-upload] final title before upload", {
             jobId: job.id,
             clipIndex,
@@ -1244,12 +1282,14 @@ async function processOneJob() {
           });
         }
 
-        const description = buildClipDescription({
-          game: job.game,
-          title,
-          customPrefix: titlePrefixForTarget,
-          sourceTitle: job.sourceOriginalName,
-        });
+        const description = movieMomentsJob
+          ? (job.longVideoDescription || "")
+          : buildClipDescription({
+              game: job.game,
+              title,
+              customPrefix: titlePrefixForTarget,
+              sourceTitle: job.sourceOriginalName,
+            });
 
         const renderProgress =
           30 + Math.round((completedRenders / Math.max(1, totalRenders)) * 45);
@@ -1301,10 +1341,12 @@ async function processOneJob() {
         } else {
           const characterVideoPath = await ensureLocalTemplateAssetFile(target);
 
-          const thumbnailPath = await ensureLocalThumbnailFile({
-            game: job.game,
-            seed: `${job.id}:${target.accountId}:${clipIndex}`,
-          });
+          const thumbnailPath = movieMomentsJob
+            ? null
+            : await ensureLocalThumbnailFile({
+                game: job.game,
+                seed: `${job.id}:${target.accountId}:${clipIndex}`,
+              });
 
           outputPath = await renderFactoryClip({
             jobId: job.id,
@@ -1312,7 +1354,7 @@ async function processOneJob() {
             sourcePath,
             lanaPath: characterVideoPath,
             startSec,
-            clipSeconds: job.clipSeconds,
+            clipSeconds: effectiveClipSeconds,
             template: getTargetTemplate(target),
             thumbnailPath: aiHookPlan ? null : thumbnailPath,
             hookPreview: aiHookPlan
@@ -1391,6 +1433,7 @@ async function processOneJob() {
                 filePath: outputPath,
                 title,
                 description,
+                categoryId: movieMomentsJob ? "1" : undefined,
               });
 
               await db(() =>

@@ -44,6 +44,7 @@ const PAGE_SIZE = 50;
 const NEW_YORK_TIME_ZONE = "America/New_York";
 export const SUPER_UPLOAD_DONOR_KIND: FactoryDonorKind = "SUPER_UPLOAD";
 export const STORY_SHORTS_DONOR_KIND: FactoryDonorKind = "STORY_SHORTS";
+export const MOVIE_MOMENTS_DONOR_KIND: FactoryDonorKind = "MOVIE_MOMENTS";
 
 function toInt(value: unknown) {
   const numberValue = Number(value ?? 0);
@@ -199,6 +200,44 @@ function scoreRobloxRelevance(input: { title: string; description: string }) {
   return clamp(score, 0, 10);
 }
 
+
+function scoreMovieMomentRelevance(input: { title: string; description: string; durationSeconds: number | null }) {
+  const text = `${input.title} ${input.description}`.toLowerCase();
+  const duration = input.durationSeconds ?? 0;
+  let score = 0;
+
+  if (duration >= 1200) score += 24;
+  else if (duration >= 600) score += 18;
+  else if (duration >= 240) score += 8;
+  else score -= 18;
+
+  if (text.includes("full movie")) score += 14;
+  if (text.includes("full film")) score += 14;
+  if (text.includes("movie")) score += 8;
+  if (text.includes("film")) score += 8;
+  if (text.includes("feature film")) score += 10;
+  if (text.includes("classic")) score += 4;
+  if (text.includes("horror")) score += 5;
+  if (text.includes("thriller")) score += 4;
+  if (text.includes("sci-fi") || text.includes("science fiction")) score += 4;
+  if (text.includes("drama")) score += 2;
+
+  if (text.includes("trailer")) score -= 18;
+  if (text.includes("clip") || text.includes("scene")) score -= 10;
+  if (text.includes("shorts") || text.includes("#shorts")) score -= 22;
+  if (text.includes("music video")) score -= 18;
+  if (text.includes("behind the scenes")) score -= 8;
+
+  return clamp(score, -35, 45);
+}
+
+function getSuggestedMovieClips(durationSeconds: number | null) {
+  const duration = durationSeconds ?? 0;
+  if (duration >= 1200) return 3;
+  if (duration >= 600) return 2;
+  return 1;
+}
+
 function scoreTitleHook(title: string) {
   const normalized = title.toLowerCase();
   let score = 0;
@@ -246,7 +285,11 @@ export function getSuggestedHookMode(input: { title: string; description: string
   return "AUTO_BEST_MIX";
 }
 
-function getSuggestedClips(input: { viralChance: number; durationSeconds: number | null }) {
+function getSuggestedClips(input: { viralChance: number; durationSeconds: number | null; donorKind?: FactoryDonorKind }) {
+  if (input.donorKind === MOVIE_MOMENTS_DONOR_KIND) {
+    return getSuggestedMovieClips(input.durationSeconds);
+  }
+
   const duration = input.durationSeconds ?? 0;
   const maxByDuration = Math.max(1, Math.floor(duration / 45));
   let wanted = 3;
@@ -268,6 +311,7 @@ export function scoreSourceVideo(input: {
   likes: number;
   comments: number;
   isUsed?: boolean;
+  donorKind?: FactoryDonorKind;
 }) {
   const days = getDaysSince(input.publishedAt);
   const viewsPerDay = input.views / days;
@@ -280,13 +324,21 @@ export function scoreSourceVideo(input: {
     25,
   );
 
+  const contentRelevance = input.donorKind === MOVIE_MOMENTS_DONOR_KIND
+    ? scoreMovieMomentRelevance({
+        title: input.title,
+        description: input.description,
+        durationSeconds: input.durationSeconds,
+      })
+    : scoreRobloxRelevance({ title: input.title, description: input.description });
+
   const score =
     scoreViewsPerDay(viewsPerDay) +
     engagementScore +
     scoreFreshness(input.publishedAt) +
     scoreDuration(input.durationSeconds) +
     scoreTitleHook(input.title) +
-    scoreRobloxRelevance({ title: input.title, description: input.description }) +
+    contentRelevance +
     (input.isUsed ? -35 : 5);
 
   const viralChance = clamp(Math.round(score), 0, 100);
@@ -300,6 +352,7 @@ export function scoreSourceVideo(input: {
     suggestedClips: getSuggestedClips({
       viralChance,
       durationSeconds: input.durationSeconds,
+      donorKind: input.donorKind,
     }),
     suggestedHookMode: getSuggestedHookMode({
       title: input.title,
@@ -521,6 +574,7 @@ async function fetchVideoDetails(input: {
         likes,
         comments,
         isUsed: existing?.isUsed ?? false,
+        donorKind: input.donorKind,
       });
 
       videos.push({
