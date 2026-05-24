@@ -52,7 +52,7 @@ export async function POST(request: Request) {
     const formData = await request.formData();
 
     const movieTitle = z.string().min(1).max(120).parse(formData.get("movieTitle"));
-    const description = z.string().max(5000).optional().parse(formData.get("description") || "");
+    const description = z.string().max(5000).parse(String(formData.get("description") ?? ""));
     const accountId = z.string().min(1).parse(formData.get("accountId"));
     const templateId = z.string().min(1).parse(formData.get("templateId"));
     const clipCount = Math.max(1, Math.min(12, Math.round(parseNumber(formData.get("clipCount"), 4))));
