@@ -12,8 +12,10 @@ import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloade
 import { prepareStoryTextAsset } from "@/lib/factory/story-emoji";
 import {
   assertVideoHasAudio,
+  assertVideoHasVideo,
   getVideoDurationSeconds,
   hasAudioStream,
+  hasVideoStream,
   runCommand,
 } from "@/lib/factory/video";
 
@@ -183,12 +185,20 @@ function buildRenderFilter(input: {
   ].join(";");
 }
 
-async function assertSourceAudioOrThrow(filePath: string) {
+async function assertSourceMediaOrThrow(filePath: string) {
+  const hasVideo = await hasVideoStream(filePath);
+
+  if (!hasVideo) {
+    throw new Error(
+      "В исходном файле нет видеодорожки. Похоже, скачался audio-only MP4. Нужен файл/ссылка, где есть и видео, и звук.",
+    );
+  }
+
   const hasAudio = await hasAudioStream(filePath);
 
   if (!hasAudio) {
     throw new Error(
-      "В исходном игровом видео нет звука. Дай другое видео или ссылку, где доступен 720p MP4 со звуком.",
+      "В исходном видео нет звука. Дай другое видео или ссылку, где доступен MP4 с видео и звуком.",
     );
   }
 }
@@ -231,7 +241,7 @@ export async function downloadDirectSource(input: {
     },
   );
 
-  await assertSourceAudioOrThrow(outputPath);
+  await assertSourceMediaOrThrow(outputPath);
   await input.onProgress?.(30, "Исходный файл скачан, звук найден");
 
   return outputPath;
@@ -300,8 +310,9 @@ export async function downloadYoutubeSourceWithYtDlp(input: {
     },
   );
 
+  await assertVideoHasVideo(outputPath);
   await assertVideoHasAudio(outputPath);
-  await input.onProgress?.(30, "YouTube-исходник скачан в 720p со звуком");
+  await input.onProgress?.(30, "YouTube-исходник скачан в 720p с видео и звуком");
 
   return outputPath;
 }
@@ -319,8 +330,9 @@ export async function downloadSourceFromUrl(input: {
   try {
     const ripPath = await downloadViaRipYoutube(input);
 
+    await assertVideoHasVideo(ripPath);
     await assertVideoHasAudio(ripPath);
-    await input.onProgress?.(30, "RIP скачал 720p MP4 со звуком");
+    await input.onProgress?.(30, "RIP скачал 720p MP4 с видео и звуком");
 
     return ripPath;
   } catch (error) {
@@ -334,10 +346,10 @@ export async function downloadSourceFromUrl(input: {
     try {
       return await downloadYoutubeSourceWithYtDlp(input);
     } catch (ytDlpError) {
-      console.error("yt-dlp failed or downloaded video without audio", ytDlpError);
+      console.error("yt-dlp failed or downloaded file without video/audio", ytDlpError);
 
       throw new Error(
-        "Не получилось скачать это YouTube-видео в 720p со звуком. Дай другое видео: у этого источника звук недоступен для скачивания.",
+        "Не получилось скачать это YouTube-видео как MP4 с видео и звуком. Дай другое видео: этот источник отдаёт audio-only или недоступен для скачивания.",
       );
     }
   }
@@ -378,7 +390,7 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
   await mkdir(tempDir, { recursive: true });
 
   try {
-    await assertSourceAudioOrThrow(input.sourcePath);
+    await assertSourceMediaOrThrow(input.sourcePath);
 
     if (input.hookPreview) {
       const previewDuration = Math.max(3, Math.min(10, input.hookPreview.durationSec));
@@ -598,7 +610,7 @@ export async function renderLongVideo16x9(input: {
   isCanceled?: CancelCheck;
 }) {
   await ensureFactoryDirs();
-  await assertSourceAudioOrThrow(input.sourcePath);
+  await assertSourceMediaOrThrow(input.sourcePath);
 
   const outputPath = path.join(FACTORY_OUTPUT_DIR, `${input.jobId}-long-16x9.mp4`);
   const duration = await getVideoDurationSeconds(input.sourcePath);

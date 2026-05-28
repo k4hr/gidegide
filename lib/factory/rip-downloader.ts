@@ -3,7 +3,7 @@ import { readFile, rm, stat } from "node:fs/promises";
 import { chromium, type Locator, type Page } from "playwright";
 
 import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { hasAudioStream, runCommand } from "@/lib/factory/video";
+import { hasAudioStream, hasVideoStream, runCommand } from "@/lib/factory/video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -687,6 +687,13 @@ async function validateDownloadedVideo(input: {
     throw new Error("RIP скачал HTML-страницу вместо MP4");
   }
 
+  const hasVideo = await hasVideoStream(input.filePath);
+
+  if (!hasVideo) {
+    await rm(input.filePath, { force: true });
+    throw new Error("RIP-ссылка скачалась без видеодорожки: это audio-only файл");
+  }
+
   const hasAudio = await hasAudioStream(input.filePath);
 
   if (!hasAudio) {
@@ -851,7 +858,7 @@ async function tryDownloadLinksWithAudio(input: {
 
   if (attempts.length === 0) {
     throw new Error(
-      "RIP не нашёл MP4-ссылку со звуком. Есть только navigation/video-only/audio-only.",
+      "RIP не нашёл MP4-ссылку с видео и звуком. Есть только navigation/video-only/audio-only.",
     );
   }
 
@@ -871,7 +878,7 @@ async function tryDownloadLinksWithAudio(input: {
 
       await input.onProgress?.(
         18 + Math.min(index, 6),
-        `Пробую RIP MP4 со звуком: ${labelParts.join(" · ")}`,
+        `Пробую RIP MP4 с видео и звуком: ${labelParts.join(" · ")}`,
       );
 
       return await downloadAndValidateAudio({
@@ -881,13 +888,13 @@ async function tryDownloadLinksWithAudio(input: {
         referer: input.referer,
         isCanceled: input.isCanceled,
         onProgress: input.onProgress,
-        label: "Скачиваю RIP MP4 и проверяю звук",
+        label: "Скачиваю RIP MP4 и проверяю видео/звук",
       });
     } catch (error) {
       lastError = error;
 
       console.error(
-        `RIP candidate failed or has no audio: ${link.text.slice(0, 180)} ${link.href.slice(0, 220)}`,
+        `RIP candidate failed or has no video/audio: ${link.text.slice(0, 180)} ${link.href.slice(0, 220)}`,
         error,
       );
 

@@ -196,6 +196,40 @@ export async function hasAudioStream(filePath: string) {
   }
 }
 
+
+export async function hasVideoStream(filePath: string) {
+  try {
+    const output = await readCommand("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=codec_type",
+      "-of",
+      "default=noprint_wrappers=1:nokey=1",
+      filePath,
+    ]);
+
+    return output
+      .split("\n")
+      .map((line) => line.trim().toLowerCase())
+      .includes("video");
+  } catch {
+    return false;
+  }
+}
+
+export async function assertVideoHasVideo(filePath: string) {
+  const hasVideo = await hasVideoStream(filePath);
+
+  if (!hasVideo) {
+    throw new Error(
+      "В скачанном файле нет видеодорожки. RIP вернул audio-only файл, нужен MP4 с видео и звуком.",
+    );
+  }
+}
+
 export async function assertVideoHasAudio(filePath: string) {
   const hasAudio = await hasAudioStream(filePath);
 
