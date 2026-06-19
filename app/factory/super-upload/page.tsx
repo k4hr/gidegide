@@ -74,6 +74,18 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${String(rest).padStart(2, "0")}`;
 }
 
+function buildDefaultDescription(title: string) {
+  return [
+    title
+      ? `Смотрите нарезку: ${title}`
+      : "Смотрите короткую нарезку из VK Video.",
+    "",
+    "Новые интересные моменты каждый день.",
+    "",
+    "#shorts #кино #фильмы",
+  ].join("\n");
+}
+
 export default function SuperUploadPage() {
   const [groups, setGroups] = useState<VkGroup[]>([]);
   const [candidates, setCandidates] = useState<VkCandidate[]>([]);
@@ -88,6 +100,15 @@ export default function SuperUploadPage() {
   const [isAdding, setIsAdding] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [creatingCandidateId, setCreatingCandidateId] = useState("");
+  const [modalCandidate, setModalCandidate] = useState<VkCandidate | null>(
+    null,
+  );
+  const [customTitle, setCustomTitle] = useState("");
+  const [customDescription, setCustomDescription] = useState("");
+  const [publishMode, setPublishMode] = useState<"NOW" | "WINDOW">("WINDOW");
+  const [windowStartHour, setWindowStartHour] = useState(14);
+  const [windowEndHour, setWindowEndHour] = useState(23);
+  const [intervalMinutes, setIntervalMinutes] = useState(60);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -97,20 +118,26 @@ export default function SuperUploadPage() {
   );
 
   async function loadAccounts() {
-    const response = await fetch("/api/factory/accounts", { cache: "no-store" });
+    const response = await fetch("/api/factory/accounts", {
+      cache: "no-store",
+    });
     const data = (await response.json()) as { accounts?: FactoryAccount[] };
     const nextAccounts = data.accounts ?? [];
 
     setAccounts(nextAccounts);
 
-    const youtube = nextAccounts.find((account) => account.platform === "YOUTUBE");
+    const youtube = nextAccounts.find(
+      (account) => account.platform === "YOUTUBE",
+    );
     if (youtube && !selectedAccountId) {
       setSelectedAccountId(youtube.id);
     }
   }
 
   async function loadTemplates() {
-    const response = await fetch("/api/factory/templates", { cache: "no-store" });
+    const response = await fetch("/api/factory/templates", {
+      cache: "no-store",
+    });
     const data = (await response.json()) as { templates?: FactoryTemplate[] };
     const nextTemplates = data.templates ?? [];
 
@@ -128,7 +155,9 @@ export default function SuperUploadPage() {
     const data = (await response.json()) as GroupsResponse;
 
     if (!response.ok) {
-      throw new Error(data.error ?? "Не получилось загрузить VK Video источники");
+      throw new Error(
+        data.error ?? "Не получилось загрузить VK Video источники",
+      );
     }
 
     setGroups(data.groups ?? []);
@@ -160,7 +189,9 @@ export default function SuperUploadPage() {
       const data = (await response.json()) as GroupsResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось добавить VK Video источникову");
+        throw new Error(
+          data.error ?? "Не получилось добавить VK Video источникову",
+        );
       }
 
       setGroupUrl("");
@@ -168,7 +199,11 @@ export default function SuperUploadPage() {
       await loadGroups();
       setMessage(data.message ?? "VK Video источникова добавлена");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось добавить VK Video источникову");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не получилось добавить VK Video источникову",
+      );
     } finally {
       setIsAdding(false);
     }
@@ -187,13 +222,19 @@ export default function SuperUploadPage() {
       const data = (await response.json()) as GroupsResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось обновить VK Video источникову");
+        throw new Error(
+          data.error ?? "Не получилось обновить VK Video источникову",
+        );
       }
 
       await loadGroups();
       setMessage(data.message ?? "VK Video источникова обновлена");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось обновить VK Video источникову");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не получилось обновить VK Video источникову",
+      );
     }
   }
 
@@ -203,29 +244,59 @@ export default function SuperUploadPage() {
     setMessage("");
 
     try {
-      const response = await fetch("/api/factory/vk-super-upload/groups/check", {
-        method: "POST",
-      });
+      const response = await fetch(
+        "/api/factory/vk-super-upload/groups/check",
+        {
+          method: "POST",
+        },
+      );
       const data = (await response.json()) as GroupsResponse & {
         checked?: number;
         errors?: Array<{ message: string }>;
       };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось проверить VK Video источники");
+        throw new Error(
+          data.error ?? "Не получилось проверить VK Video источники",
+        );
       }
 
       await loadGroups();
-      setMessage(data.message ?? "VK Video источники проверены, кандидаты обновлены");
+      setMessage(
+        data.message ?? "VK Video источники проверены, кандидаты обновлены",
+      );
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось проверить VK Video источники");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не получилось проверить VK Video источники",
+      );
     } finally {
       setIsChecking(false);
     }
   }
 
-  async function createFromCandidate(candidate: VkCandidate) {
-    setCreatingCandidateId(candidate.id);
+  function openCandidateModal(candidate: VkCandidate) {
+    setError("");
+    setMessage("");
+    setModalCandidate(candidate);
+    setCustomTitle(candidate.title || "");
+    setCustomDescription(buildDefaultDescription(candidate.title || ""));
+    setPublishMode("WINDOW");
+    setWindowStartHour(14);
+    setWindowEndHour(23);
+    setIntervalMinutes(60);
+  }
+
+  function closeCandidateModal() {
+    if (creatingCandidateId) return;
+    setModalCandidate(null);
+  }
+
+  async function createFromCandidate() {
+    if (!modalCandidate) return;
+
+    setCreatingCandidateId(modalCandidate.id);
     setError("");
     setMessage("");
 
@@ -238,19 +309,36 @@ export default function SuperUploadPage() {
         throw new Error("Выбери шаблон");
       }
 
+      if (!customTitle.trim()) {
+        throw new Error("Введи название для роликов");
+      }
+
+      if (publishMode === "WINDOW" && windowEndHour <= windowStartHour) {
+        throw new Error("Конец окна должен быть позже начала");
+      }
+
       const response = await fetch("/api/factory/vk-super-upload/create-job", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          candidateId: candidate.id,
+          candidateId: modalCandidate.id,
           accountId: selectedAccountId,
           templateId: selectedTemplateId || "CENTER_VIDEO",
           clipsCount,
           clipSeconds,
-          publishNow: true,
+          title: customTitle.trim(),
+          description: customDescription.trim(),
+          publishMode,
+          windowStartHour,
+          windowEndHour,
+          intervalMinutes,
+          timeZone: "Europe/Moscow",
         }),
       });
-      const data = (await response.json()) as { message?: string; error?: string };
+      const data = (await response.json()) as {
+        message?: string;
+        error?: string;
+      };
 
       if (!response.ok) {
         throw new Error(data.error ?? "Не получилось создать задачу");
@@ -258,8 +346,13 @@ export default function SuperUploadPage() {
 
       await loadGroups();
       setMessage(data.message ?? "Задача создана");
+      setModalCandidate(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось создать задачу");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Не получилось создать задачу",
+      );
     } finally {
       setCreatingCandidateId("");
     }
@@ -280,9 +373,10 @@ export default function SuperUploadPage() {
         <section className="card">
           <h1>VK Video супер залив</h1>
           <p>
-            Добавляешь VK Video каналы или VK-группы с короткими смешными видео, завод предлагает
-            2–3 видео под нарезку, скачивает выбранное видео, проверяет звук,
-            режет его и генерирует русские названия из названия исходника.
+            Добавляешь VK Video каналы или VK-группы с короткими смешными видео,
+            завод предлагает 2–3 видео под нарезку, скачивает выбранное видео,
+            проверяет звук, режет его и генерирует русские названия из названия
+            исходника.
           </p>
 
           <div className="grid grid-2">
@@ -336,7 +430,9 @@ export default function SuperUploadPage() {
                 value={selectedAccountId}
                 onChange={(event) => setSelectedAccountId(event.target.value)}
               >
-                {accounts.length === 0 ? <option value="">Нет аккаунтов</option> : null}
+                {accounts.length === 0 ? (
+                  <option value="">Нет аккаунтов</option>
+                ) : null}
                 {accounts.map((account) => (
                   <option key={account.id} value={account.id}>
                     {account.platform} · {account.name}
@@ -351,11 +447,16 @@ export default function SuperUploadPage() {
                 value={selectedTemplateId}
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
               >
-                <option value="CENTER_VIDEO">Кино-шаблон — видео по центру + zoom 108%</option>
-                {templates.length === 0 ? <option value="">Нет шаблонов</option> : null}
+                <option value="CENTER_VIDEO">
+                  Кино-шаблон — видео по центру + zoom 108%
+                </option>
+                {templates.length === 0 ? (
+                  <option value="">Нет шаблонов</option>
+                ) : null}
                 {templates.map((template) => (
                   <option key={template.id} value={template.id}>
-                    {template.name}{template.isDefault ? " — default" : ""}
+                    {template.name}
+                    {template.isDefault ? " — default" : ""}
                   </option>
                 ))}
               </select>
@@ -369,7 +470,9 @@ export default function SuperUploadPage() {
                 max={40}
                 value={clipsCount}
                 onChange={(event) =>
-                  setClipsCount(Math.max(1, Math.min(40, Number(event.target.value) || 1)))
+                  setClipsCount(
+                    Math.max(1, Math.min(40, Number(event.target.value) || 1)),
+                  )
                 }
               />
             </label>
@@ -387,11 +490,30 @@ export default function SuperUploadPage() {
                 <option value={60}>60 секунд</option>
               </select>
             </label>
+
+            <label>
+              Интервал публикации
+              <select
+                value={intervalMinutes}
+                onChange={(event) =>
+                  setIntervalMinutes(Number(event.target.value))
+                }
+              >
+                <option value={15}>Раз в 15 минут</option>
+                <option value={30}>Раз в 30 минут</option>
+                <option value={60}>Раз в час</option>
+              </select>
+            </label>
           </div>
 
           <p className="muted">
-            Режим: Movie Smart Cut — ищет сильные 10-минутные моменты, режет на ролики по 60 секунд. Сейчас выбран аккаунт: {selectedAccount ? `${selectedAccount.platform} · ${selectedAccount.name}` : "—"}.
-            Названия и описания будут на русском. Хэштеги пока минимальные, потом можно доработать отдельно.
+            Режим: Movie Smart Cut — ищет сильные 10-минутные моменты, режет на
+            ролики по 60 секунд. Сейчас выбран аккаунт:{" "}
+            {selectedAccount
+              ? `${selectedAccount.platform} · ${selectedAccount.name}`
+              : "—"}
+            . Названия и описания будут на русском. Хэштеги пока минимальные,
+            потом можно доработать отдельно.
           </p>
         </section>
 
@@ -400,14 +522,19 @@ export default function SuperUploadPage() {
         <section className="card">
           <h2>Предложенные видео</h2>
           <p className="muted">
-            Нажми “Предложить 2–3 видео”. Завод возьмет свежие кандидаты из активных VK Video источников.
+            Нажми “Предложить 2–3 видео”. Завод возьмет свежие кандидаты из
+            активных VK Video источников.
           </p>
 
           <div className="source-grid">
             {candidates.map((candidate) => (
               <article className="source-card" key={candidate.id}>
                 {candidate.thumbnailUrl ? (
-                  <img src={candidate.thumbnailUrl} alt="" className="source-thumb" />
+                  <img
+                    src={candidate.thumbnailUrl}
+                    alt=""
+                    className="source-thumb"
+                  />
                 ) : (
                   <div className="source-thumb placeholder">VK</div>
                 )}
@@ -415,21 +542,32 @@ export default function SuperUploadPage() {
                 <div className="source-body">
                   <div className="source-head">
                     <span className="badge">{candidate.score}/100</span>
-                    <span className="muted">{formatDuration(candidate.durationSeconds)}</span>
+                    <span className="muted">
+                      {formatDuration(candidate.durationSeconds)}
+                    </span>
                   </div>
 
                   <h3>{candidate.title}</h3>
-                  <p className="muted">{candidate.group?.name ?? "VK Video источникова"}</p>
-                  <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="success">
+                  <p className="muted">
+                    {candidate.group?.name ?? "VK Video источникова"}
+                  </p>
+                  <a
+                    href={candidate.sourceUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="success"
+                  >
                     открыть VK-видео
                   </a>
 
                   <button
                     type="button"
                     disabled={Boolean(creatingCandidateId)}
-                    onClick={() => createFromCandidate(candidate)}
+                    onClick={() => openCandidateModal(candidate)}
                   >
-                    {creatingCandidateId === candidate.id ? "Создаю..." : `Взять в работу · ${clipsCount} нарезок`}
+                    {creatingCandidateId === candidate.id
+                      ? "Создаю..."
+                      : `Взять в работу · ${clipsCount} нарезок`}
                   </button>
                 </div>
               </article>
@@ -437,7 +575,10 @@ export default function SuperUploadPage() {
           </div>
 
           {candidates.length === 0 ? (
-            <p className="muted">Пока нет кандидатов. Добавь VK Video канал или VK Video источникову и нажми “Предложить 2–3 видео”.</p>
+            <p className="muted">
+              Пока нет кандидатов. Добавь VK Video канал или VK Video
+              источникову и нажми “Предложить 2–3 видео”.
+            </p>
           ) : null}
         </section>
 
@@ -460,11 +601,17 @@ export default function SuperUploadPage() {
                 <tr key={group.id}>
                   <td>
                     <b>{group.name}</b>
-                    <p className="muted" style={{ wordBreak: "break-all" }}>{group.url}</p>
-                    {group.lastError ? <p className="error">{group.lastError}</p> : null}
+                    <p className="muted" style={{ wordBreak: "break-all" }}>
+                      {group.url}
+                    </p>
+                    {group.lastError ? (
+                      <p className="error">{group.lastError}</p>
+                    ) : null}
                   </td>
                   <td>
-                    <span className="badge">{group.isActive ? "ACTIVE" : "OFF"}</span>
+                    <span className="badge">
+                      {group.isActive ? "ACTIVE" : "OFF"}
+                    </span>
                   </td>
                   <td className="muted">{formatDate(group.lastCheckedAt)}</td>
                   <td>
@@ -490,6 +637,136 @@ export default function SuperUploadPage() {
           </table>
         </section>
       </div>
+
+      {modalCandidate ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <div className="modal-card">
+            <div className="modal-head">
+              <div>
+                <p className="eyebrow">Взять в работу</p>
+                <h2>{modalCandidate.title}</h2>
+              </div>
+              <button
+                type="button"
+                className="icon-button"
+                onClick={closeCandidateModal}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="grid grid-2">
+              <label>
+                Название для роликов
+                <input
+                  value={customTitle}
+                  onChange={(event) => setCustomTitle(event.target.value)}
+                  placeholder="Введите название"
+                />
+              </label>
+
+              <label>
+                Режим публикации
+                <select
+                  value={publishMode}
+                  onChange={(event) =>
+                    setPublishMode(event.target.value as "NOW" | "WINDOW")
+                  }
+                >
+                  <option value="WINDOW">Распределить по окну</option>
+                  <option value="NOW">Загрузить сразу</option>
+                </select>
+              </label>
+            </div>
+
+            <label>
+              Описание для роликов
+              <textarea
+                value={customDescription}
+                onChange={(event) => setCustomDescription(event.target.value)}
+                rows={6}
+                placeholder="Описание для YouTube Shorts"
+              />
+            </label>
+
+            {publishMode === "WINDOW" ? (
+              <div className="grid grid-3">
+                <label>
+                  Окно c
+                  <select
+                    value={windowStartHour}
+                    onChange={(event) =>
+                      setWindowStartHour(Number(event.target.value))
+                    }
+                  >
+                    {Array.from({ length: 24 }, (_, hour) => (
+                      <option key={hour} value={hour}>
+                        {String(hour).padStart(2, "0")}:00
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label>
+                  Окно до
+                  <select
+                    value={windowEndHour}
+                    onChange={(event) =>
+                      setWindowEndHour(Number(event.target.value))
+                    }
+                  >
+                    {Array.from({ length: 24 }, (_, index) => index + 1).map(
+                      (hour) => (
+                        <option key={hour} value={hour}>
+                          {String(hour).padStart(2, "0")}:00
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </label>
+
+                <label>
+                  Интервал
+                  <select
+                    value={intervalMinutes}
+                    onChange={(event) =>
+                      setIntervalMinutes(Number(event.target.value))
+                    }
+                  >
+                    <option value={15}>Раз в 15 минут</option>
+                    <option value={30}>Раз в 30 минут</option>
+                    <option value={60}>Раз в час</option>
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            <p className="muted">
+              Будет создано {clipsCount} нарезок по {clipSeconds} сек.
+              Скачивание VK идёт строго в 720p со звуком. Часовой пояс окна:
+              Москва.
+            </p>
+
+            <div className="inline-actions modal-actions">
+              <button
+                type="button"
+                onClick={createFromCandidate}
+                disabled={Boolean(creatingCandidateId)}
+              >
+                {creatingCandidateId ? "Создаю задачу..." : "Создать задачу"}
+              </button>
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={closeCandidateModal}
+                disabled={Boolean(creatingCandidateId)}
+              >
+                Отмена
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

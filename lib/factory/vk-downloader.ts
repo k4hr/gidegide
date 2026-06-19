@@ -1,9 +1,13 @@
 import path from "node:path";
-import { rm } from "node:fs/promises";
+import { readdir, rename, rm } from "node:fs/promises";
 import { chromium, type Page } from "playwright";
 
 import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { assertVideoHasAudio, hasAudioStream, runCommand } from "@/lib/factory/video";
+import {
+  assertVideoHasAudio,
+  hasAudioStream,
+  runCommand,
+} from "@/lib/factory/video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -76,12 +80,14 @@ function scoreDownloadLink(text: string, href: string) {
   if (value.includes("vk")) score += 5;
   if (value.includes("quality")) score += 6;
 
-  if (value.includes("1080")) score += 105;
-  if (value.includes("720")) score += 100;
-  if (value.includes("480")) score += 40;
-  if (value.includes("360")) score += 20;
+  // Для нашего формата принудительно выбираем 720p.
+  // 1080p тяжелее, дольше качается и не нужен для Shorts-рендера.
+  if (value.includes("720")) score += 1000;
+  if (value.includes("1080")) score -= 80;
+  if (value.includes("480")) score -= 120;
+  if (value.includes("360")) score -= 160;
 
-  if (value.includes("240")) score -= 30;
+  if (value.includes("240")) score -= 220;
   if (value.includes("144")) score -= 50;
   if (value.includes("mp3")) score -= 120;
   if (value.includes("audio only")) score -= 120;
@@ -166,7 +172,9 @@ async function getDownloadLinks(page: Page) {
 }
 
 async function fillVkUrl(page: Page, sourceUrl: string) {
-  const inputs = page.locator("input[type='url'], input[type='text'], textarea, input:not([type])");
+  const inputs = page.locator(
+    "input[type='url'], input[type='text'], textarea, input:not([type])",
+  );
   const count = await inputs.count();
 
   for (let index = 0; index < Math.min(count, 12); index += 1) {
@@ -185,7 +193,9 @@ async function fillVkUrl(page: Page, sourceUrl: string) {
 }
 
 async function clickDownloadButton(page: Page) {
-  const clickable = page.locator("button, input[type='button'], input[type='submit'], a");
+  const clickable = page.locator(
+    "button, input[type='button'], input[type='submit'], a",
+  );
   const count = await clickable.count();
   const candidates: Array<{ index: number; score: number; text: string }> = [];
 
@@ -218,6 +228,183 @@ async function clickDownloadButton(page: Page) {
 
   await clickable.nth(best.index).click({ timeout: 15000, force: true });
   return true;
+}
+
+async function click720QualityButton(page: Page) {
+  const clickable = page.locator(
+    "a, button, input[type='button'], input[type='submit'], div[role='button'], .btn, .button",
+  );
+  const count = await clickable.count();
+  const candidates: Array<{ index: number; score: number; text: string }> = [];
+
+  for (let index = 0; index < Math.min(count, 160); index += 1) {
+    const item = clickable.nth(index);
+
+    try {
+      if (!(await item.isVisible())) continue;
+
+      const text = [
+        await item.innerText().catch(() => ""),
+        await item.getAttribute("value").catch(() => ""),
+        await item.getAttribute("title").catch(() => ""),
+        await item.getAttribute("aria-label").catch(() => ""),
+        await item.getAttribute("href").catch(() => ""),
+      ]
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const lower = text.toLowerCase();
+      if (!lower.includes("720")) continue;
+      if (
+        lower.includes("1080") ||
+        lower.includes("480") ||
+        lower.includes("360") ||
+        lower.includes("240")
+      )
+        continue;
+
+      let score = 1000;
+      if (lower.includes("mp4")) score += 200;
+      if (lower.includes("download") || lower.includes("скачать")) score += 100;
+      if (
+        lower.includes("🔇") ||
+        lower.includes("muted") ||
+        lower.includes("no audio") ||
+        lower.includes("без звука")
+      )
+        score -= 900;
+
+      candidates.push({ index, score, text });
+    } catch {
+      // ignore broken nodes
+    }
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  const best = candidates[0];
+
+  if (!best) return false;
+
+  await clickable.nth(best.index).click({ timeout: 15000, force: true });
+  return true;
+}
+
+async function cleanupYtDlpFiles(prefix: string) {
+  const dir = FACTORY_SOURCE_DIR;
+  const base = path.basename(prefix);
+
+  try {
+    const files = await readdir(dir);
+    await Promise.all(
+      files
+        .filter((file) => file.startsWith(base))
+        .map((file) => rm(path.join(dir, file), { force: true })),
+    );
+  } catch {
+    // ignore cleanup errors
+  }
+}
+
+async function findYtDlpOutput(prefix: string) {
+  const dir = FACTORY_SOURCE_DIR;
+  const base = path.basename(prefix);
+  const files = await readdir(dir);
+  const matches = files
+    .filter((file) => file.startsWith(base))
+    .map((file) => path.join(dir, file));
+
+  const mp4 = matches.find((file) => file.toLowerCase().endsWith(".mp4"));
+  return mp4 ?? matches[0] ?? null;
+}
+
+async function downloadVkWithYtDlp(input: {
+  sourceUrl: string;
+  outputPath: string;
+  isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
+}) {
+  const tempPrefix = path.join(
+    FACTORY_SOURCE_DIR,
+    `${path.basename(input.outputPath, ".mp4")}-vk-ytdlp`,
+  );
+  const outputTemplate = `${tempPrefix}.%(ext)s`;
+
+  await cleanupYtDlpFiles(tempPrefix);
+  await rm(input.outputPath, { force: true });
+  await input.onProgress?.(4, "Пробую скачать VK в 720p через yt-dlp");
+
+  await runCommand(
+    "yt-dlp",
+    [
+      "--newline",
+      "--no-playlist",
+      "--socket-timeout",
+      "45",
+      "--retries",
+      "4",
+      "--fragment-retries",
+      "4",
+      "--no-warnings",
+      "--user-agent",
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/144.0 Safari/537.36",
+      "--referer",
+      "https://vkvideo.ru/",
+      "-f",
+      "bv*[height=720][ext=mp4]+ba[ext=m4a]/b[height=720][ext=mp4]/bestvideo[height=720]+bestaudio/best[height=720]/bv*[height<=720][ext=mp4]+ba[ext=m4a]/b[height<=720][ext=mp4]/best[height<=720]",
+      "--format-sort",
+      "res:720,ext:mp4:m4a",
+      "--merge-output-format",
+      "mp4",
+      "-o",
+      outputTemplate,
+      input.sourceUrl,
+    ],
+    {
+      logPrefix: "vk-ytdlp",
+      isCanceled: input.isCanceled,
+      onOutput: async (text) => {
+        const match = text.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
+        if (!match?.[1]) return;
+
+        const percent = Number(match[1]);
+        if (!Number.isFinite(percent)) return;
+
+        const totalProgress = Math.min(
+          28,
+          Math.max(5, Math.round(5 + percent * 0.23)),
+        );
+        await input.onProgress?.(
+          totalProgress,
+          `VK yt-dlp: ${percent.toFixed(1)}%`,
+        );
+      },
+    },
+  );
+
+  const downloadedPath = await findYtDlpOutput(tempPrefix);
+
+  if (!downloadedPath) {
+    throw new Error("yt-dlp не создал MP4-файл");
+  }
+
+  if (downloadedPath !== input.outputPath) {
+    await rm(input.outputPath, { force: true });
+    await rename(downloadedPath, input.outputPath);
+  }
+
+  const hasAudio = await hasAudioStream(input.outputPath);
+
+  if (!hasAudio) {
+    await rm(input.outputPath, { force: true });
+    throw new Error("yt-dlp скачал VK-видео без звука");
+  }
+
+  await assertVideoHasAudio(input.outputPath);
+  await cleanupYtDlpFiles(tempPrefix);
+  await input.onProgress?.(30, "VK MP4 720p со звуком скачан через yt-dlp");
+
+  return input.outputPath;
 }
 
 async function downloadHrefToFile(input: {
@@ -287,12 +474,23 @@ async function tryDownloadLinksWithAudio(input: {
   isCanceled?: CancelCheck;
   onProgress?: ProgressCallback;
 }) {
-  const highQuality = input.links.filter((link) => {
-    const value = `${link.text} ${link.href}`.toLowerCase();
-    return (value.includes("1080") || value.includes("720")) && !value.includes("🔇");
-  });
-  const other = input.links.filter((link) => !highQuality.includes(link));
-  const attempts = [...highQuality, ...other].slice(0, 10);
+  const attempts = input.links
+    .filter((link) => {
+      const value = `${link.text} ${link.href}`.toLowerCase();
+      return (
+        value.includes("720") &&
+        !value.includes("1080") &&
+        !value.includes("480") &&
+        !value.includes("360") &&
+        !value.includes("240") &&
+        !value.includes("🔇")
+      );
+    })
+    .slice(0, 8);
+
+  if (attempts.length === 0) {
+    throw new Error("VK downloader не нашёл 720p MP4-ссылку со звуком");
+  }
   let lastError: unknown = null;
 
   for (let index = 0; index < attempts.length; index += 1) {
@@ -303,7 +501,7 @@ async function tryDownloadLinksWithAudio(input: {
     try {
       await input.onProgress?.(
         18 + Math.min(index, 4),
-        `Пробую VK MP4 со звуком: ${link.text.slice(0, 90) || "download link"}`,
+        `Пробую VK 720p MP4 со звуком: ${link.text.slice(0, 90) || "download link"}`,
       );
 
       return await downloadAndValidate({
@@ -311,12 +509,18 @@ async function tryDownloadLinksWithAudio(input: {
         outputPath: input.outputPath,
         isCanceled: input.isCanceled,
         onProgress: input.onProgress,
-        label: "Скачиваю VK MP4 и проверяю звук",
+        label: "Скачиваю VK 720p MP4 и проверяю звук",
       });
     } catch (error) {
       lastError = error;
-      console.error(`VK candidate failed or has no audio: ${link.text} ${link.href}`, error);
-      await input.onProgress?.(18 + Math.min(index, 4), "VK-ссылка без звука, пробую следующую");
+      console.error(
+        `VK candidate failed or has no audio: ${link.text} ${link.href}`,
+        error,
+      );
+      await input.onProgress?.(
+        18 + Math.min(index, 4),
+        "VK-ссылка без звука, пробую следующую",
+      );
     }
   }
 
@@ -332,7 +536,24 @@ export async function downloadViaVkVideo(input: DownloadVkVideoInput) {
 
   const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
 
-  await input.onProgress?.(2, "Открываю VK downloader");
+  await input.onProgress?.(2, "Подготавливаю скачивание VK-видео");
+
+  try {
+    return await downloadVkWithYtDlp({
+      sourceUrl: input.sourceUrl,
+      outputPath,
+      isCanceled: input.isCanceled,
+      onProgress: input.onProgress,
+    });
+  } catch (error) {
+    console.error("VK yt-dlp fallback failed", error);
+    await input.onProgress?.(
+      6,
+      "yt-dlp не смог скачать VK в 720p, пробую web-downloader",
+    );
+  }
+
+  await input.onProgress?.(7, "Открываю VK downloader");
 
   const browser = await chromium.launch({
     headless: true,
@@ -378,11 +599,15 @@ export async function downloadViaVkVideo(input: DownloadVkVideoInput) {
 
       await input.onProgress?.(8 + step * 2, `VK downloader: шаг ${step}/6`);
 
-      const downloadPromise = page.waitForEvent("download", { timeout: 15000 }).catch(() => null);
-      const clicked = await clickDownloadButton(page);
+      const downloadPromise = page
+        .waitForEvent("download", { timeout: 15000 })
+        .catch(() => null);
+      const clicked720 = await click720QualityButton(page);
+      const clicked =
+        clicked720 || (step === 1 ? await clickDownloadButton(page) : false);
 
       if (!clicked && step === 1) {
-        throw new Error("VK downloader не дал кнопку скачивания");
+        throw new Error("VK downloader не дал кнопку скачивания 720p");
       }
 
       const download = await downloadPromise;
@@ -392,15 +617,20 @@ export async function downloadViaVkVideo(input: DownloadVkVideoInput) {
         await download.saveAs(outputPath);
 
         if (await hasAudioStream(outputPath)) {
-          await input.onProgress?.(30, "VK MP4 со звуком скачан");
+          await input.onProgress?.(30, "VK MP4 720p со звуком скачан");
           return outputPath;
         }
 
         await rm(outputPath, { force: true });
-        await input.onProgress?.(18 + step, "VK download был без звука, пробую ссылки на странице");
+        await input.onProgress?.(
+          18 + step,
+          "VK download был без звука, пробую ссылки на странице",
+        );
       }
 
-      await page.waitForLoadState("domcontentloaded", { timeout: 15000 }).catch(() => {});
+      await page
+        .waitForLoadState("domcontentloaded", { timeout: 15000 })
+        .catch(() => {});
       await page.waitForTimeout(3000);
 
       const links = await getDownloadLinks(page);
@@ -413,12 +643,12 @@ export async function downloadViaVkVideo(input: DownloadVkVideoInput) {
           onProgress: input.onProgress,
         });
 
-        await input.onProgress?.(30, "VK MP4 со звуком скачан");
+        await input.onProgress?.(30, "VK MP4 720p со звуком скачан");
         return filePath;
       }
     }
 
-    throw new Error("VK downloader не вернул MP4-ссылку со звуком");
+    throw new Error("VK downloader не вернул 720p MP4-ссылку со звуком");
   } finally {
     await browser.close().catch(() => {});
   }

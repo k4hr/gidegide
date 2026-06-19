@@ -24,9 +24,21 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 50% -10%, rgba(255, 217, 102, 0.22), transparent 34%),
-    radial-gradient(circle at 85% 14%, rgba(255, 174, 35, 0.12), transparent 24%),
-    radial-gradient(circle at 12% 18%, rgba(255, 201, 72, 0.1), transparent 22%),
+    radial-gradient(
+      circle at 50% -10%,
+      rgba(255, 217, 102, 0.22),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 85% 14%,
+      rgba(255, 174, 35, 0.12),
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 12% 18%,
+      rgba(255, 201, 72, 0.1),
+      transparent 22%
+    ),
     linear-gradient(180deg, #140c03 0%, #060504 45%, #020202 100%);
   color: var(--text);
   font-family: Arial, Helvetica, sans-serif;
@@ -64,10 +76,25 @@ button {
   pointer-events: none;
   opacity: 0.17;
   background-image:
-    radial-gradient(circle at 20% 20%, rgba(255,255,255,0.18) 0 1px, transparent 1px),
-    radial-gradient(circle at 70% 35%, rgba(255,231,170,0.14) 0 1px, transparent 1px),
-    radial-gradient(circle at 35% 75%, rgba(255,255,255,0.08) 0 1px, transparent 1px);
-  background-size: 50px 50px, 88px 88px, 120px 120px;
+    radial-gradient(
+      circle at 20% 20%,
+      rgba(255, 255, 255, 0.18) 0 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      circle at 70% 35%,
+      rgba(255, 231, 170, 0.14) 0 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      circle at 35% 75%,
+      rgba(255, 255, 255, 0.08) 0 1px,
+      transparent 1px
+    );
+  background-size:
+    50px 50px,
+    88px 88px,
+    120px 120px;
 }
 
 .container {
@@ -84,9 +111,21 @@ button {
   min-height: 100vh;
   overflow: hidden;
   background:
-    radial-gradient(circle at 68% 12%, rgba(255, 216, 110, 0.34), transparent 22%),
-    radial-gradient(circle at 55% 34%, rgba(255, 179, 51, 0.16), transparent 26%),
-    radial-gradient(circle at 16% 18%, rgba(255, 215, 111, 0.12), transparent 20%),
+    radial-gradient(
+      circle at 68% 12%,
+      rgba(255, 216, 110, 0.34),
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 55% 34%,
+      rgba(255, 179, 51, 0.16),
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 16% 18%,
+      rgba(255, 215, 111, 0.12),
+      transparent 20%
+    ),
     linear-gradient(180deg, #120c04 0%, #070604 50%, #030303 100%);
 }
 
@@ -113,10 +152,26 @@ button {
   height: 360px;
   pointer-events: none;
   background:
-    radial-gradient(ellipse at 4% 70%, rgba(255, 226, 161, 0.16), transparent 32%),
-    radial-gradient(ellipse at 35% 86%, rgba(255, 226, 161, 0.13), transparent 28%),
-    radial-gradient(ellipse at 69% 80%, rgba(255, 226, 161, 0.14), transparent 29%),
-    radial-gradient(ellipse at 96% 72%, rgba(255, 226, 161, 0.16), transparent 32%);
+    radial-gradient(
+      ellipse at 4% 70%,
+      rgba(255, 226, 161, 0.16),
+      transparent 32%
+    ),
+    radial-gradient(
+      ellipse at 35% 86%,
+      rgba(255, 226, 161, 0.13),
+      transparent 28%
+    ),
+    radial-gradient(
+      ellipse at 69% 80%,
+      rgba(255, 226, 161, 0.14),
+      transparent 29%
+    ),
+    radial-gradient(
+      ellipse at 96% 72%,
+      rgba(255, 226, 161, 0.16),
+      transparent 32%
+    );
 }
 
 .art-hero-bg {
@@ -136,8 +191,19 @@ button {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, rgba(5, 3, 1, 0.82) 0%, rgba(5, 3, 1, 0.52) 34%, rgba(5, 3, 1, 0.08) 62%, rgba(5, 3, 1, 0.16) 100%),
-    linear-gradient(180deg, rgba(5, 3, 1, 0.04) 0%, rgba(5, 3, 1, 0.12) 58%, #050505 100%);
+    linear-gradient(
+      90deg,
+      rgba(5, 3, 1, 0.82) 0%,
+      rgba(5, 3, 1, 0.52) 34%,
+      rgba(5, 3, 1, 0.08) 62%,
+      rgba(5, 3, 1, 0.16) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(5, 3, 1, 0.04) 0%,
+      rgba(5, 3, 1, 0.12) 58%,
+      #050505 100%
+    );
 }
 
 .header {
@@ -168,7 +234,7 @@ button {
     linear-gradient(180deg, rgba(255, 236, 172, 0.1), rgba(255, 182, 48, 0.04)),
     rgba(0, 0, 0, 0.44);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
     0 0 32px rgba(255, 203, 76, 0.14);
 }
 
@@ -234,10 +300,14 @@ button {
 
 .gold-btn {
   color: #201103;
-  background:
-    linear-gradient(180deg, rgba(255,247,207,0.98), rgba(255,203,77,0.98) 42%, rgba(157,91,12,0.98));
+  background: linear-gradient(
+    180deg,
+    rgba(255, 247, 207, 0.98),
+    rgba(255, 203, 77, 0.98) 42%,
+    rgba(157, 91, 12, 0.98)
+  );
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.72),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72),
     0 12px 30px rgba(255, 186, 50, 0.28),
     0 0 0 1px rgba(255, 231, 155, 0.38);
 }
@@ -249,11 +319,15 @@ button {
 
 .dark-btn {
   color: #ffe8a7;
-  background: linear-gradient(180deg, rgba(28,21,12,0.95), rgba(9,8,6,0.96));
+  background: linear-gradient(
+    180deg,
+    rgba(28, 21, 12, 0.95),
+    rgba(9, 8, 6, 0.96)
+  );
   border: 1px solid rgba(255, 216, 122, 0.28);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
-    0 16px 34px rgba(0,0,0,0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 16px 34px rgba(0, 0, 0, 0.28);
 }
 
 .dark-btn:hover {
@@ -354,8 +428,8 @@ button {
   border-radius: 18px;
   border: 1px solid rgba(255, 216, 122, 0.32);
   background:
-    linear-gradient(135deg, rgba(255,224,140,0.1), rgba(255,186,57,0.03)),
-    rgba(0,0,0,0.42);
+    linear-gradient(135deg, rgba(255, 224, 140, 0.1), rgba(255, 186, 57, 0.03)),
+    rgba(0, 0, 0, 0.42);
   color: #fff1c7;
   font-size: 14px;
   font-weight: 950;
@@ -394,8 +468,8 @@ button {
   gap: 14px;
   text-align: left;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.18),
-    0 18px 44px rgba(0,0,0,0.26);
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    0 18px 44px rgba(0, 0, 0, 0.26);
   transition: 0.2s ease;
 }
 
@@ -415,8 +489,16 @@ button {
 
 .product-tab--tiktok {
   background:
-    radial-gradient(circle at 18% 20%, rgba(37,244,255,0.24), transparent 30%),
-    radial-gradient(circle at 86% 28%, rgba(255,56,129,0.22), transparent 30%),
+    radial-gradient(
+      circle at 18% 20%,
+      rgba(37, 244, 255, 0.24),
+      transparent 30%
+    ),
+    radial-gradient(
+      circle at 86% 28%,
+      rgba(255, 56, 129, 0.22),
+      transparent 30%
+    ),
     linear-gradient(135deg, #11141c, #050506);
 }
 
@@ -432,8 +514,8 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 18px;
-  background: rgba(255,255,255,0.14);
-  border: 1px solid rgba(255,255,255,0.16);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   color: white;
 }
 
@@ -446,7 +528,7 @@ button {
 
 .tab-price {
   margin-top: 4px;
-  color: rgba(255,255,255,0.76);
+  color: rgba(255, 255, 255, 0.76);
   font-size: 13px;
   font-weight: 800;
 }
@@ -458,11 +540,15 @@ button {
   border-radius: 0 30px 30px 30px;
   border: 1px solid var(--border);
   background:
-    linear-gradient(135deg, rgba(255,224,140,0.08), rgba(255,186,57,0.02)),
+    linear-gradient(
+      135deg,
+      rgba(255, 224, 140, 0.08),
+      rgba(255, 186, 57, 0.02)
+    ),
     rgba(8, 7, 5, 0.92);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
-    0 26px 74px rgba(0,0,0,0.4);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 26px 74px rgba(0, 0, 0, 0.4);
 }
 
 .product-card::before {
@@ -486,7 +572,11 @@ button {
   z-index: 1;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 213, 98, 0.14), transparent 26%),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 213, 98, 0.14),
+      transparent 26%
+    ),
     linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.24));
 }
 
@@ -530,7 +620,7 @@ button {
   border-radius: 26px;
   font-size: 17px;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.78),
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
     0 24px 48px rgba(255, 186, 50, 0.38),
     0 0 0 1px rgba(255, 231, 155, 0.42),
     0 0 60px rgba(255, 202, 76, 0.2);
@@ -548,7 +638,11 @@ button {
   border-radius: 32px;
   border: 1px solid var(--border);
   background:
-    linear-gradient(135deg, rgba(255, 224, 140, 0.06), rgba(255, 186, 57, 0.02)),
+    linear-gradient(
+      135deg,
+      rgba(255, 224, 140, 0.06),
+      rgba(255, 186, 57, 0.02)
+    ),
     rgba(8, 7, 5, 0.84);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07),
@@ -618,8 +712,12 @@ button {
       rgba(4, 3, 2, 0.5) 52%,
       rgba(4, 3, 2, 0.08) 100%
     ),
-    radial-gradient(circle at 18% 50%, rgba(255, 211, 104, 0.14), transparent 34%),
-    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+    radial-gradient(
+      circle at 18% 50%,
+      rgba(255, 211, 104, 0.14),
+      transparent 34%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
 }
 
 .growth-card--instagram .growth-card-overlay {
@@ -631,8 +729,12 @@ button {
       rgba(4, 3, 2, 0.5) 52%,
       rgba(4, 3, 2, 0.08) 100%
     ),
-    radial-gradient(circle at 18% 50%, rgba(255, 76, 196, 0.22), transparent 34%),
-    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+    radial-gradient(
+      circle at 18% 50%,
+      rgba(255, 76, 196, 0.22),
+      transparent 34%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
 }
 
 .growth-card--tiktok .growth-card-overlay {
@@ -644,9 +746,17 @@ button {
       rgba(4, 3, 2, 0.5) 52%,
       rgba(4, 3, 2, 0.08) 100%
     ),
-    radial-gradient(circle at 18% 50%, rgba(37, 244, 255, 0.18), transparent 34%),
-    radial-gradient(circle at 32% 40%, rgba(255, 56, 129, 0.15), transparent 28%),
-    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+    radial-gradient(
+      circle at 18% 50%,
+      rgba(37, 244, 255, 0.18),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 32% 40%,
+      rgba(255, 56, 129, 0.15),
+      transparent 28%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
 }
 
 .growth-card--youtube .growth-card-overlay {
@@ -658,8 +768,12 @@ button {
       rgba(4, 3, 2, 0.5) 52%,
       rgba(4, 3, 2, 0.08) 100%
     ),
-    radial-gradient(circle at 18% 50%, rgba(255, 67, 41, 0.24), transparent 34%),
-    linear-gradient(180deg, rgba(0,0,0,0.04), rgba(0,0,0,0.2));
+    radial-gradient(
+      circle at 18% 50%,
+      rgba(255, 67, 41, 0.24),
+      transparent 34%
+    ),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
 }
 
 .growth-card-content {
@@ -727,7 +841,11 @@ button {
   border-radius: 999px;
   border: 1px solid rgba(255, 225, 139, 0.24);
   background:
-    linear-gradient(180deg, rgba(255, 237, 169, 0.12), rgba(255, 183, 49, 0.04)),
+    linear-gradient(
+      180deg,
+      rgba(255, 237, 169, 0.12),
+      rgba(255, 183, 49, 0.04)
+    ),
     rgba(0, 0, 0, 0.46);
   color: #ffe08a;
   font-size: 13px;
@@ -736,8 +854,8 @@ button {
   text-transform: uppercase;
   backdrop-filter: blur(12px);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
-    0 14px 30px rgba(0,0,0,0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 14px 30px rgba(0, 0, 0, 0.22);
 }
 
 .growth-card-bullets {
@@ -755,7 +873,11 @@ button {
   border-radius: 999px;
   border: 1px solid rgba(255, 229, 151, 0.18);
   background:
-    linear-gradient(135deg, rgba(255, 224, 140, 0.11), rgba(255, 186, 57, 0.04)),
+    linear-gradient(
+      135deg,
+      rgba(255, 224, 140, 0.11),
+      rgba(255, 186, 57, 0.04)
+    ),
     rgba(0, 0, 0, 0.42);
   color: #fff1c7;
   font-size: 13px;
@@ -763,7 +885,7 @@ button {
   letter-spacing: 0.03em;
   text-transform: uppercase;
   backdrop-filter: blur(10px);
-  box-shadow: 0 14px 26px rgba(0,0,0,0.18);
+  box-shadow: 0 14px 26px rgba(0, 0, 0, 0.18);
 }
 
 .content-section {
@@ -781,11 +903,15 @@ button {
   border-radius: 32px;
   border: 1px solid var(--border);
   background:
-    linear-gradient(135deg, rgba(255,224,140,0.06), rgba(255,186,57,0.02)),
+    linear-gradient(
+      135deg,
+      rgba(255, 224, 140, 0.06),
+      rgba(255, 186, 57, 0.02)
+    ),
     rgba(8, 7, 5, 0.84);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.07),
-    0 24px 70px rgba(0,0,0,0.3);
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 24px 70px rgba(0, 0, 0, 0.3);
 }
 
 .section-title {
@@ -801,7 +927,7 @@ button {
 .section-text {
   margin: 16px 0 0;
   max-width: 900px;
-  color: rgba(255,255,255,0.72);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 18px;
   line-height: 1.56;
   font-weight: 650;
@@ -818,8 +944,8 @@ button {
 .info-card {
   padding: 26px;
   border-radius: 28px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.24);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.24);
 }
 
 .info-card h3 {
@@ -833,7 +959,7 @@ button {
 
 .info-card p {
   margin: 12px 0 0;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 16px;
   line-height: 1.55;
   font-weight: 650;
@@ -849,8 +975,12 @@ button {
   text-align: left;
   color: inherit;
   background:
-    linear-gradient(135deg, rgba(255,224,140,0.08), rgba(255,186,57,0.02)),
-    rgba(0,0,0,0.24);
+    linear-gradient(
+      135deg,
+      rgba(255, 224, 140, 0.08),
+      rgba(255, 186, 57, 0.02)
+    ),
+    rgba(0, 0, 0, 0.24);
   transition: 0.2s ease;
 }
 
@@ -860,15 +990,21 @@ button {
 }
 
 .package-card--instagram {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 50px rgba(255,90,196,0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 50px rgba(255, 90, 196, 0.06);
 }
 
 .package-card--tiktok {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 50px rgba(37,244,255,0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 50px rgba(37, 244, 255, 0.06);
 }
 
 .package-card--youtube {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 0 50px rgba(255,78,48,0.06);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 50px rgba(255, 78, 48, 0.06);
 }
 
 .package-hit {
@@ -905,7 +1041,7 @@ button {
 
 .package-old {
   margin-top: 6px;
-  color: rgba(255,255,255,0.42);
+  color: rgba(255, 255, 255, 0.42);
   font-size: 15px;
   font-weight: 800;
   text-decoration: line-through;
@@ -913,7 +1049,7 @@ button {
 
 .package-card p {
   margin: 18px 0 0;
-  color: rgba(255,255,255,0.7);
+  color: rgba(255, 255, 255, 0.7);
   font-size: 16px;
   line-height: 1.48;
   font-weight: 650;
@@ -928,8 +1064,8 @@ button {
 .stat-card {
   padding: 22px;
   border-radius: 26px;
-  border: 1px solid rgba(255,255,255,0.08);
-  background: rgba(0,0,0,0.24);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.24);
 }
 
 .stat-value {
@@ -941,7 +1077,7 @@ button {
 
 .stat-label {
   margin-top: 10px;
-  color: rgba(255,255,255,0.68);
+  color: rgba(255, 255, 255, 0.68);
   font-size: 13px;
   line-height: 1.35;
   font-weight: 850;
@@ -953,7 +1089,7 @@ button {
   z-index: 2;
   padding: 30px 20px 40px;
   text-align: center;
-  color: rgba(255,255,255,0.42);
+  color: rgba(255, 255, 255, 0.42);
   font-size: 14px;
   font-weight: 850;
 }
@@ -966,7 +1102,7 @@ button {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0,0,0,0.78);
+  background: rgba(0, 0, 0, 0.78);
   backdrop-filter: blur(14px);
 }
 
@@ -978,12 +1114,16 @@ button {
   border-radius: 32px;
   border: 1px solid rgba(255, 222, 142, 0.24);
   background:
-    radial-gradient(circle at 100% 0%, rgba(255,203,72,0.16), transparent 32%),
-    linear-gradient(135deg, rgba(255,224,140,0.1), rgba(255,186,57,0.03)),
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(255, 203, 72, 0.16),
+      transparent 32%
+    ),
+    linear-gradient(135deg, rgba(255, 224, 140, 0.1), rgba(255, 186, 57, 0.03)),
     rgba(8, 7, 5, 0.94);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.08),
-    0 30px 96px rgba(0,0,0,0.52);
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 30px 96px rgba(0, 0, 0, 0.52);
 }
 
 .modal-close {
@@ -996,9 +1136,9 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 999px;
-  border: 1px solid rgba(255,255,255,0.1);
-  background: rgba(0,0,0,0.36);
-  color: rgba(255,255,255,0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.36);
+  color: rgba(255, 255, 255, 0.72);
 }
 
 .modal-icon {
@@ -1008,8 +1148,8 @@ button {
   align-items: center;
   justify-content: center;
   border-radius: 24px;
-  border: 1px solid rgba(255,255,255,0.16);
-  background: rgba(255,255,255,0.1);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.1);
   color: white;
 }
 
@@ -1025,7 +1165,7 @@ button {
 
 .modal-text {
   margin: 14px 0 0;
-  color: rgba(255,255,255,0.72);
+  color: rgba(255, 255, 255, 0.72);
   font-size: 17px;
   line-height: 1.55;
   font-weight: 650;
@@ -1040,11 +1180,11 @@ button {
   padding: 18px;
   border-radius: 24px;
   border: 1px solid rgba(255, 222, 142, 0.18);
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
 }
 
 .modal-price-label {
-  color: rgba(255,255,255,0.5);
+  color: rgba(255, 255, 255, 0.5);
   font-size: 13px;
   font-weight: 900;
   text-transform: uppercase;
@@ -1059,7 +1199,7 @@ button {
 }
 
 .modal-old-price {
-  color: rgba(255,255,255,0.44);
+  color: rgba(255, 255, 255, 0.44);
   font-size: 14px;
   font-weight: 800;
   text-align: right;
@@ -1102,14 +1242,14 @@ button {
   border-radius: 18px;
   border: 1px solid rgba(255, 222, 142, 0.24);
   outline: none;
-  background: rgba(0,0,0,0.44);
+  background: rgba(0, 0, 0, 0.44);
   color: white;
   font-size: 16px;
   font-weight: 800;
 }
 
 .modal-input::placeholder {
-  color: rgba(255,255,255,0.28);
+  color: rgba(255, 255, 255, 0.28);
 }
 
 .modal-input:focus {
@@ -1208,8 +1348,13 @@ button {
 
   .art-hero-bg::after {
     background:
-      linear-gradient(180deg, rgba(5,3,1,0.18) 0%, rgba(5,3,1,0.56) 44%, #050505 100%),
-      linear-gradient(90deg, rgba(5,3,1,0.82), rgba(5,3,1,0.28));
+      linear-gradient(
+        180deg,
+        rgba(5, 3, 1, 0.18) 0%,
+        rgba(5, 3, 1, 0.56) 44%,
+        #050505 100%
+      ),
+      linear-gradient(90deg, rgba(5, 3, 1, 0.82), rgba(5, 3, 1, 0.28));
   }
 
   .hero-title {
@@ -1289,7 +1434,11 @@ button {
         rgba(4, 3, 2, 0.68) 45%,
         rgba(4, 3, 2, 0.24) 100%
       ),
-      radial-gradient(circle at 50% 22%, rgba(255, 213, 98, 0.14), transparent 34%);
+      radial-gradient(
+        circle at 50% 22%,
+        rgba(255, 213, 98, 0.14),
+        transparent 34%
+      );
   }
 
   .growth-card-content {
@@ -1451,8 +1600,16 @@ button {
   min-height: 100vh;
   padding: 28px 18px 70px;
   background:
-    radial-gradient(circle at 20% 0%, rgba(255, 196, 66, 0.18), transparent 34%),
-    radial-gradient(circle at 82% 10%, rgba(255, 143, 35, 0.11), transparent 30%),
+    radial-gradient(
+      circle at 20% 0%,
+      rgba(255, 196, 66, 0.18),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 82% 10%,
+      rgba(255, 143, 35, 0.11),
+      transparent 30%
+    ),
     linear-gradient(180deg, #0f0902 0%, #050403 48%, #020202 100%);
   color: #fff7e6;
 }
@@ -1479,7 +1636,9 @@ button {
   border: 1px solid rgba(255, 223, 135, 0.18);
   border-radius: 22px;
   background: rgba(7, 6, 5, 0.72);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   backdrop-filter: blur(16px);
 }
 
@@ -1518,7 +1677,11 @@ button {
   border: 1px solid rgba(255, 225, 139, 0.18);
   border-radius: 28px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.025)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.025)
+    ),
     rgba(11, 9, 7, 0.78);
   box-shadow:
     0 24px 70px rgba(0, 0, 0, 0.34),
@@ -1533,8 +1696,16 @@ button {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 10% 0%, rgba(255, 209, 89, 0.12), transparent 28%),
-    radial-gradient(circle at 95% 10%, rgba(255, 139, 39, 0.08), transparent 25%);
+    radial-gradient(
+      circle at 10% 0%,
+      rgba(255, 209, 89, 0.12),
+      transparent 28%
+    ),
+    radial-gradient(
+      circle at 95% 10%,
+      rgba(255, 139, 39, 0.08),
+      transparent 25%
+    );
 }
 
 .card > *,
@@ -1561,7 +1732,9 @@ button {
   line-height: 0.96;
   font-weight: 1000;
   letter-spacing: -0.07em;
-  text-shadow: 0 3px 0 rgba(154, 85, 8, 0.85), 0 18px 44px rgba(255, 177, 48, 0.16);
+  text-shadow:
+    0 3px 0 rgba(154, 85, 8, 0.85),
+    0 18px 44px rgba(255, 177, 48, 0.16);
 }
 
 .card h2,
@@ -1674,7 +1847,10 @@ small {
   display: grid;
   gap: 10px;
   color: inherit;
-  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    background 0.18s ease;
 }
 
 .factory-action-card:hover {
@@ -1773,7 +1949,9 @@ button,
   border: 1px solid rgba(255, 223, 135, 0.24);
   color: #241302;
   background: linear-gradient(180deg, #fff1bd 0%, #ffc84e 52%, #a75f0f 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 16px 34px rgba(255, 168, 38, 0.12);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    0 16px 34px rgba(255, 168, 38, 0.12);
   font-size: 13px;
   font-weight: 950;
   letter-spacing: 0.035em;
@@ -2083,4 +2261,43 @@ button:disabled,
   .factory-hero-actions > * {
     flex: 1 1 100%;
   }
+}
+
+.modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.modal-head h2 {
+  margin: 0;
+  font-size: clamp(24px, 3vw, 36px);
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: #ffc94f;
+  font-size: 11px;
+  font-weight: 950;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.icon-button {
+  width: 42px;
+  min-height: 42px;
+  padding: 0;
+  border-radius: 999px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.modal-actions {
+  margin-top: 18px;
+}
+
+.modal-card {
+  width: min(100%, 860px);
 }

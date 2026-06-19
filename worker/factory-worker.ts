@@ -31,6 +31,213 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+type UploadScheduleConfig = {
+  type?: string;
+  startHour: number;
+  endHour: number;
+  intervalMinutes: number;
+  timeZone: string;
+};
+
+function parseUploadSchedule(
+  value?: string | null,
+): UploadScheduleConfig | null {
+  if (!value) return null;
+
+  try {
+    const parsed = JSON.parse(value) as {
+      uploadSchedule?: UploadScheduleConfig;
+    };
+    const schedule = parsed.uploadSchedule;
+
+    if (!schedule || schedule.type !== "WINDOW_INTERVAL") {
+      return null;
+    }
+
+    return {
+      type: "WINDOW_INTERVAL",
+      startHour: Math.max(0, Math.min(23, Number(schedule.startHour) || 14)),
+      endHour: Math.max(1, Math.min(24, Number(schedule.endHour) || 23)),
+      intervalMinutes: Math.max(
+        15,
+        Math.min(180, Number(schedule.intervalMinutes) || 60),
+      ),
+      timeZone: schedule.timeZone || "Europe/Moscow",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function getTimeZoneParts(date: Date, timeZone: string) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  ) as Record<string, number>;
+
+  return {
+    year: parts.year,
+    month: parts.month ?? 1,
+    day: parts.day ?? 1,
+    hour: parts.hour === 24 ? 0 : (parts.hour ?? 0),
+    minute: parts.minute ?? 0,
+    second: parts.second ?? 0,
+  };
+}
+
+function makeDateInTimeZone(input: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second?: number;
+  timeZone: string;
+}) {
+  const utcGuess = new Date(
+    Date.UTC(
+      input.year,
+      input.month - 1,
+      input.day,
+      input.hour,
+      input.minute,
+      input.second ?? 0,
+    ),
+  );
+
+  const represented = getTimeZoneParts(utcGuess, input.timeZone);
+  const representedAsUtc = Date.UTC(
+    represented.year,
+    represented.month - 1,
+    represented.day,
+    represented.hour,
+    represented.minute,
+    represented.second,
+  );
+  const offsetMs = representedAsUtc - utcGuess.getTime();
+
+  return new Date(utcGuess.getTime() - offsetMs);
+}
+
+function addDays(input: {
+  year: number;
+  month: number;
+  day: number;
+  days: number;
+}) {
+  const date = new Date(
+    Date.UTC(input.year, input.month - 1, input.day + input.days, 12, 0, 0),
+  );
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
+function getScheduledUploadAt(input: {
+  schedule: UploadScheduleConfig | null;
+  clipIndex: number;
+  now?: Date;
+}) {
+  if (!input.schedule) return null;
+
+  const now = input.now ?? new Date();
+  const parts = getTimeZoneParts(now, input.schedule.timeZone);
+  const startMinutes = input.schedule.startHour * 60;
+  const endMinutes = input.schedule.endHour * 60;
+  const interval = input.schedule.intervalMinutes;
+  const slotsPerDay = Math.max(
+    1,
+    Math.floor((endMinutes - startMinutes) / interval),
+  );
+  const currentMinutes = parts.hour * 60 + parts.minute;
+
+  let baseDayOffset = 0;
+  let firstSlotIndex = 0;
+
+  if (currentMinutes < startMinutes) {
+    firstSlotIndex = 0;
+  } else if (currentMinutes >= endMinutes) {
+    baseDayOffset = 1;
+    firstSlotIndex = 0;
+  } else {
+    firstSlotIndex = Math.ceil((currentMinutes - startMinutes) / interval);
+    if (firstSlotIndex >= slotsPerDay) {
+      baseDayOffset = 1;
+      firstSlotIndex = 0;
+    }
+  }
+
+  const absoluteSlot = firstSlotIndex + Math.max(0, input.clipIndex - 1);
+  const dayOffset = baseDayOffset + Math.floor(absoluteSlot / slotsPerDay);
+  const slotInDay = absoluteSlot % slotsPerDay;
+  const dateParts = addDays({
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    days: dayOffset,
+  });
+  const targetMinutes = startMinutes + slotInDay * interval;
+
+  return makeDateInTimeZone({
+    ...dateParts,
+    hour: Math.floor(targetMinutes / 60),
+    minute: targetMinutes % 60,
+    second: 0,
+    timeZone: input.schedule.timeZone,
+  });
+}
+
+function formatScheduleDate(date: Date, timeZone: string) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone,
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+async function waitForScheduledUpload(input: {
+  jobId: string;
+  clipIndex: number;
+  totalClips: number;
+  schedule: UploadScheduleConfig | null;
+}) {
+  const scheduledAt = getScheduledUploadAt({
+    schedule: input.schedule,
+    clipIndex: input.clipIndex,
+  });
+
+  if (!scheduledAt) return;
+
+  while (scheduledAt.getTime() > Date.now()) {
+    await assertNotCanceled(input.jobId);
+    const waitMs = scheduledAt.getTime() - Date.now();
+    const waitMinutes = Math.max(1, Math.ceil(waitMs / 60000));
+
+    await updateJobProgress(
+      input.jobId,
+      76,
+      `Ожидаю окно публикации ${input.clipIndex}/${input.totalClips}: ${formatScheduleDate(scheduledAt, input.schedule?.timeZone ?? "Europe/Moscow")} · осталось ${waitMinutes} мин`,
+    );
+
+    await sleep(Math.min(waitMs, 60000));
+  }
+}
+
 async function db<T>(operation: () => Promise<T>) {
   return withDbRetry(operation, 5);
 }
@@ -44,7 +251,11 @@ async function safeDb<T>(operation: () => Promise<T>) {
   }
 }
 
-async function updateJobProgress(jobId: string, progress: number, label: string) {
+async function updateJobProgress(
+  jobId: string,
+  progress: number,
+  label: string,
+) {
   await db(() =>
     prisma.factoryJob.update({
       where: {
@@ -160,7 +371,8 @@ async function ensureLocalSourceFile(job: {
       jobId: job.id,
       sourceUrl: job.sourceUrl,
       isCanceled: () => isJobCanceled(job.id),
-      onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+      onProgress: (progress, label) =>
+        updateJobProgress(job.id, progress, label),
     });
   }
 
@@ -244,8 +456,10 @@ async function ensureLocalTemplateAssetFile(target: {
   return localPath;
 }
 
-
-function isMovieSmartJob(job: { cutMode?: string; titlePrefix?: string | null }) {
+function isMovieSmartJob(job: {
+  cutMode?: string;
+  titlePrefix?: string | null;
+}) {
   return (
     job.cutMode === "MOVIE_SMART" ||
     job.titlePrefix?.startsWith("MOVIE_MOMENTS::") ||
@@ -258,10 +472,7 @@ async function processOneJob() {
     prisma.factoryJob.findFirst({
       where: {
         status: "QUEUED",
-        OR: [
-          { scheduledAt: null },
-          { scheduledAt: { lte: new Date() } },
-        ],
+        OR: [{ scheduledAt: null }, { scheduledAt: { lte: new Date() } }],
       },
       orderBy: {
         createdAt: "asc",
@@ -297,6 +508,7 @@ async function processOneJob() {
     }
 
     const movieSmartJob = isMovieSmartJob(job);
+    const uploadSchedule = parseUploadSchedule(job.recommendation);
 
     if (!movieSmartJob) {
       for (const target of targets) {
@@ -338,7 +550,13 @@ async function processOneJob() {
       (min, target) => Math.min(min, Math.max(1, target.maxClips ?? 1)),
       Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40),
     );
-    const maxClips = Math.max(1, Math.min(Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40), targetMaxClips));
+    const maxClips = Math.max(
+      1,
+      Math.min(
+        Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40),
+        targetMaxClips,
+      ),
+    );
     let clipStarts: number[] = [];
 
     if (movieSmartJob) {
@@ -353,7 +571,8 @@ async function processOneJob() {
         skipIntroSeconds: 240,
         skipOutroSeconds: 240,
         minGapBetweenWindowsSeconds: 600,
-        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+        onProgress: (progress, label) =>
+          updateJobProgress(job.id, progress, label),
         isCanceled: () => isJobCanceled(job.id),
       });
     } else if (job.cutMode === "SMART_LITE") {
@@ -366,7 +585,8 @@ async function processOneJob() {
         maxCandidates: job.smartCandidates,
         minGapSeconds: job.smartMinGapSeconds,
         clipStartIndex: job.clipStartIndex,
-        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+        onProgress: (progress, label) =>
+          updateJobProgress(job.id, progress, label),
         isCanceled: () => isJobCanceled(job.id),
       });
     } else {
@@ -437,12 +657,14 @@ async function processOneJob() {
           sourceTitle: job.sourceOriginalName,
         });
 
-        const description = buildClipDescription({
-          game: job.game,
-          customPrefix: titlePrefixForTarget,
-          title,
-          sourceTitle: job.sourceOriginalName,
-        });
+        const description =
+          job.longVideoDescription?.trim() ||
+          buildClipDescription({
+            game: job.game,
+            customPrefix: titlePrefixForTarget,
+            title,
+            sourceTitle: job.sourceOriginalName,
+          });
 
         const renderProgress =
           30 + Math.round((completedRenders / Math.max(1, totalRenders)) * 45);
@@ -513,11 +735,20 @@ async function processOneJob() {
                 status: "QUEUED",
                 renderFilePath: outputPath,
                 renderStorageKey: uploadedKey,
+                title,
+                description,
               },
             }),
           );
 
           if (target.platform === "YOUTUBE") {
+            await waitForScheduledUpload({
+              jobId: job.id,
+              clipIndex,
+              totalClips: clipStarts.length,
+              schedule: uploadSchedule,
+            });
+
             await db(() =>
               prisma.factoryPublish.update({
                 where: {
@@ -570,6 +801,13 @@ async function processOneJob() {
           }
 
           if (target.platform === "TIKTOK") {
+            await waitForScheduledUpload({
+              jobId: job.id,
+              clipIndex,
+              totalClips: clipStarts.length,
+              schedule: uploadSchedule,
+            });
+
             await db(() =>
               prisma.factoryPublish.update({
                 where: {
