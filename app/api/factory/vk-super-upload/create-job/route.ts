@@ -3,7 +3,6 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
-import { buildRussianVkDescription } from "@/lib/factory/vk-super-upload";
 
 export const runtime = "nodejs";
 
@@ -219,10 +218,7 @@ export async function POST(request: Request) {
     const customTitle = (body.title || candidate.title)
       .replace(/\s+/g, " ")
       .trim();
-    const description = (
-      body.description ||
-      buildRussianVkDescription({ sourceTitle: customTitle })
-    ).trim();
+    const description = body.description?.trim() || null;
     const titlePrefix = `VK_RU:${customTitle}`.slice(0, 100);
     const scheduleConfig = buildUploadScheduleConfig({
       publishMode: body.publishMode,
@@ -291,7 +287,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       job,
       description,
-      message: `Задача создана из VK-видео: ${candidate.title}`,
+      message: `Задача создана из VK-видео: ${candidate.title}. AI сгенерирует цепляющие названия при обработке.`,
     });
   } catch (error) {
     if (error instanceof z.ZodError) {

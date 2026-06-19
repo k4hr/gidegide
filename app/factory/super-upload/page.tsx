@@ -77,12 +77,12 @@ function formatDuration(seconds: number | null) {
 function buildDefaultDescription(title: string) {
   return [
     title
-      ? `Смотрите нарезку: ${title}`
-      : "Смотрите короткую нарезку из VK Video.",
+      ? `Контекст для ИИ: ${title}`
+      : "Контекст для ИИ: кино-момент из VK Video.",
     "",
-    "Новые интересные моменты каждый день.",
+    "ИИ сам найдёт фильм через Кинопоиск и сгенерирует цепляющие русские названия под каждый клип.",
     "",
-    "#shorts #кино #фильмы",
+    "#кино #фильмы #shorts",
   ].join("\n");
 }
 
@@ -281,7 +281,7 @@ export default function SuperUploadPage() {
     setMessage("");
     setModalCandidate(candidate);
     setCustomTitle(candidate.title || "");
-    setCustomDescription(buildDefaultDescription(candidate.title || ""));
+    setCustomDescription("");
     setPublishMode("WINDOW");
     setWindowStartHour(14);
     setWindowEndHour(23);
@@ -310,7 +310,7 @@ export default function SuperUploadPage() {
       }
 
       if (!customTitle.trim()) {
-        throw new Error("Введи название для роликов");
+        throw new Error("Введи название фильма или исходного VK-видео для ИИ");
       }
 
       if (publishMode === "WINDOW" && windowEndHour <= windowStartHour) {
@@ -375,8 +375,7 @@ export default function SuperUploadPage() {
           <p>
             Добавляешь VK Video каналы или VK-группы с короткими смешными видео,
             завод предлагает 2–3 видео под нарезку, скачивает выбранное видео,
-            проверяет звук, режет его и генерирует русские названия из названия
-            исходника.
+            проверяет звук, режет его и генерирует цепляющие русские AI-названия через Кинопоиск + OpenAI.
           </p>
 
           <div className="grid grid-2">
@@ -512,8 +511,7 @@ export default function SuperUploadPage() {
             {selectedAccount
               ? `${selectedAccount.platform} · ${selectedAccount.name}`
               : "—"}
-            . Названия и описания будут на русском. Хэштеги пока минимальные,
-            потом можно доработать отдельно.
+            . Названия будут генерироваться ИИ на русском: завод определит фильм через Кинопоиск, возьмёт описание и сделает цепляющие title под каждый клип. Хэштеги пока минимальные, потом можно доработать отдельно.
           </p>
         </section>
 
@@ -657,7 +655,7 @@ export default function SuperUploadPage() {
 
             <div className="grid grid-2">
               <label>
-                Название для роликов
+                Название фильма / исходника для ИИ
                 <input
                   value={customTitle}
                   onChange={(event) => setCustomTitle(event.target.value)}
@@ -680,12 +678,12 @@ export default function SuperUploadPage() {
             </div>
 
             <label>
-              Описание для роликов
+              Описание / подсказка для ИИ
               <textarea
                 value={customDescription}
                 onChange={(event) => setCustomDescription(event.target.value)}
                 rows={6}
-                placeholder="Описание для YouTube Shorts"
+                placeholder="Можно оставить пустым — тогда ИИ сам сделает описание. Или напиши свою подсказку/описание."
               />
             </label>
 

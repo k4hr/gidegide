@@ -21,6 +21,7 @@ import {
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
+import { generateMovieAiTitlePack } from "@/lib/factory/movie-ai-titles";
 import {
   buildMovieSmartClipStarts,
   buildSequentialClipStarts,
@@ -616,6 +617,27 @@ async function processOneJob() {
       }),
     );
 
+    const movieAiTitles = movieSmartJob
+      ? await generateMovieAiTitlePack({
+          sourceTitle: job.sourceOriginalName ?? job.titlePrefix,
+          userDescription: job.longVideoDescription,
+          totalClips: clipStarts.length,
+          clipSeconds: job.clipSeconds,
+          clipStarts,
+          onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+        })
+      : null;
+
+    if (movieAiTitles) {
+      await updateJobProgress(
+        job.id,
+        36,
+        movieAiTitles.source === "openai"
+          ? `AI-названия готовы: ${movieAiTitles.movieTitle}`
+          : `AI недоступен, использую сильные шаблоны: ${movieAiTitles.movieTitle}`,
+      );
+    }
+
     const totalRenders = clipStarts.length * targets.length;
     let completedRenders = 0;
 
@@ -626,12 +648,14 @@ async function processOneJob() {
       const startSec = clipStarts[i];
       const endSec = startSec + job.clipSeconds;
 
-      const baseTitle = buildClipTitle({
-        game: job.game,
-        clipIndex,
-        customPrefix: job.titlePrefix,
-        sourceTitle: job.sourceOriginalName,
-      });
+      const baseTitle =
+        movieAiTitles?.titles[i] ??
+        buildClipTitle({
+          game: job.game,
+          clipIndex,
+          customPrefix: job.titlePrefix,
+          sourceTitle: job.sourceOriginalName,
+        });
 
       const clip = await db(() =>
         prisma.factoryClip.create({
@@ -650,15 +674,18 @@ async function processOneJob() {
 
         const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
 
-        const title = buildClipTitle({
-          game: job.game,
-          clipIndex,
-          customPrefix: titlePrefixForTarget,
-          sourceTitle: job.sourceOriginalName,
-        });
+        const title =
+          movieAiTitles?.titles[i] ??
+          buildClipTitle({
+            game: job.game,
+            clipIndex,
+            customPrefix: titlePrefixForTarget,
+            sourceTitle: job.sourceOriginalName,
+          });
 
         const description =
           job.longVideoDescription?.trim() ||
+          movieAiTitles?.description ||
           buildClipDescription({
             game: job.game,
             customPrefix: titlePrefixForTarget,
