@@ -54,9 +54,10 @@ export async function POST(request: Request) {
     const movieTitle = z.string().min(1).max(120).parse(formData.get("movieTitle"));
     const description = z.string().max(5000).parse(String(formData.get("description") ?? ""));
     const accountId = z.string().min(1).parse(formData.get("accountId"));
-    const templateId = z.string().min(1).parse(formData.get("templateId"));
-    const clipCount = Math.max(1, Math.min(12, Math.round(parseNumber(formData.get("clipCount"), 4))));
-    const clipSeconds = Math.max(10, Math.min(60, Math.round(parseNumber(formData.get("clipSeconds"), 25))));
+    const rawTemplateId = String(formData.get("templateId") ?? "CENTER_VIDEO");
+    const templateId = rawTemplateId && rawTemplateId !== "CENTER_VIDEO" ? rawTemplateId : null;
+    const clipCount = Math.max(1, Math.min(40, Math.round(parseNumber(formData.get("clipCount"), 10))));
+    const clipSeconds = Math.max(10, Math.min(90, Math.round(parseNumber(formData.get("clipSeconds"), 60))));
     const scheduledAt = parseScheduledAt(formData.get("scheduledAt"));
     const sourceFile = formData.get("sourceFile");
 
@@ -66,15 +67,17 @@ export async function POST(request: Request) {
 
     const [account, template] = await Promise.all([
       prisma.factoryAccount.findUnique({ where: { id: accountId } }),
-      prisma.factoryTemplate.findUnique({ where: { id: templateId }, include: { asset: true } }),
+      templateId
+        ? prisma.factoryTemplate.findUnique({ where: { id: templateId }, include: { asset: true } })
+        : Promise.resolve(null),
     ]);
 
     if (!account || account.platform !== "YOUTUBE") {
       return NextResponse.json({ error: "YouTube-аккаунт не найден" }, { status: 400 });
     }
 
-    if (!template || !template.asset) {
-      return NextResponse.json({ error: "Шаблон Амелии не найден или в нём нет видео" }, { status: 400 });
+    if (templateId && (!template || !template.asset)) {
+      return NextResponse.json({ error: "Выбранный шаблон не найден или в нём нет видео" }, { status: 400 });
     }
 
     const jobSeed = crypto.randomUUID();
@@ -94,10 +97,10 @@ export async function POST(request: Request) {
         platforms: ["YOUTUBE"],
         publishTiming: scheduledAt ? "USA_SMART" : "NOW",
         scheduledAt,
-        cutMode: "SMART_LITE",
-        smartStepSeconds: Math.max(5, Math.min(20, Math.round(clipSeconds / 2))),
-        smartCandidates: 120,
-        smartMinGapSeconds: Math.max(20, clipSeconds + 8),
+        cutMode: "MOVIE_SMART",
+        smartStepSeconds: 60,
+        smartCandidates: 160,
+        smartMinGapSeconds: 600,
         hookPreviewSeconds: 0,
         renderFormat: "SHORTS_9_16",
         longVideoTitle: movieTitle.trim(),

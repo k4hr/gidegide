@@ -8,17 +8,22 @@ import { buildRussianVkDescription } from "@/lib/factory/vk-super-upload";
 export const runtime = "nodejs";
 
 const RANDOM_TEMPLATE_ID = "RANDOM";
+const CENTER_VIDEO_TEMPLATE_ID = "CENTER_VIDEO";
 
 const bodySchema = z.object({
   candidateId: z.string().min(1),
   accountId: z.string().min(1),
-  templateId: z.string().min(1),
-  clipsCount: z.coerce.number().int().min(1).max(12).default(6),
-  clipSeconds: z.coerce.number().int().min(10).max(60).default(20),
+  templateId: z.string().min(1).default(CENTER_VIDEO_TEMPLATE_ID),
+  clipsCount: z.coerce.number().int().min(1).max(40).default(10),
+  clipSeconds: z.coerce.number().int().min(10).max(90).default(60),
   publishNow: z.boolean().default(true),
 });
 
 async function resolveTemplateId(templateId: string) {
+  if (templateId === CENTER_VIDEO_TEMPLATE_ID) {
+    return null;
+  }
+
   if (templateId === RANDOM_TEMPLATE_ID) {
     const template = await withDbRetry(() =>
       prisma.factoryTemplate.findFirst({
@@ -75,7 +80,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Аккаунт публикации не найден" }, { status: 404 });
     }
 
-    const templateId = await resolveTemplateId(body.templateId);
+    const resolvedTemplateId = await resolveTemplateId(body.templateId);
     const titlePrefix = `VK_RU:${candidate.title}`.slice(0, 80);
     const description = buildRussianVkDescription({ sourceTitle: candidate.title });
 
@@ -90,24 +95,24 @@ export async function POST(request: Request) {
           clipSeconds: body.clipSeconds,
           titlePrefix,
           game: "OTHER",
-          templateId,
+          templateId: resolvedTemplateId,
           platforms: [account.platform],
           status: "QUEUED",
           totalClips: 0,
           progress: 0,
-          progressLabel: `VK: ${candidate.group?.name ?? "группа"} · ${body.clipsCount} нарезок · ${body.clipSeconds} сек`,
+          progressLabel: `VK Movie Smart: ${candidate.group?.name ?? "источник"} · ${body.clipsCount} нарезок · ${body.clipSeconds} сек`,
           publishTiming: "NOW",
           scheduledAt: body.publishNow ? null : new Date(),
-          cutMode: "SEQUENTIAL",
-          smartStepSeconds: 10,
-          smartCandidates: 80,
-          smartMinGapSeconds: Math.max(20, body.clipSeconds),
+          cutMode: "MOVIE_SMART",
+          smartStepSeconds: 60,
+          smartCandidates: 160,
+          smartMinGapSeconds: 600,
           cancelRequested: false,
           targets: {
             create: {
               accountId: account.id,
               platform: account.platform,
-              templateId,
+              templateId: resolvedTemplateId,
               titlePrefix,
               maxClips: body.clipsCount,
             },

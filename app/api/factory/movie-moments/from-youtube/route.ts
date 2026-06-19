@@ -11,9 +11,9 @@ const bodySchema = z.object({
   sourceVideoIds: z.array(z.string().min(1)).min(1).max(3),
   description: z.string().max(5000).optional().default(""),
   accountId: z.string().min(1),
-  templateId: z.string().min(1),
-  clipsPerMovie: z.number().int().min(1).max(6).default(3),
-  clipSeconds: z.number().int().min(10).max(60).default(25),
+  templateId: z.string().min(1).default("CENTER_VIDEO"),
+  clipsPerMovie: z.number().int().min(1).max(40).default(10),
+  clipSeconds: z.number().int().min(10).max(90).default(60),
   scheduledAt: z.string().optional().nullable(),
 });
 
@@ -29,9 +29,13 @@ export async function POST(request: Request) {
     const body = bodySchema.parse(await request.json());
     const scheduledAt = parseScheduledAt(body.scheduledAt);
 
+    const resolvedTemplateId = body.templateId === "CENTER_VIDEO" ? null : body.templateId;
+
     const [account, template, videos] = await Promise.all([
       prisma.factoryAccount.findUnique({ where: { id: body.accountId } }),
-      prisma.factoryTemplate.findUnique({ where: { id: body.templateId }, include: { asset: true } }),
+      resolvedTemplateId
+        ? prisma.factoryTemplate.findUnique({ where: { id: resolvedTemplateId }, include: { asset: true } })
+        : Promise.resolve(null),
       prisma.factorySourceVideo.findMany({
         where: {
           id: { in: body.sourceVideoIds },
@@ -49,8 +53,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "YouTube-аккаунт не найден" }, { status: 400 });
     }
 
-    if (!template || !template.asset) {
-      return NextResponse.json({ error: "Шаблон Амелии не найден или в нём нет видео" }, { status: 400 });
+    if (resolvedTemplateId && (!template || !template.asset)) {
+      return NextResponse.json({ error: "Выбранный шаблон не найден или в нём нет видео" }, { status: 400 });
     }
 
     if (videos.length === 0) {
@@ -92,14 +96,14 @@ export async function POST(request: Request) {
           clipStartIndex: 0,
           titlePrefix,
           game: "OTHER",
-          templateId: body.templateId,
+          templateId: resolvedTemplateId,
           platforms: ["YOUTUBE"],
           publishTiming: startAt ? "USA_SMART" : "NOW",
           scheduledAt: startAt,
-          cutMode: "SMART_LITE",
-          smartStepSeconds: Math.max(5, Math.min(20, Math.round(body.clipSeconds / 2))),
-          smartCandidates: 140,
-          smartMinGapSeconds: Math.max(30, body.clipSeconds + 18),
+          cutMode: "MOVIE_SMART",
+          smartStepSeconds: 60,
+          smartCandidates: 160,
+          smartMinGapSeconds: 600,
           hookPreviewSeconds: 0,
           renderFormat: "SHORTS_9_16",
           longVideoTitle: movieTitle,
@@ -113,7 +117,7 @@ export async function POST(request: Request) {
             create: {
               accountId: account.id,
               platform: "YOUTUBE",
-              templateId: body.templateId,
+              templateId: resolvedTemplateId,
               titlePrefix,
               maxClips: body.clipsPerMovie,
             },

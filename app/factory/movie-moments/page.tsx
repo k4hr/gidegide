@@ -46,7 +46,7 @@ type MovieCandidate = {
   isUsed: boolean;
 };
 
-const clipCountOptions = [3, 4, 5, 10];
+const clipCountOptions = [10, 20, 30, 40];
 const clipLengthOptions = [
   { label: "15 секунд", value: 15 },
   { label: "20 секунд", value: 20 },
@@ -86,11 +86,11 @@ export default function MovieMomentsPage() {
   const [movieTitle, setMovieTitle] = useState("");
   const [description, setDescription] = useState("");
   const [channelUrl, setChannelUrl] = useState("");
-  const [clipCount, setClipCount] = useState(4);
+  const [clipCount, setClipCount] = useState(10);
   const [youtubeClipsPerMovie, setYoutubeClipsPerMovie] = useState(3);
-  const [clipSeconds, setClipSeconds] = useState(25);
+  const [clipSeconds, setClipSeconds] = useState(60);
   const [accountId, setAccountId] = useState("");
-  const [templateId, setTemplateId] = useState("");
+  const [templateId, setTemplateId] = useState("CENTER_VIDEO");
   const [scheduledAt, setScheduledAt] = useState("");
   const [loading, setLoading] = useState(false);
   const [channelLoading, setChannelLoading] = useState(false);
@@ -141,7 +141,7 @@ export default function MovieMomentsPage() {
       templatesData.templates?.[0];
 
     if (youtube) setAccountId((current) => current || youtube.id);
-    if (defaultTemplate) setTemplateId((current) => current || defaultTemplate.id);
+    setTemplateId((current) => current || "CENTER_VIDEO" || defaultTemplate?.id || "");
   }
 
   useEffect(() => {
@@ -245,7 +245,7 @@ export default function MovieMomentsPage() {
       formData.set("clipCount", String(clipCount));
       formData.set("clipSeconds", String(clipSeconds));
       formData.set("accountId", accountId);
-      formData.set("templateId", templateId);
+      formData.set("templateId", templateId || "CENTER_VIDEO");
       formData.set("scheduledAt", scheduledAt);
 
       const response = await fetch("/api/factory/movie-moments", {
@@ -401,7 +401,7 @@ export default function MovieMomentsPage() {
               <span className="pill">3 MOVIES → 9 SHORTS</span>
               <h2>Фильмы дня</h2>
               <p className="muted">
-                Выбери до 3 фильмов. Worker создаст отдельную задачу на каждый фильм, скачает через RIP и сделает по 3 ролика
+                Выбери до 3 фильмов. Worker создаст отдельную задачу на каждый фильм, скачает через RIP и сделает Movie Smart Cut ролики
                 или столько, сколько выберешь ниже.
               </p>
             </div>
@@ -419,8 +419,9 @@ export default function MovieMomentsPage() {
             </label>
 
             <label>
-              Amelia-шаблон
+              Шаблон рендера
               <select value={templateId} onChange={(event) => setTemplateId(event.target.value)} required>
+                <option value="CENTER_VIDEO">Кино-шаблон — видео по центру + zoom 108%</option>
                 <option value="">Выбери шаблон</option>
                 {shortsTemplates.map((template) => (
                   <option key={template.id} value={template.id}>{template.name}</option>
@@ -431,7 +432,7 @@ export default function MovieMomentsPage() {
             <label>
               Клипов с одного фильма
               <select value={youtubeClipsPerMovie} onChange={(event) => setYoutubeClipsPerMovie(Number(event.target.value))}>
-                {[1, 2, 3, 4, 5, 6].map((count) => (
+                {[10, 20, 30, 40].map((count) => (
                   <option key={count} value={count}>{count} клипа</option>
                 ))}
               </select>
@@ -546,7 +547,7 @@ export default function MovieMomentsPage() {
               <b>Как это работает</b>
               <span>
                 Worker анализирует фильм через smart cut: движение, звук, смены сцен и пики. Потом выбирает лучшие моменты,
-                рендерит верх фильма + низ Амелии, генерирует уникальные title, а описание берет из твоего поля выше.
+                рендерит видео по центру с мягким фоном и zoom 108%, генерирует уникальные title, а описание берет из твоего поля выше.
               </span>
             </div>
 

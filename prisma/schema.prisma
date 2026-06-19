@@ -67,6 +67,7 @@ enum FactoryCutMode {
   SMART_LITE
   SMART_HOOK_AI
   ROBLOX_STORY_AI
+  MOVIE_SMART
 }
 
 enum FactoryTemplateKind {

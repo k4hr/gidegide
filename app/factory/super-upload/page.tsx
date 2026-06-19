@@ -82,9 +82,9 @@ export default function SuperUploadPage() {
   const [groupUrl, setGroupUrl] = useState("");
   const [groupName, setGroupName] = useState("");
   const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [selectedTemplateId, setSelectedTemplateId] = useState("");
-  const [clipsCount, setClipsCount] = useState(6);
-  const [clipSeconds, setClipSeconds] = useState(20);
+  const [selectedTemplateId, setSelectedTemplateId] = useState("CENTER_VIDEO");
+  const [clipsCount, setClipsCount] = useState(10);
+  const [clipSeconds, setClipSeconds] = useState(60);
   const [isAdding, setIsAdding] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
   const [creatingCandidateId, setCreatingCandidateId] = useState("");
@@ -116,9 +116,8 @@ export default function SuperUploadPage() {
 
     setTemplates(nextTemplates);
 
-    const defaultTemplateId = getDefaultTemplateId(nextTemplates);
-    if (defaultTemplateId && !selectedTemplateId) {
-      setSelectedTemplateId(defaultTemplateId);
+    if (!selectedTemplateId) {
+      setSelectedTemplateId("CENTER_VIDEO");
     }
   }
 
@@ -245,7 +244,7 @@ export default function SuperUploadPage() {
         body: JSON.stringify({
           candidateId: candidate.id,
           accountId: selectedAccountId,
-          templateId: selectedTemplateId,
+          templateId: selectedTemplateId || "CENTER_VIDEO",
           clipsCount,
           clipSeconds,
           publishNow: true,
@@ -352,6 +351,7 @@ export default function SuperUploadPage() {
                 value={selectedTemplateId}
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
               >
+                <option value="CENTER_VIDEO">Кино-шаблон — видео по центру + zoom 108%</option>
                 {templates.length === 0 ? <option value="">Нет шаблонов</option> : null}
                 {templates.map((template) => (
                   <option key={template.id} value={template.id}>
@@ -366,10 +366,10 @@ export default function SuperUploadPage() {
               <input
                 type="number"
                 min={1}
-                max={12}
+                max={40}
                 value={clipsCount}
                 onChange={(event) =>
-                  setClipsCount(Math.max(1, Math.min(12, Number(event.target.value) || 1)))
+                  setClipsCount(Math.max(1, Math.min(40, Number(event.target.value) || 1)))
                 }
               />
             </label>
@@ -384,12 +384,13 @@ export default function SuperUploadPage() {
                 <option value={20}>20 секунд</option>
                 <option value={30}>30 секунд</option>
                 <option value={45}>45 секунд</option>
+                <option value={60}>60 секунд</option>
               </select>
             </label>
           </div>
 
           <p className="muted">
-            Сейчас выбран аккаунт: {selectedAccount ? `${selectedAccount.platform} · ${selectedAccount.name}` : "—"}.
+            Режим: Movie Smart Cut — ищет сильные 10-минутные моменты, режет на ролики по 60 секунд. Сейчас выбран аккаунт: {selectedAccount ? `${selectedAccount.platform} · ${selectedAccount.name}` : "—"}.
             Названия и описания будут на русском. Хэштеги пока минимальные, потом можно доработать отдельно.
           </p>
         </section>

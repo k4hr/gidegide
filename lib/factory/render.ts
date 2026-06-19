@@ -19,6 +19,16 @@ export type FactoryRenderTemplate = {
   mirrorLana: boolean;
 };
 
+function buildCenteredMovieFilter() {
+  return [
+    "[0:v]split=2[bgsrc][fgsrc]",
+    "[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=32,eq=brightness=-0.07:saturation=0.85,setsar=1[bg]",
+    "[fgsrc]scale='trunc(min(1080/iw\\,1920/ih)*iw*1.08/2)*2':'trunc(min(1080/iw\\,1920/ih)*ih*1.08/2)*2',crop='trunc(min(iw\\,1080)/2)*2':'trunc(min(ih\\,1920)/2)*2',setsar=1[fg]",
+    "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]",
+  ].join(";");
+}
+
+
 function buildRenderFilter(template: FactoryRenderTemplate) {
   const personFilters = [
     "scale=1080:960:force_original_aspect_ratio=increase",
@@ -253,6 +263,67 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
       ],
       {
         logPrefix: `ffmpeg-${input.clipIndex}`,
+        isCanceled: input.isCanceled,
+      },
+    );
+
+    return outputPath;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput, "lanaPath" | "template">) {
+  await ensureFactoryDirs();
+
+  const tempId = `${input.jobId}-${input.clipIndex}-movie-${nanoid(8)}`;
+  const tempDir = path.join(FACTORY_TEMP_DIR, tempId);
+
+  const outputPath = path.join(
+    FACTORY_OUTPUT_DIR,
+    `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
+  );
+
+  await mkdir(tempDir, { recursive: true });
+
+  try {
+    await runCommand(
+      "ffmpeg",
+      [
+        "-y",
+        "-ss",
+        String(input.startSec),
+        "-t",
+        String(input.clipSeconds),
+        "-i",
+        input.sourcePath,
+        "-filter_complex",
+        buildCenteredMovieFilter(),
+        "-map",
+        "[v]",
+        "-map",
+        "0:a?",
+        "-r",
+        "30",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "23",
+        "-c:a",
+        "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-shortest",
+        outputPath,
+      ],
+      {
+        logPrefix: `ffmpeg-movie-${input.clipIndex}`,
         isCanceled: input.isCanceled,
       },
     );

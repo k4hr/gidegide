@@ -1,6 +1,11 @@
 import { readCommand } from "@/lib/factory/video";
 
-export type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI" | "ROBLOX_STORY_AI";
+export type FactoryCutMode =
+  | "SEQUENTIAL"
+  | "SMART_LITE"
+  | "SMART_HOOK_AI"
+  | "ROBLOX_STORY_AI"
+  | "MOVIE_SMART";
 
 export type SmartCutCandidate = {
   startSec: number;
@@ -26,6 +31,28 @@ type SmartCutInput = {
   clipStartIndex?: number;
   onProgress?: (progress: number, label: string) => Promise<void>;
   isCanceled?: () => Promise<boolean>;
+};
+
+type MovieSmartCutInput = {
+  sourcePath: string;
+  duration: number;
+  clipSeconds?: number;
+  maxClips: number;
+  windowSeconds?: number;
+  windowsPerMovie?: number;
+  windowStepSeconds?: number;
+  skipIntroSeconds?: number;
+  skipOutroSeconds?: number;
+  minGapBetweenWindowsSeconds?: number;
+  onProgress?: (progress: number, label: string) => Promise<void>;
+  isCanceled?: () => Promise<boolean>;
+};
+
+type MovieWindowCandidate = {
+  startSec: number;
+  endSec: number;
+  score: number;
+  reason: string;
 };
 
 function clampScore(value: number) {
@@ -396,4 +423,158 @@ export async function buildSmartClipStarts(input: SmartCutInput) {
     .filter((candidate) => candidate.selected)
     .sort((a, b) => a.startSec - b.startSec)
     .map((candidate) => candidate.startSec);
+}
+
+async function analyzeMovieWindow(input: {
+  sourcePath: string;
+  startSec: number;
+  windowSeconds: number;
+  clipSeconds: number;
+}) {
+  const sampleDuration = Math.max(20, Math.min(60, input.clipSeconds));
+  const sampleStarts = [
+    input.startSec,
+    input.startSec + Math.max(0, Math.floor(input.windowSeconds / 2) - Math.floor(sampleDuration / 2)),
+    input.startSec + Math.max(0, input.windowSeconds - sampleDuration - 2),
+  ];
+
+  const samples = await Promise.all(
+    sampleStarts.map((startSec) =>
+      analyzeCandidate({
+        sourcePath: input.sourcePath,
+        startSec: Math.max(0, Math.round(startSec)),
+        clipSeconds: sampleDuration,
+      }),
+    ),
+  );
+
+  const score = clampScore(
+    samples.reduce((sum, sample) => sum + sample.finalScore, 0) /
+      Math.max(1, samples.length),
+  );
+
+  return {
+    startSec: Math.round(input.startSec),
+    endSec: Math.round(input.startSec + input.windowSeconds),
+    score,
+    reason: samples.map((sample) => sample.reason).join(" | "),
+  } satisfies MovieWindowCandidate;
+}
+
+function overlapsMovieWindow(
+  candidate: MovieWindowCandidate,
+  selected: MovieWindowCandidate[],
+  minGapSeconds: number,
+) {
+  return selected.some((item) => {
+    const left = Math.max(candidate.startSec, item.startSec);
+    const right = Math.min(candidate.endSec, item.endSec);
+    const overlaps = left < right;
+    const tooClose = Math.abs(candidate.startSec - item.startSec) < minGapSeconds;
+    return overlaps || tooClose;
+  });
+}
+
+export async function buildMovieSmartClipStarts(input: MovieSmartCutInput) {
+  const clipSeconds = Math.max(15, Math.min(90, input.clipSeconds ?? 60));
+  const windowSeconds = Math.max(clipSeconds, input.windowSeconds ?? 600);
+  const windowsPerMovie = Math.max(1, Math.min(4, input.windowsPerMovie ?? 4));
+  const maxClips = Math.max(1, input.maxClips);
+
+  const skipIntroSeconds = Math.min(
+    Math.max(120, input.skipIntroSeconds ?? 240),
+    Math.floor(input.duration * 0.12),
+  );
+  const skipOutroSeconds = Math.min(
+    Math.max(120, input.skipOutroSeconds ?? 240),
+    Math.floor(input.duration * 0.12),
+  );
+
+  let safeStart = Math.max(0, skipIntroSeconds);
+  let safeEnd = Math.max(0, input.duration - skipOutroSeconds);
+
+  if (safeEnd - safeStart < clipSeconds * 2) {
+    safeStart = 0;
+    safeEnd = input.duration;
+  }
+
+  const effectiveWindowSeconds = Math.min(windowSeconds, Math.max(clipSeconds, safeEnd - safeStart));
+  const stepSeconds = Math.max(30, input.windowStepSeconds ?? 60);
+  const minGapBetweenWindowsSeconds = Math.max(
+    effectiveWindowSeconds,
+    input.minGapBetweenWindowsSeconds ?? 600,
+  );
+
+  const windows: MovieWindowCandidate[] = [];
+  const lastWindowStart = Math.max(safeStart, safeEnd - effectiveWindowSeconds);
+
+  let checked = 0;
+
+  for (
+    let startSec = safeStart;
+    startSec <= lastWindowStart && windows.length < Math.max(6, input.maxClips * 2);
+    startSec += stepSeconds
+  ) {
+    await assertNotCanceled(input.isCanceled);
+    checked += 1;
+
+    await input.onProgress?.(
+      31 + Math.min(24, Math.round((checked / Math.max(1, input.maxClips * 2)) * 24)),
+      `Movie Smart Cut: ищу сильный 10-минутный момент ${checked}`,
+    );
+
+    windows.push(
+      await analyzeMovieWindow({
+        sourcePath: input.sourcePath,
+        startSec,
+        windowSeconds: effectiveWindowSeconds,
+        clipSeconds,
+      }),
+    );
+  }
+
+  if (windows.length === 0) {
+    return buildSequentialClipStarts({
+      duration: input.duration,
+      clipSeconds,
+      maxClips,
+      clipStartIndex: 0,
+    });
+  }
+
+  const selectedWindows: MovieWindowCandidate[] = [];
+  for (const candidate of [...windows].sort((a, b) => b.score - a.score)) {
+    if (selectedWindows.length >= windowsPerMovie) break;
+    if (overlapsMovieWindow(candidate, selectedWindows, minGapBetweenWindowsSeconds)) continue;
+    selectedWindows.push(candidate);
+  }
+
+  if (selectedWindows.length === 0) {
+    selectedWindows.push([...windows].sort((a, b) => b.score - a.score)[0]);
+  }
+
+  const starts: number[] = [];
+  const clipsPerWindow = Math.max(1, Math.floor(effectiveWindowSeconds / clipSeconds));
+
+  for (const window of selectedWindows.sort((a, b) => a.startSec - b.startSec)) {
+    for (let index = 0; index < clipsPerWindow && starts.length < maxClips; index += 1) {
+      const startSec = window.startSec + index * clipSeconds;
+      if (startSec + clipSeconds <= input.duration) {
+        starts.push(startSec);
+      }
+    }
+
+    if (starts.length >= maxClips) break;
+  }
+
+  if (starts.length === 0) {
+    return buildSequentialClipStarts({
+      duration: input.duration,
+      clipSeconds,
+      maxClips,
+      clipStartIndex: 0,
+    });
+  }
+
+  return starts.slice(0, maxClips);
 }

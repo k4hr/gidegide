@@ -7,6 +7,7 @@ import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "@/lib/factory/paths";
 import {
   downloadSourceFromUrl,
   getSourceDuration,
+  renderCenteredMovieClip,
   renderFactoryClip,
   type FactoryRenderTemplate,
 } from "@/lib/factory/render";
@@ -20,6 +21,11 @@ import {
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
+import {
+  buildMovieSmartClipStarts,
+  buildSequentialClipStarts,
+  buildSmartClipStarts,
+} from "@/lib/factory/smart-cut";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -163,10 +169,6 @@ async function ensureLocalSourceFile(job: {
 
 function getDefaultTemplate(): FactoryRenderTemplate {
   return {
-    lanaX: 78,
-    lanaY: 68,
-    lanaWidth: 300,
-    lanaHeight: 533,
     mirrorLana: false,
   };
 }
@@ -185,10 +187,6 @@ function getTargetTemplate(target: {
   }
 
   return {
-    lanaX: target.template.lanaX,
-    lanaY: target.template.lanaY,
-    lanaWidth: target.template.lanaWidth,
-    lanaHeight: target.template.lanaHeight,
     mirrorLana: target.template.mirrorLana,
   };
 }
@@ -246,6 +244,15 @@ async function ensureLocalTemplateAssetFile(target: {
   return localPath;
 }
 
+
+function isMovieSmartJob(job: { cutMode?: string; titlePrefix?: string | null }) {
+  return (
+    job.cutMode === "MOVIE_SMART" ||
+    job.titlePrefix?.startsWith("MOVIE_MOMENTS::") ||
+    job.titlePrefix?.startsWith("VK_RU:")
+  );
+}
+
 async function processOneJob() {
   const job = await db(() =>
     prisma.factoryJob.findFirst({
@@ -289,17 +296,21 @@ async function processOneJob() {
       throw new Error("У задачи нет выбранных аккаунтов публикации");
     }
 
-    for (const target of targets) {
-      if (!target.template) {
-        throw new Error(
-          `Для аккаунта "${target.account.name}" не выбран шаблон.`,
-        );
-      }
+    const movieSmartJob = isMovieSmartJob(job);
 
-      if (!target.template.asset) {
-        throw new Error(
-          `Для шаблона "${target.template.name}" не выбрано видео персонажа.`,
-        );
+    if (!movieSmartJob) {
+      for (const target of targets) {
+        if (!target.template) {
+          throw new Error(
+            `Для аккаунта "${target.account.name}" не выбран шаблон.`,
+          );
+        }
+
+        if (!target.template.asset) {
+          throw new Error(
+            `Для шаблона "${target.template.name}" не выбрано видео персонажа.`,
+          );
+        }
       }
     }
 
@@ -328,14 +339,43 @@ async function processOneJob() {
       Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40),
     );
     const maxClips = Math.max(1, Math.min(Number(process.env.FACTORY_MAX_CLIPS_PER_JOB ?? 40), targetMaxClips));
-    const clipStarts: number[] = [];
+    let clipStarts: number[] = [];
 
-    for (
-      let startSec = 0;
-      startSec + job.clipSeconds <= duration && clipStarts.length < maxClips;
-      startSec += job.clipSeconds
-    ) {
-      clipStarts.push(startSec);
+    if (movieSmartJob) {
+      clipStarts = await buildMovieSmartClipStarts({
+        sourcePath,
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        windowSeconds: 600,
+        windowsPerMovie: 4,
+        windowStepSeconds: Math.max(30, job.smartStepSeconds || 60),
+        skipIntroSeconds: 240,
+        skipOutroSeconds: 240,
+        minGapBetweenWindowsSeconds: 600,
+        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+        isCanceled: () => isJobCanceled(job.id),
+      });
+    } else if (job.cutMode === "SMART_LITE") {
+      clipStarts = await buildSmartClipStarts({
+        sourcePath,
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        stepSeconds: job.smartStepSeconds,
+        maxCandidates: job.smartCandidates,
+        minGapSeconds: job.smartMinGapSeconds,
+        clipStartIndex: job.clipStartIndex,
+        onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+        isCanceled: () => isJobCanceled(job.id),
+      });
+    } else {
+      clipStarts = buildSequentialClipStarts({
+        duration,
+        clipSeconds: job.clipSeconds,
+        maxClips,
+        clipStartIndex: job.clipStartIndex,
+      });
     }
 
     if (clipStarts.length === 0) {
@@ -413,18 +453,25 @@ async function processOneJob() {
           `Рендер ${clipIndex}/${clipStarts.length} для ${target.account.name}`,
         );
 
-        const characterVideoPath = await ensureLocalTemplateAssetFile(target);
-
-        const outputPath = await renderFactoryClip({
-          jobId: job.id,
-          clipIndex,
-          sourcePath,
-          lanaPath: characterVideoPath,
-          startSec,
-          clipSeconds: job.clipSeconds,
-          template: getTargetTemplate(target),
-          isCanceled: () => isJobCanceled(job.id),
-        });
+        const outputPath = movieSmartJob
+          ? await renderCenteredMovieClip({
+              jobId: job.id,
+              clipIndex,
+              sourcePath,
+              startSec,
+              clipSeconds: job.clipSeconds,
+              isCanceled: () => isJobCanceled(job.id),
+            })
+          : await renderFactoryClip({
+              jobId: job.id,
+              clipIndex,
+              sourcePath,
+              lanaPath: await ensureLocalTemplateAssetFile(target),
+              startSec,
+              clipSeconds: job.clipSeconds,
+              template: getTargetTemplate(target),
+              isCanceled: () => isJobCanceled(job.id),
+            });
 
         try {
           await assertNotCanceled(job.id);
