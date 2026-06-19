@@ -125,6 +125,10 @@ export function humanizeFactoryError(error: unknown) {
   if (lower.includes("youtube") && (lower.includes("token") || lower.includes("oauth"))) return "истёк YouTube OAuth-токен";
   if (lower.includes("youtube") && (lower.includes("account") || lower.includes("аккаунт"))) return "нет доступного YouTube-аккаунта";
   if (lower.includes("720") || (lower.includes("vk") && lower.includes("mp4"))) return "VK не отдал MP4 720p со звуком";
+  if (lower.includes("yt-dlp")) return "yt-dlp не смог получить список или скачать видео";
+  if (lower.includes("ffmpeg")) return "ошибка ffmpeg";
+  if (lower.includes("vk") && (lower.includes("http") || lower.includes("не открывается"))) return "VK источник не открывается";
+  if (lower.includes("vk") && lower.includes("список")) return "VK не отдал список видео";
   return message.trim() || "неизвестная ошибка";
 }
 

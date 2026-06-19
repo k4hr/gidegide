@@ -21,3 +21,19 @@ curl -X POST "$APP_BASE_URL/api/telegram/set-webhook" \
 ```
 
 `TELEGRAM_ALLOWED_CHAT_IDS` — список разрешённых Telegram chat ID через запятую. Токен бота и webhook secret хранятся только в переменных окружения.
+
+### Ежедневный VK-автозабор
+
+```bash
+FACTORY_VK_AUTO_SOURCES_ENABLED=true
+FACTORY_VK_AUTO_SOURCE_SCAN_HOUR=13
+VK_SERVICE_TOKEN=your_vk_service_token
+# Альтернатива сервисному токену:
+VK_ACCESS_TOKEN=
+```
+
+Worker раз в пять минут проверяет разрешённые и включённые источники. По умолчанию запуск происходит после 13:00 в часовом поясе источника и только один раз за локальный день. Без VK-токена система пробует `yt-dlp --flat-playlist`.
+
+Команды Telegram: `/sources`, `/source_status`, `/run_today`, `/pause_sources`, `/resume_sources`.
+
+Управление на сайте: `/factory/auto-sources`.

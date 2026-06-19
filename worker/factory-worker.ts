@@ -28,6 +28,10 @@ import {
   buildSmartClipStarts,
 } from "@/lib/factory/smart-cut";
 import { humanizeFactoryError, notifyTelegramJob } from "@/lib/factory/telegram";
+import {
+  processDueVkAutoSources,
+  updateVkAutoSourceVideoFromJob,
+} from "@/lib/factory/vk-auto-source";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -821,6 +825,10 @@ async function processOneJob() {
                 job.id,
                 `✅ Опубликовано ${clipIndex}/${clipStarts.length}: ${result.url}`,
               );
+              await updateVkAutoSourceVideoFromJob(job.id, {
+                status: "PUBLISHED",
+                url: result.url,
+              });
             } catch (error) {
               await safeDb(() =>
                 prisma.factoryPublish.update({
@@ -840,6 +848,10 @@ async function processOneJob() {
                 job.id,
                 `❌ Ошибка публикации ${clipIndex}/${clipStarts.length}: ${humanizeFactoryError(error)}`,
               );
+              await updateVkAutoSourceVideoFromJob(job.id, {
+                status: "FAILED",
+                error,
+              });
             }
           }
 
@@ -937,9 +949,17 @@ async function processOneJob() {
     if (isCanceledError) {
       await markJobCanceled(job.id);
       await notifyTelegramJob(job.id, "🛑 Задача отменена.");
+      await updateVkAutoSourceVideoFromJob(job.id, {
+        status: "FAILED",
+        error: new Error("Задача отменена"),
+      });
     } else {
       await markJobFailed(job.id, error);
       await notifyTelegramJob(job.id, `❌ Ошибка: ${humanizeFactoryError(error)}`);
+      await updateVkAutoSourceVideoFromJob(job.id, {
+        status: "FAILED",
+        error,
+      });
     }
 
     if (sourcePath) {
@@ -971,6 +991,7 @@ async function main() {
 
   await mkdir(FACTORY_SOURCE_DIR, { recursive: true });
   await resetInterruptedJobs();
+  void runVkAutoSourceLoop();
 
   while (true) {
     const processed = await processOneJob();
@@ -978,6 +999,18 @@ async function main() {
     if (!processed) {
       await sleep(5000);
     }
+  }
+}
+
+async function runVkAutoSourceLoop() {
+  while (true) {
+    try {
+      const started = await processDueVkAutoSources();
+      if (started) console.log(`VK auto-source runs started: ${started}`);
+    } catch (error) {
+      console.error("VK auto-source scheduler failed:", error);
+    }
+    await sleep(5 * 60 * 1000);
   }
 }
 

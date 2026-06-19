@@ -15,6 +15,7 @@ export type CreateVkMovieJobInput = {
   scheduleIntervalMinutes: number;
   timeZone?: string;
   telegramChatId?: string;
+  scheduledAt?: Date | null;
 };
 
 type ScheduleConfig = {
@@ -110,7 +111,7 @@ export async function createVkMovieJob(input: CreateVkMovieJobInput) {
           ? `VK Movie Smart · ${clipCount} нарезок · ${clipSeconds} сек · окно ${startHour}:00–${endHour}:00 / ${intervalMinutes} мин`
           : `VK Movie Smart · ${clipCount} нарезок · ${clipSeconds} сек`,
         publishTiming: schedule ? "USA_SMART" : "NOW",
-        scheduledAt: firstScheduledAt(schedule),
+        scheduledAt: input.scheduledAt === undefined ? firstScheduledAt(schedule) : input.scheduledAt,
         cutMode: "MOVIE_SMART",
         smartStepSeconds: 60,
         smartCandidates: 160,
