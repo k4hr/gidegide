@@ -1,5 +1,5 @@
 {
-  "name": "destroy-algoritm",
+  "name": "gidegide-content-factory",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -23,7 +23,12 @@
     "prisma": "6.19.3",
     "react": "latest",
     "react-dom": "latest",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@aws-sdk/client-s3": "latest",
+    "gaxios": "latest",
+    "googleapis": "latest",
+    "nanoid": "latest",
+    "playwright": "latest"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "latest",
