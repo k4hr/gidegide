@@ -249,6 +249,7 @@ model FactoryJob {
   targets                         FactoryJobTarget[]
   clipCandidates                  FactoryClipCandidate[]
   vkCandidates                    FactoryVkVideoCandidate[]
+  telegramJobs                   FactoryTelegramJob[]
   createdAt                       DateTime                    @default(now())
   updatedAt                       DateTime                    @updatedAt
 
@@ -266,6 +267,40 @@ model FactoryJob {
   @@index([renderFormat])
   @@index([storyStyle])
   @@index([superUploadPackageId])
+}
+
+model FactoryTelegramChat {
+  id        String   @id @default(cuid())
+  chatId    String   @unique
+  username  String?
+  firstName String?
+  isAllowed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  jobs FactoryTelegramJob[]
+
+  @@index([chatId])
+  @@index([isAllowed])
+}
+
+model FactoryTelegramJob {
+  id                String               @id @default(cuid())
+  chatId            String
+  chat              FactoryTelegramChat  @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  factoryJobId      String?
+  factoryJob        FactoryJob?           @relation(fields: [factoryJobId], references: [id], onDelete: SetNull)
+  telegramMessageId String?
+  sourceUrl         String
+  status            String               @default("CREATED")
+  lastStatusText    String?
+  settings          Json?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([chatId])
+  @@index([factoryJobId])
+  @@index([status])
 }
 
 model FactoryJobTarget {

@@ -27,6 +27,7 @@ import {
   buildSequentialClipStarts,
   buildSmartClipStarts,
 } from "@/lib/factory/smart-cut";
+import { humanizeFactoryError, notifyTelegramJob } from "@/lib/factory/telegram";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -543,6 +544,8 @@ async function processOneJob() {
 
     sourcePath = await ensureLocalSourceFile(job);
 
+    await notifyTelegramJob(job.id, "⬇️ Исходник скачан");
+
     await assertNotCanceled(job.id);
 
     const duration = await getSourceDuration(sourcePath);
@@ -616,6 +619,8 @@ async function processOneJob() {
         },
       }),
     );
+
+    await notifyTelegramJob(job.id, `✂️ Найдено ${clipStarts.length} нарезок`);
 
     const movieAiTitles = movieSmartJob
       ? await generateMovieAiTitlePack({
@@ -722,6 +727,8 @@ async function processOneJob() {
               isCanceled: () => isJobCanceled(job.id),
             });
 
+        await notifyTelegramJob(job.id, `🎬 Рендер: ${clipIndex}/${clipStarts.length}`);
+
         try {
           await assertNotCanceled(job.id);
 
@@ -809,6 +816,11 @@ async function processOneJob() {
                   },
                 }),
               );
+
+              await notifyTelegramJob(
+                job.id,
+                `✅ Опубликовано ${clipIndex}/${clipStarts.length}: ${result.url}`,
+              );
             } catch (error) {
               await safeDb(() =>
                 prisma.factoryPublish.update({
@@ -823,6 +835,10 @@ async function processOneJob() {
                         : "YouTube upload failed",
                   },
                 }),
+              );
+              await notifyTelegramJob(
+                job.id,
+                `❌ Ошибка публикации ${clipIndex}/${clipStarts.length}: ${humanizeFactoryError(error)}`,
               );
             }
           }
@@ -920,8 +936,10 @@ async function processOneJob() {
 
     if (isCanceledError) {
       await markJobCanceled(job.id);
+      await notifyTelegramJob(job.id, "🛑 Задача отменена.");
     } else {
       await markJobFailed(job.id, error);
+      await notifyTelegramJob(job.id, `❌ Ошибка: ${humanizeFactoryError(error)}`);
     }
 
     if (sourcePath) {
