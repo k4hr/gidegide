@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "DESTROY-ALGORITM — уроки по алгоритмам соцсетей",
+  title: "Завод контента — VK Super Upload",
   description:
-    "Мини-уроки по Instagram, TikTok и YouTube Shorts. Разбери алгоритмы соцсетей и начни делать контент, который получает охваты.",
+    "Панель автоматизации коротких роликов: VK-группы, нарезка, русские названия, публикация в YouTube Shorts и TikTok.",
 };
 
 export default function RootLayout({

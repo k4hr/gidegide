@@ -3,60 +3,30 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-type SourceMode = "UPLOAD" | "YOUTUBE";
-
 type FactoryPlatform = "YOUTUBE" | "TIKTOK";
-
-type FactoryGame =
-  | "ROBLOX"
-  | "FORTNITE"
-  | "MINECRAFT"
-  | "BRAWL_STARS"
-  | "DOTA2"
-  | "OTHER";
-
-type FactoryTemplate = {
-  id: string;
-  name: string;
-  isDefault: boolean;
-};
 
 type FactoryAccount = {
   id: string;
   platform: FactoryPlatform;
   name: string;
-  expiresAt: string | null;
-  createdAt: string;
-};
-
-type TargetState = {
-  enabled: boolean;
-  templateId: string;
-  titlePrefix: string;
 };
 
 type FactoryJob = {
   id: string;
   sourceUrl: string | null;
   sourceOriginalName: string | null;
-  sourceSizeBytes: number | null;
   clipSeconds: number;
   titlePrefix: string;
-  game: FactoryGame;
-  platforms: string[];
   status: string;
   error: string | null;
   totalClips: number;
   progress: number;
   progressLabel: string | null;
-  cancelRequested: boolean;
   createdAt: string;
   targets: {
     id: string;
     platform: FactoryPlatform;
-    titlePrefix: string | null;
     account: FactoryAccount;
-    template: FactoryTemplate | null;
   }[];
   clips: {
     id: string;
@@ -69,152 +39,74 @@ type FactoryJob = {
       platformUrl: string | null;
       error: string | null;
       account: FactoryAccount | null;
-      target: {
-        template: FactoryTemplate | null;
-      } | null;
     }[];
   }[];
 };
 
-const gameOptions: Array<{
-  value: FactoryGame;
-  label: string;
-  titlePrefix: string;
-}> = [
-  { value: "ROBLOX", label: "Roblox", titlePrefix: "Lana watches Roblox" },
-  { value: "FORTNITE", label: "Fortnite", titlePrefix: "Lana watches Fortnite" },
-  { value: "MINECRAFT", label: "Minecraft", titlePrefix: "Lana watches Minecraft" },
-  { value: "BRAWL_STARS", label: "Brawl Stars", titlePrefix: "Lana watches Brawl Stars" },
-  { value: "DOTA2", label: "Dota 2", titlePrefix: "Lana watches Dota 2" },
-  { value: "OTHER", label: "Other", titlePrefix: "Lana watches games" },
-];
+type JobsResponse = {
+  jobs?: FactoryJob[];
+  error?: string;
+};
 
-function canCancel(job: FactoryJob) {
-  return !["DONE", "FAILED", "CANCELED"].includes(job.status);
+function statusLabel(status: string) {
+  const labels: Record<string, string> = {
+    QUEUED: "В очереди",
+    DOWNLOADING: "Скачивается",
+    RENDERING: "Рендерится",
+    PUBLISHING: "Публикуется",
+    DONE: "Готово",
+    FAILED: "Ошибка",
+    CANCELED: "Отменено",
+  };
+
+  return labels[status] ?? status;
 }
 
-function formatMb(bytes: number | null) {
-  if (!bytes) return "";
-
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+function statusClass(status: string) {
+  if (status === "DONE") return "factory-status-ok";
+  if (status === "FAILED" || status === "CANCELED") return "factory-status-danger";
+  return "factory-status-warn";
 }
 
-function getDefaultTemplateId(templates: FactoryTemplate[]) {
-  return (
-    templates.find((template) => template.isDefault)?.id ??
-    templates[0]?.id ??
-    ""
-  );
+function formatDate(value: string) {
+  return new Date(value).toLocaleString("ru-RU", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
 }
 
-export default function FactoryPage() {
-  const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
-  const [sourceUrl, setSourceUrl] = useState("");
-  const [sourceFile, setSourceFile] = useState<File | null>(null);
-  const [clipSeconds, setClipSeconds] = useState("45");
-  const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
-  const [templateId, setTemplateId] = useState("");
-  const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
-  const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
-  const [targets, setTargets] = useState<Record<string, TargetState>>({});
+function getSourceTitle(job: FactoryJob) {
+  return job.sourceOriginalName || job.titlePrefix || job.sourceUrl || "Без названия";
+}
+
+export default function FactoryDashboardPage() {
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
-  const [isCreating, setIsCreating] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [cancelingJobId, setCancelingJobId] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-
-  const selectedGame = useMemo(
-    () => gameOptions.find((option) => option.value === game) ?? gameOptions[5],
-    [game],
-  );
 
   async function loadJobs() {
     try {
+      setError("");
+
       const response = await fetch("/api/factory/jobs", {
         cache: "no-store",
       });
-
-      const data = (await response.json()) as {
-        jobs?: FactoryJob[];
-        error?: string;
-      };
+      const data = (await response.json()) as JobsResponse;
 
       if (!response.ok) {
         throw new Error(data.error ?? "Не получилось загрузить задачи");
       }
 
       setJobs(data.jobs ?? []);
-    } catch (jobsError) {
-      console.error(jobsError);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Не получилось загрузить задачи");
+    } finally {
+      setIsLoading(false);
     }
-  }
-
-  async function loadTemplates() {
-    const response = await fetch("/api/factory/templates", {
-      cache: "no-store",
-    });
-
-    const data = (await response.json()) as {
-      templates: FactoryTemplate[];
-    };
-
-    setTemplates(data.templates);
-
-    const defaultTemplateId = getDefaultTemplateId(data.templates);
-
-    if (!templateId && defaultTemplateId) {
-      setTemplateId(defaultTemplateId);
-    }
-
-    setTargets((current) => {
-      const next = { ...current };
-
-      for (const accountId of Object.keys(next)) {
-        if (!next[accountId].templateId && defaultTemplateId) {
-          next[accountId] = {
-            ...next[accountId],
-            templateId: defaultTemplateId,
-          };
-        }
-      }
-
-      return next;
-    });
-  }
-
-  async function loadAccounts() {
-    const response = await fetch("/api/factory/accounts", {
-      cache: "no-store",
-    });
-
-    const data = (await response.json()) as {
-      accounts: FactoryAccount[];
-    };
-
-    setAccounts(data.accounts);
-
-    setTargets((current) => {
-      const next = { ...current };
-
-      for (const account of data.accounts) {
-        if (!next[account.id]) {
-          next[account.id] = {
-            enabled: false,
-            templateId,
-            titlePrefix,
-          };
-        }
-      }
-
-      return next;
-    });
   }
 
   useEffect(() => {
     loadJobs();
-    loadTemplates();
-    loadAccounts();
 
     const timer = window.setInterval(() => {
       loadJobs();
@@ -223,180 +115,14 @@ export default function FactoryPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  function handleGameChange(nextGame: FactoryGame) {
-    const nextGameMeta =
-      gameOptions.find((option) => option.value === nextGame) ?? gameOptions[5];
+  const stats = useMemo(() => {
+    const active = jobs.filter((job) => !["DONE", "FAILED", "CANCELED"].includes(job.status)).length;
+    const done = jobs.filter((job) => job.status === "DONE").length;
+    const failed = jobs.filter((job) => job.status === "FAILED").length;
+    const clips = jobs.reduce((sum, job) => sum + (job.totalClips || job.clips.length || 0), 0);
 
-    setGame(nextGame);
-    setTitlePrefix(nextGameMeta.titlePrefix);
-
-    setTargets((current) => {
-      const next = { ...current };
-
-      for (const accountId of Object.keys(next)) {
-        next[accountId] = {
-          ...next[accountId],
-          titlePrefix: nextGameMeta.titlePrefix,
-        };
-      }
-
-      return next;
-    });
-  }
-
-  function updateTarget(accountId: string, patch: Partial<TargetState>) {
-    setTargets((current) => ({
-      ...current,
-      [accountId]: {
-        enabled: current[accountId]?.enabled ?? false,
-        templateId:
-          current[accountId]?.templateId ||
-          templateId ||
-          getDefaultTemplateId(templates),
-        titlePrefix: current[accountId]?.titlePrefix || titlePrefix,
-        ...patch,
-      },
-    }));
-  }
-
-  function getSelectedTargets() {
-    return accounts
-      .filter((account) => targets[account.id]?.enabled)
-      .map((account) => ({
-        accountId: account.id,
-        templateId:
-          targets[account.id]?.templateId ||
-          templateId ||
-          getDefaultTemplateId(templates),
-        titlePrefix: targets[account.id]?.titlePrefix || titlePrefix,
-      }));
-  }
-
-  async function createYoutubeUrlJob() {
-    const response = await fetch("/api/factory/jobs", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        sourceUrl,
-        clipSeconds: Number(clipSeconds),
-        game,
-        titlePrefix,
-        templateId: templateId || null,
-        targets: getSelectedTargets(),
-      }),
-    });
-
-    const data = (await response.json()) as {
-      error?: string;
-    };
-
-    if (!response.ok) {
-      throw new Error(data.error ?? "Не получилось создать задачу");
-    }
-  }
-
-  async function createUploadJob() {
-    if (!sourceFile) {
-      throw new Error("Выбери исходный MP4-файл");
-    }
-
-    const formData = new FormData();
-
-    formData.set("sourceFile", sourceFile);
-    formData.set("clipSeconds", clipSeconds);
-    formData.set("game", game);
-    formData.set("titlePrefix", titlePrefix);
-    formData.set("templateId", templateId);
-    formData.set("targets", JSON.stringify(getSelectedTargets()));
-
-    await new Promise<void>((resolve, reject) => {
-      const xhr = new XMLHttpRequest();
-
-      xhr.open("POST", "/api/factory/jobs");
-
-      xhr.upload.onprogress = (event) => {
-        if (!event.lengthComputable) return;
-
-        setUploadProgress(Math.round((event.loaded / event.total) * 100));
-      };
-
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          resolve();
-          return;
-        }
-
-        try {
-          const data = JSON.parse(xhr.responseText) as {
-            error?: string;
-          };
-
-          reject(new Error(data.error ?? "Не получилось создать задачу"));
-        } catch {
-          reject(new Error("Не получилось создать задачу"));
-        }
-      };
-
-      xhr.onerror = () => {
-        reject(new Error("Ошибка загрузки файла"));
-      };
-
-      xhr.send(formData);
-    });
-  }
-
-  async function createJob(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    setIsCreating(true);
-    setError("");
-    setUploadProgress(0);
-
-    try {
-      if (templates.length === 0) {
-        throw new Error("Сначала создай хотя бы один шаблон на странице /factory/templates");
-      }
-
-      if (getSelectedTargets().length === 0) {
-        throw new Error("Выбери хотя бы один YouTube или TikTok аккаунт");
-      }
-
-      if (sourceMode === "UPLOAD") {
-        await createUploadJob();
-        setSourceFile(null);
-      } else {
-        await createYoutubeUrlJob();
-        setSourceUrl("");
-      }
-
-      setUploadProgress(100);
-      await loadJobs();
-    } catch (createError) {
-      setError(
-        createError instanceof Error
-          ? createError.message
-          : "Не получилось создать задачу",
-      );
-    } finally {
-      setIsCreating(false);
-    }
-  }
-
-  async function cancelJob(jobId: string) {
-    setCancelingJobId(jobId);
-
-    try {
-      await fetch(`/api/factory/jobs/${jobId}/cancel`, {
-        method: "POST",
-      });
-
-      await loadJobs();
-    } finally {
-      setCancelingJobId("");
-    }
-  }
+    return { active, done, failed, clips };
+  }, [jobs]);
 
   return (
     <main className="page">
@@ -410,342 +136,137 @@ export default function FactoryPage() {
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
-        <section className="card">
-          <h1>Lana Content Factory</h1>
-          <p>
-            Выбираешь игру, источник и конкретные аккаунты. Для каждого
-            YouTube/TikTok аккаунта можно выбрать свой шаблон: Lana, Mia,
-            Amelia или любой другой.
-          </p>
-
-          <form className="grid" onSubmit={createJob}>
-            <label>
-              Источник
-              <select
-                value={sourceMode}
-                onChange={(event) => setSourceMode(event.target.value as SourceMode)}
-              >
-                <option value="YOUTUBE">YouTube URL → RIP auto downloader</option>
-                <option value="UPLOAD">Загрузить MP4 вручную</option>
-              </select>
-            </label>
-
-            {sourceMode === "UPLOAD" ? (
-              <label>
-                Исходный MP4
-                <input
-                  type="file"
-                  accept="video/mp4,video/quicktime,video/*"
-                  onChange={(event) =>
-                    setSourceFile(event.target.files?.[0] ?? null)
-                  }
-                  required
-                />
-              </label>
-            ) : (
-              <label>
-                YouTube URL
-                <input
-                  value={sourceUrl}
-                  onChange={(event) => setSourceUrl(event.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  required
-                />
-              </label>
-            )}
-
-            {isCreating && sourceMode === "UPLOAD" ? (
-              <div className="upload-progress">
-                <div className="progress-head">
-                  <span>Загрузка исходника</span>
-                  <span>{uploadProgress}%</span>
-                </div>
-
-                <div className="progress-track">
-                  <div
-                    className="progress-fill"
-                    style={{
-                      width: `${uploadProgress}%`,
-                    }}
-                  />
-                </div>
-              </div>
-            ) : null}
-
-            <div className="grid grid-2">
-              <label>
-                Игра
-                <select
-                  value={game}
-                  onChange={(event) =>
-                    handleGameChange(event.target.value as FactoryGame)
-                  }
-                >
-                  {gameOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label>
-                Шаблон по умолчанию
-                <select
-                  value={templateId}
-                  onChange={(event) => {
-                    setTemplateId(event.target.value);
-                  }}
-                >
-                  {templates.length === 0 ? (
-                    <option value="">Сначала создай шаблон</option>
-                  ) : null}
-
-                  {templates.map((template) => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                      {template.isDefault ? " — default" : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="grid grid-2">
-              <label>
-                Длина клипа
-                <select
-                  value={clipSeconds}
-                  onChange={(event) => setClipSeconds(event.target.value)}
-                >
-                  <option value="30">30 секунд</option>
-                  <option value="45">45 секунд</option>
-                  <option value="60">60 секунд</option>
-                </select>
-              </label>
-
-              <label>
-                Название по умолчанию
-                <input
-                  value={titlePrefix}
-                  onChange={(event) => setTitlePrefix(event.target.value)}
-                  placeholder={selectedGame.titlePrefix}
-                />
-              </label>
-            </div>
-
-            <section className="target-panel">
-              <h2>Куда публиковать</h2>
-              <p className="muted">
-                Отметь аккаунты и выбери отдельный шаблон под каждый канал.
-              </p>
-
-              <div className="target-list">
-                {accounts.map((account) => {
-                  const state = targets[account.id] ?? {
-                    enabled: false,
-                    templateId: templateId || getDefaultTemplateId(templates),
-                    titlePrefix,
-                  };
-
-                  return (
-                    <div className="target-card" key={account.id}>
-                      <label className="target-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={state.enabled}
-                          onChange={(event) =>
-                            updateTarget(account.id, {
-                              enabled: event.target.checked,
-                            })
-                          }
-                        />
-                        <span className="badge">{account.platform}</span>
-                        <b>{account.name}</b>
-                      </label>
-
-                      <div className="grid grid-2">
-                        <label>
-                          Шаблон
-                          <select
-                            value={
-                              state.templateId ||
-                              templateId ||
-                              getDefaultTemplateId(templates)
-                            }
-                            onChange={(event) =>
-                              updateTarget(account.id, {
-                                templateId: event.target.value,
-                              })
-                            }
-                          >
-                            {templates.map((template) => (
-                              <option key={template.id} value={template.id}>
-                                {template.name}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-
-                        <label>
-                          Название для этого аккаунта
-                          <input
-                            value={state.titlePrefix || ""}
-                            onChange={(event) =>
-                              updateTarget(account.id, {
-                                titlePrefix: event.target.value,
-                              })
-                            }
-                            placeholder={titlePrefix}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {accounts.length === 0 ? (
-                  <p className="muted">
-                    Пока нет подключенных аккаунтов. Перейди в /factory/accounts
-                    и подключи YouTube или TikTok.
-                  </p>
-                ) : null}
-              </div>
-            </section>
-
-            <p className="muted">
-              Для {selectedGame.label} описание будет с 5 хэштегами автоматически.
+        <section className="factory-hero-card">
+          <div>
+            <div className="factory-eyebrow">VK CONTENT FACTORY</div>
+            <h1>Завод коротких роликов</h1>
+            <p>
+              Теперь основной сценарий — VK-группы с короткими смешными видео: котики,
+              животные, мемы. Добавляешь группы, завод предлагает 2–3 ролика,
+              скачивает выбранный исходник, режет его и готовит русские названия.
             </p>
+          </div>
 
-            {error ? <p className="error">{error}</p> : null}
-
-            <button disabled={isCreating}>
-              {isCreating ? "Создаю задачу..." : "Generate & Publish"}
-            </button>
-          </form>
+          <div className="factory-hero-actions">
+            <Link className="factory-primary-button" href="/factory/super-upload">
+              Открыть супер залив
+            </Link>
+            <Link className="factory-secondary-button" href="/factory/accounts">
+              Аккаунты
+            </Link>
+          </div>
         </section>
 
-        <section style={{ height: 24 }} />
+        <section className="factory-grid-cards dashboard-stats">
+          <div className="factory-stat-card">
+            <strong>{stats.active}</strong>
+            <span>активных задач</span>
+          </div>
+          <div className="factory-stat-card">
+            <strong>{stats.clips}</strong>
+            <span>клипов создано</span>
+          </div>
+          <div className="factory-stat-card">
+            <strong>{stats.done}</strong>
+            <span>успешно</span>
+          </div>
+          <div className="factory-stat-card">
+            <strong>{stats.failed}</strong>
+            <span>ошибок</span>
+          </div>
+        </section>
 
         <section className="card">
-          <h2>Задачи</h2>
+          <div className="factory-row-between">
+            <div>
+              <div className="factory-eyebrow">БЫСТРЫЙ СТАРТ</div>
+              <h2>Что делать сейчас</h2>
+            </div>
+            <button className="secondary-button" type="button" onClick={loadJobs}>
+              Обновить
+            </button>
+          </div>
 
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Прогресс</th>
-                <th>Источник</th>
-                <th>Аккаунты</th>
-                <th>Клипы</th>
-                <th>Публикации</th>
-              </tr>
-            </thead>
+          <div className="factory-grid-cards">
+            <Link className="factory-action-card" href="/factory/super-upload">
+              <span>01</span>
+              <strong>Добавь VK-группы</strong>
+              <p>Сохрани группы с короткими роликами: котики, мемы, животные.</p>
+            </Link>
+            <Link className="factory-action-card" href="/factory/super-upload">
+              <span>02</span>
+              <strong>Предложи 2–3 видео</strong>
+              <p>Система найдет кандидатов и покажет, что можно взять в работу.</p>
+            </Link>
+            <Link className="factory-action-card" href="/factory/templates">
+              <span>03</span>
+              <strong>Проверь шаблон</strong>
+              <p>Выбери реакцию/персонажа, если используешь нижнюю половину ролика.</p>
+            </Link>
+          </div>
+        </section>
 
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id}>
-                  <td>
-                    <div className="progress-row">
-                      <button
-                        type="button"
-                        className="cancel-button"
-                        disabled={!canCancel(job) || cancelingJobId === job.id}
-                        onClick={() => cancelJob(job.id)}
-                      >
-                        {job.cancelRequested || cancelingJobId === job.id
-                          ? "Отмена..."
-                          : "Отменить"}
-                      </button>
+        <section className="card">
+          <div className="factory-row-between">
+            <div>
+              <div className="factory-eyebrow">ЗАДАЧИ</div>
+              <h2>Последние запуски</h2>
+            </div>
+            <div className="factory-muted">Автообновление каждые 5 секунд</div>
+          </div>
 
-                      <div className="progress-block">
-                        <div className="progress-head">
-                          <span className="badge">{job.status}</span>
-                          <span>{Math.round(job.progress ?? 0)}%</span>
+          {error ? <p className="factory-error-text">{error}</p> : null}
+          {isLoading ? <p className="factory-muted">Загружаю задачи...</p> : null}
+
+          {!isLoading && jobs.length === 0 ? (
+            <div className="empty-state">
+              <strong>Пока задач нет</strong>
+              <span>Открой “Супер залив”, добавь VK-группу и возьми видео в работу.</span>
+            </div>
+          ) : null}
+
+          {jobs.length > 0 ? (
+            <div className="factory-table-wrap">
+              <table className="factory-table">
+                <thead>
+                  <tr>
+                    <th>Источник</th>
+                    <th>Статус</th>
+                    <th>Прогресс</th>
+                    <th>Клипы</th>
+                    <th>Аккаунты</th>
+                    <th>Создано</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {jobs.slice(0, 12).map((job) => (
+                    <tr key={job.id}>
+                      <td>
+                        <strong>{getSourceTitle(job)}</strong>
+                        {job.error ? <small className="factory-error-text">{job.error}</small> : null}
+                      </td>
+                      <td>
+                        <span className={statusClass(job.status)}>{statusLabel(job.status)}</span>
+                      </td>
+                      <td>
+                        <div className="progress-bar">
+                          <span style={{ width: `${Math.max(0, Math.min(100, job.progress || 0))}%` }} />
                         </div>
-
-                        <div className="progress-track">
-                          <div
-                            className="progress-fill"
-                            style={{
-                              width: `${Math.max(
-                                0,
-                                Math.min(100, job.progress ?? 0),
-                              )}%`,
-                            }}
-                          />
-                        </div>
-
-                        <p className="muted">{job.progressLabel ?? "Ожидание"}</p>
-
-                        {job.error ? <p className="error">{job.error}</p> : null}
-                      </div>
-                    </div>
-                  </td>
-
-                  <td>
-                    <div style={{ maxWidth: 360, wordBreak: "break-all" }}>
-                      {job.sourceOriginalName ?? job.sourceUrl ?? "—"}
-                    </div>
-
-                    <p className="muted">
-                      {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
-                      {job.clipSeconds} сек
-                    </p>
-                  </td>
-
-                  <td>
-                    {job.targets.map((target) => (
-                      <p key={target.id} className="muted">
-                        <span className="badge">{target.platform}</span>{" "}
-                        {target.account.name} · {target.template?.name ?? "Default"}
-                      </p>
-                    ))}
-                  </td>
-
-                  <td>
-                    {job.clips.length} / {job.totalClips}
-                  </td>
-
-                  <td>
-                    {job.clips.flatMap((clip) =>
-                      clip.publishes.map((publish) => (
-                        <div key={publish.id}>
-                          <b>
-                            {clip.index}. {publish.account?.name ?? publish.platform}
-                          </b>{" "}
-                          <span className="badge">{publish.status}</span>
-                          {publish.platformUrl ? (
-                            <>
-                              {" "}
-                              <a
-                                className="success"
-                                href={publish.platformUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                              >
-                                открыть
-                              </a>
-                            </>
-                          ) : null}
-                          {publish.error ? (
-                            <p className="error">{publish.error}</p>
-                          ) : null}
-                        </div>
-                      )),
-                    )}
-                  </td>
-                </tr>
-              ))}
-
-              {jobs.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="muted">
-                    Пока задач нет.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+                        <small>{job.progressLabel ?? `${job.progress || 0}%`}</small>
+                      </td>
+                      <td>{job.totalClips || job.clips.length || "—"}</td>
+                      <td>
+                        {job.targets.length > 0
+                          ? job.targets.map((target) => target.account.name).join(", ")
+                          : "—"}
+                      </td>
+                      <td>{formatDate(job.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
         </section>
       </div>
     </main>
