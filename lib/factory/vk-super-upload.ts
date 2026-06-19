@@ -32,6 +32,63 @@ function cleanText(value: string | null | undefined) {
     .trim();
 }
 
+function isGenericVkTitle(value: string | null | undefined) {
+  const text = cleanText(value).toLowerCase();
+
+  if (!text) return true;
+  if (text.length < 6) return true;
+  if (
+    /^(vk|вк|vk video|vk видео|видео|video|kinobro|киноbro|без названия)$/i.test(
+      text,
+    )
+  )
+    return true;
+  if (/^смешное видео с котиком$/i.test(text)) return true;
+  if (/^видео\s*-?\d+_\d+$/i.test(text)) return true;
+  if (text.includes("vk видео") && text.length < 30) return true;
+  if (text.includes("вконтакте") && text.length < 30) return true;
+
+  return false;
+}
+
+function normalizeCandidateTitle(value: string | null | undefined) {
+  const title = cleanText(value)
+    .replace(/^смотреть\s+/i, "")
+    .replace(/^vk\s*видео\s*/i, "")
+    .replace(/^видео\s*/i, "")
+    .replace(/\s*[|—-]\s*(?:VK Видео|VK|ВКонтакте)\s*$/i, "")
+    .replace(
+      /\b(?:нравится|комментарии|поделиться|просмотры|просмотров)\b.*$/i,
+      "",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (isGenericVkTitle(title)) return null;
+
+  return title.slice(0, 180);
+}
+
+function mergeVkCandidateTitle(
+  current: ParsedVkVideo,
+  nextTitle: string | null,
+) {
+  if (!nextTitle) return current;
+
+  if (
+    isGenericVkTitle(current.title) ||
+    nextTitle.length > current.title.length
+  ) {
+    return {
+      ...current,
+      title: nextTitle,
+      score: scoreVkCandidate(nextTitle, current.durationSeconds),
+    };
+  }
+
+  return current;
+}
+
 function normalizeVkGroupUrl(value: string) {
   const raw = value.trim();
 
@@ -59,11 +116,15 @@ function normalizeVkGroupUrl(value: string) {
       return `https://vkvideo.ru/${first}`;
     }
 
-    throw new Error("Нужна ссылка на VK Video канал, например https://vkvideo.ru/@kinobro, или ссылка на VK-видео");
+    throw new Error(
+      "Нужна ссылка на VK Video канал, например https://vkvideo.ru/@kinobro, или ссылка на VK-видео",
+    );
   }
 
   if (host !== "vk.com" && host !== "m.vk.com") {
-    throw new Error("Нужна ссылка на VK-группу или VK Video канал, например https://vkvideo.ru/@kinobro");
+    throw new Error(
+      "Нужна ссылка на VK-группу или VK Video канал, например https://vkvideo.ru/@kinobro",
+    );
   }
 
   const slug = url.pathname.split("/").filter(Boolean)[0];
@@ -97,7 +158,9 @@ function buildGroupScanUrls(groupUrl: string) {
   const slug = getSourceSlug(groupUrl);
 
   if (host === "vkvideo.ru") {
-    if (/^video-?\d+_\d+/i.test(url.pathname.split("/").filter(Boolean)[0] ?? "")) {
+    if (
+      /^video-?\d+_\d+/i.test(url.pathname.split("/").filter(Boolean)[0] ?? "")
+    ) {
       return [groupUrl];
     }
 
@@ -132,39 +195,47 @@ function buildGroupScanUrls(groupUrl: string) {
 }
 
 function extractMetaTitle(html: string) {
-  const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
+  const og = html.match(
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i,
+  )?.[1];
   const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
   return cleanText(og || title || "VK-источник").replace(/\s*\|\s*VK$/i, "");
 }
 
 function titleNear(html: string, position: number) {
-  const start = Math.max(0, position - 1000);
-  const end = Math.min(html.length, position + 1800);
+  const start = Math.max(0, position - 2400);
+  const end = Math.min(html.length, position + 3600);
   const slice = html.slice(start, end);
 
   const titlePatterns = [
-    /"title"\s*:\s*"([^"]{4,180})"/i,
-    /"name"\s*:\s*"([^"]{4,180})"/i,
-    /data-title=["']([^"']{4,180})["']/i,
-    /aria-label=["']([^"']{4,180})["']/i,
-    /title=["']([^"']{4,180})["']/i,
+    /"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,20})"/i,
+    /"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,20})"/i,
+    /"caption"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,20})"/i,
+    /"description"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,20})"/i,
+    /data-title=["']([^"']{4,220})["']/i,
+    /aria-label=["']([^"']{4,220})["']/i,
+    /title=["']([^"']{4,220})["']/i,
+    /alt=["']([^"']{4,220})["']/i,
   ];
 
   for (const pattern of titlePatterns) {
-    const clean = cleanText(slice.match(pattern)?.[1]);
-    if (clean && !/^vk\s*$/i.test(clean) && !clean.toLowerCase().includes("video")) {
-      return clean;
-    }
+    const raw = slice.match(pattern)?.[1];
+    const clean = normalizeCandidateTitle(raw);
+    if (clean) return clean;
   }
 
-  return "Смешное видео с котиком";
+  return null;
 }
 
 function thumbnailNear(html: string, position: number) {
   const start = Math.max(0, position - 1200);
   const end = Math.min(html.length, position + 2400);
   const slice = html.slice(start, end).replace(/\\\//g, "/");
-  return slice.match(/https?:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/i)?.[0] ?? null;
+  return (
+    slice.match(
+      /https?:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/i,
+    )?.[0] ?? null
+  );
 }
 
 function scoreVkCandidate(title: string, durationSeconds: number | null) {
@@ -172,9 +243,11 @@ function scoreVkCandidate(title: string, durationSeconds: number | null) {
   let score = 50;
 
   if (text.includes("кот") || text.includes("кош")) score += 25;
-  if (text.includes("смеш") || text.includes("угар") || text.includes("прикол")) score += 18;
+  if (text.includes("смеш") || text.includes("угар") || text.includes("прикол"))
+    score += 18;
   if (text.includes("мем") || text.includes("ржа")) score += 12;
-  if (text.includes("животн") || text.includes("пёс") || text.includes("собак")) score += 8;
+  if (text.includes("животн") || text.includes("пёс") || text.includes("собак"))
+    score += 8;
 
   if (durationSeconds) {
     if (durationSeconds >= 8 && durationSeconds <= 90) score += 18;
@@ -182,7 +255,12 @@ function scoreVkCandidate(title: string, durationSeconds: number | null) {
     else if (durationSeconds > 600) score -= 25;
   }
 
-  if (text.includes("фильм") || text.includes("сериал") || text.includes("трейлер")) score -= 40;
+  if (
+    text.includes("фильм") ||
+    text.includes("сериал") ||
+    text.includes("трейлер")
+  )
+    score -= 40;
   if (text.includes("новости") || text.includes("полит")) score -= 35;
 
   return Math.max(1, Math.min(100, score));
@@ -208,22 +286,28 @@ function parseVkVideosFromHtml(html: string) {
   const unique = new Map<string, ParsedVkVideo>();
 
   for (const item of matches) {
-    const title = titleNear(normalizedHtml, item.index);
+    const title = titleNear(normalizedHtml, item.index) ?? `Видео ${item.id}`;
     const thumbnailUrl = thumbnailNear(normalizedHtml, item.index);
-    const sourceUrl = `https://vk.com/video${item.id}`;
+    const sourceUrl = `https://vkvideo.ru/video${item.id}`;
     const score = scoreVkCandidate(title, null);
 
-    if (!unique.has(item.id)) {
-      unique.set(item.id, {
-        sourceVideoId: item.id,
-        sourceUrl,
-        title,
-        description: null,
-        thumbnailUrl,
-        durationSeconds: null,
-        score,
-      });
-    }
+    const nextCandidate: ParsedVkVideo = {
+      sourceVideoId: item.id,
+      sourceUrl,
+      title,
+      description: null,
+      thumbnailUrl,
+      durationSeconds: null,
+      score,
+    };
+
+    const current = unique.get(item.id);
+    unique.set(
+      item.id,
+      current
+        ? mergeVkCandidateTitle(current, normalizeCandidateTitle(title))
+        : nextCandidate,
+    );
   }
 
   return Array.from(unique.values()).sort((a, b) => b.score - a.score);
@@ -250,42 +334,126 @@ async function collectVkVideoLinksFromPage(page: Page) {
   return (await page.evaluate(`
     (() => {
       const cleanText = (value) => String(value || "")
-        .replace(/\s+/g, " ")
+        .replace(/\\s+/g, " ")
         .trim();
 
-      const getAroundText = (element) => {
-        const card =
-          element.closest("article") ||
-          element.closest(".video_item") ||
-          element.closest(".VideoCard") ||
-          element.closest(".vkuiCard") ||
-          element.closest(".wall_item") ||
-          element.closest(".post") ||
-          element.closest("div");
+      const pickGoodText = (values) => {
+        const bad = /^(vk|вк|vk video|vk видео|видео|video|kinobro|смотреть)$/i;
+        return values
+          .map(cleanText)
+          .filter(Boolean)
+          .filter((text) => text.length >= 6 && text.length <= 260)
+          .filter((text) => !bad.test(text))
+          .sort((a, b) => a.length - b.length)[0] || "";
+      };
 
-        return cleanText(card ? card.textContent : element.textContent);
+      const getAroundText = (element) => {
+        const values = [];
+        let node = element;
+
+        for (let depth = 0; node && depth < 8; depth += 1) {
+          values.push(node.textContent || "");
+          const titleNode = node.querySelector?.('[title], [aria-label], img[alt], h1, h2, h3, [class*=title], [class*=Title], [class*=name], [class*=Name]');
+          if (titleNode) {
+            values.push(titleNode.getAttribute('title') || "");
+            values.push(titleNode.getAttribute('aria-label') || "");
+            values.push(titleNode.getAttribute('alt') || "");
+            values.push(titleNode.textContent || "");
+          }
+          node = node.parentElement;
+        }
+
+        return pickGoodText(values);
       };
 
       return Array.from(document.querySelectorAll("a[href*='video']"))
         .map((link) => {
           const href = link.href || link.getAttribute("href") || "";
-          const text = [
+          const image = link.querySelector("img") || link.closest("div")?.querySelector("img");
+          const text = pickGoodText([
             link.getAttribute("aria-label") || "",
             link.getAttribute("title") || "",
+            image ? (image.getAttribute("alt") || image.getAttribute("title") || "") : "",
             link.textContent || "",
             getAroundText(link),
-          ].join(" ");
-          const image = link.querySelector("img") || link.closest("div")?.querySelector("img");
+          ]);
 
           return {
             href,
-            text: cleanText(text),
+            text,
             thumbnailUrl: image ? (image.currentSrc || image.src || image.getAttribute("src") || "") : "",
           };
         })
-        .filter((item) => item.href);
+        .filter((item) => item.href && /video-?\\d+_\\d+/i.test(item.href));
     })()
   `)) as Array<{ href: string; text: string; thumbnailUrl: string }>;
+}
+
+async function extractTitleFromCurrentVideoPage(page: Page) {
+  const values = (await page.evaluate(`
+    (() => {
+      const meta = (selector) => document.querySelector(selector)?.getAttribute('content') || '';
+      const text = (selector) => document.querySelector(selector)?.textContent || '';
+
+      return [
+        meta('meta[property="og:title"]'),
+        meta('meta[name="twitter:title"]'),
+        text('h1'),
+        text('h2'),
+        text('[class*=title]'),
+        text('[class*=Title]'),
+        document.title || '',
+      ];
+    })()
+  `)) as string[];
+
+  for (const value of values) {
+    const title = normalizeCandidateTitle(value);
+    if (title) return title;
+  }
+
+  return null;
+}
+
+async function enrichCandidatesFromVideoPages(
+  page: Page,
+  candidates: ParsedVkVideo[],
+  limit: number,
+) {
+  const result: ParsedVkVideo[] = [];
+
+  for (const candidate of candidates.slice(0, limit)) {
+    let next = candidate;
+
+    if (isGenericVkTitle(candidate.title)) {
+      const urls = Array.from(
+        new Set([
+          candidate.sourceUrl,
+          `https://vkvideo.ru/video${candidate.sourceVideoId}`,
+          `https://vk.com/video${candidate.sourceVideoId}`,
+        ]),
+      );
+
+      for (const url of urls) {
+        try {
+          await page.goto(url, {
+            waitUntil: "domcontentloaded",
+            timeout: 45000,
+          });
+          await page.waitForTimeout(1200);
+          const title = await extractTitleFromCurrentVideoPage(page);
+          next = mergeVkCandidateTitle(next, title);
+          if (!isGenericVkTitle(next.title)) break;
+        } catch {
+          // Пробуем следующий URL.
+        }
+      }
+    }
+
+    result.push(next);
+  }
+
+  return [...result, ...candidates.slice(limit)];
 }
 
 function parseVkVideoIdFromUrl(value: string) {
@@ -309,17 +477,7 @@ function normalizeVkVideoUrl(value: string) {
 }
 
 function videoTitleFromBrowserText(text: string) {
-  const cleaned = cleanText(text)
-    .replace(/^(Смотреть|Видео|VK Видео|ВКонтакте)\s*/i, "")
-    .replace(/\b(?:нравится|комментарии|поделиться|просмотры|просмотров)\b.*$/i, "")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!cleaned || cleaned.length < 4) {
-    return "Смешное видео с котиком";
-  }
-
-  return cleaned.slice(0, 180);
+  return normalizeCandidateTitle(text);
 }
 
 async function scanVkGroupWithBrowser(groupUrl: string, limit: number) {
@@ -354,31 +512,63 @@ async function scanVkGroupWithBrowser(groupUrl: string, limit: number) {
 
         const htmlCandidates = parseVkVideosFromHtml(await page.content());
         for (const candidate of htmlCandidates) {
-          if (!found.has(candidate.sourceVideoId)) found.set(candidate.sourceVideoId, candidate);
+          const current = found.get(candidate.sourceVideoId);
+          found.set(
+            candidate.sourceVideoId,
+            current
+              ? {
+                  ...mergeVkCandidateTitle(
+                    current,
+                    normalizeCandidateTitle(candidate.title),
+                  ),
+                  thumbnailUrl: current.thumbnailUrl || candidate.thumbnailUrl,
+                }
+              : candidate,
+          );
         }
 
         const links = await collectVkVideoLinksFromPage(page);
         for (const item of links) {
           const sourceVideoId = parseVkVideoIdFromUrl(item.href);
-          if (!sourceVideoId || found.has(sourceVideoId)) continue;
+          if (!sourceVideoId) continue;
 
           const title = videoTitleFromBrowserText(item.text);
-          found.set(sourceVideoId, {
+          const current = found.get(sourceVideoId);
+          const nextCandidate: ParsedVkVideo = {
             sourceVideoId,
             sourceUrl: normalizeVkVideoUrl(item.href),
-            title,
+            title: title ?? `Видео ${sourceVideoId}`,
             description: null,
             thumbnailUrl: item.thumbnailUrl || null,
             durationSeconds: null,
-            score: scoreVkCandidate(title, null),
-          });
+            score: scoreVkCandidate(title ?? `Видео ${sourceVideoId}`, null),
+          };
+
+          found.set(
+            sourceVideoId,
+            current
+              ? {
+                  ...mergeVkCandidateTitle(current, title),
+                  thumbnailUrl:
+                    current.thumbnailUrl || nextCandidate.thumbnailUrl,
+                  sourceUrl: current.sourceUrl || nextCandidate.sourceUrl,
+                }
+              : nextCandidate,
+          );
         }
       } catch {
         // VK часто отдает разные страницы/редиректы. Пробуем следующий URL.
       }
     }
 
-    return Array.from(found.values()).sort((a, b) => b.score - a.score).slice(0, limit);
+    const sorted = Array.from(found.values()).sort((a, b) => b.score - a.score);
+    const enriched = await enrichCandidatesFromVideoPages(
+      page,
+      sorted,
+      Math.min(sorted.length, Math.max(limit * 2, 6)),
+    );
+
+    return enriched.sort((a, b) => b.score - a.score).slice(0, limit);
   } finally {
     await browser.close().catch(() => {});
   }
@@ -390,7 +580,11 @@ export async function listVkGroups() {
       orderBy: [{ isActive: "desc" }, { createdAt: "desc" }],
       include: {
         candidates: {
-          orderBy: [{ isUsed: "asc" }, { score: "desc" }, { createdAt: "desc" }],
+          orderBy: [
+            { isUsed: "asc" },
+            { score: "desc" },
+            { createdAt: "desc" },
+          ],
           take: 12,
         },
       },
@@ -398,7 +592,11 @@ export async function listVkGroups() {
   );
 }
 
-export async function addVkGroup(input: { sourceUrl: string; name?: string | null; category?: string | null }) {
+export async function addVkGroup(input: {
+  sourceUrl: string;
+  name?: string | null;
+  category?: string | null;
+}) {
   const url = normalizeVkGroupUrl(input.sourceUrl);
   const slug = getSourceSlug(url);
   let name = cleanText(input.name || "");
@@ -431,7 +629,10 @@ export async function addVkGroup(input: { sourceUrl: string; name?: string | nul
   );
 }
 
-export async function setVkGroupActive(input: { id: string; isActive: boolean }) {
+export async function setVkGroupActive(input: {
+  id: string;
+  isActive: boolean;
+}) {
   return withDbRetry(() =>
     prisma.factoryVkGroup.update({
       where: { id: input.id },
@@ -458,13 +659,46 @@ export async function scanVkGroup(groupId: string, limit = 12) {
     }
   }
 
-  let unique = Array.from(new Map(parsed.map((video) => [video.sourceVideoId, video])).values())
+  let unique = Array.from(
+    new Map(parsed.map((video) => [video.sourceVideoId, video])).values(),
+  )
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
-  if (unique.length === 0) {
+  if (
+    unique.length === 0 ||
+    unique.some((video) => isGenericVkTitle(video.title))
+  ) {
     try {
-      unique = await scanVkGroupWithBrowser(group.url, limit);
+      const browserCandidates = await scanVkGroupWithBrowser(group.url, limit);
+      const merged = new Map<string, ParsedVkVideo>();
+
+      for (const video of unique) {
+        merged.set(video.sourceVideoId, video);
+      }
+
+      for (const video of browserCandidates) {
+        const current = merged.get(video.sourceVideoId);
+        merged.set(
+          video.sourceVideoId,
+          current
+            ? {
+                ...mergeVkCandidateTitle(
+                  current,
+                  normalizeCandidateTitle(video.title),
+                ),
+                sourceUrl: current.sourceUrl || video.sourceUrl,
+                thumbnailUrl: current.thumbnailUrl || video.thumbnailUrl,
+                durationSeconds:
+                  current.durationSeconds || video.durationSeconds,
+              }
+            : video,
+        );
+      }
+
+      unique = Array.from(merged.values())
+        .sort((a, b) => b.score - a.score)
+        .slice(0, limit);
     } catch (error) {
       lastError = error;
     }
@@ -558,7 +792,10 @@ export async function scanAllVkGroups(input: { limitPerGroup?: number } = {}) {
       errors.push({
         groupId: group.id,
         name: group.name,
-        message: error instanceof Error ? error.message : "Не получилось проверить источник",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Не получилось проверить источник",
       });
     }
   }
@@ -571,7 +808,10 @@ export async function scanAllVkGroups(input: { limitPerGroup?: number } = {}) {
   };
 }
 
-export function buildRussianVkTitle(input: { sourceTitle: string; clipIndex: number }) {
+export function buildRussianVkTitle(input: {
+  sourceTitle: string;
+  clipIndex: number;
+}) {
   const base = cleanText(input.sourceTitle)
     .replace(/#\S+/g, "")
     .replace(/https?:\/\/\S+/g, "")
@@ -601,19 +841,28 @@ export function buildRussianVkTitle(input: { sourceTitle: string; clipIndex: num
     " — котик удивил",
   ];
 
-  if (!base || base.length < 6 || /^(video|clip|без названия|смешное видео)$/i.test(base)) {
+  if (
+    !base ||
+    base.length < 6 ||
+    /^(video|clip|видео\s*-?\d+_\d+|без названия|смешное видео)$/i.test(base)
+  ) {
     return fallback[(input.clipIndex - 1) % fallback.length];
   }
 
   const shortBase = base.length > 62 ? `${base.slice(0, 62).trim()}…` : base;
-  return `${shortBase}${endings[(input.clipIndex - 1) % endings.length]}`.slice(0, 95);
+  return `${shortBase}${endings[(input.clipIndex - 1) % endings.length]}`.slice(
+    0,
+    95,
+  );
 }
 
 export function buildRussianVkDescription(input: { sourceTitle: string }) {
   const title = cleanText(input.sourceTitle);
 
   return [
-    title ? `Смешная короткая нарезка: ${title}` : "Смешная короткая нарезка с котиками и животными.",
+    title
+      ? `Смешная короткая нарезка: ${title}`
+      : "Смешная короткая нарезка с котиками и животными.",
     "",
     "Подборка сделана автоматически из VK-видео.",
     "",
