@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
@@ -19,7 +19,7 @@ function formatHour(date: Date | null | undefined) {
   if (!date) return "unknown";
 
   return new Intl.DateTimeFormat("en-US", {
-    timeZone: "America/New_York",
+    timeZone: "Europe/Moscow",
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -334,9 +334,9 @@ export async function GET(request: Request) {
       videoId: item.platformVideoId,
       url: item.publish.platformUrl,
       title: item.publish.title ?? item.clip.title,
-      accountName: item.account?.name ?? item.publish.account?.name ?? "—",
+      accountName: item.account?.name ?? item.publish.account?.name ?? "вЂ”",
       game: item.clip.job.game,
-      templateName: item.publish.target?.template?.name ?? "—",
+      templateName: item.publish.target?.template?.name ?? "вЂ”",
       clipSeconds: item.clip.job.clipSeconds,
       publishedAt: item.publish.publishedAt,
       uploadTimeNy: formatHour(item.publish.publishedAt),
@@ -370,9 +370,9 @@ export async function GET(request: Request) {
         videoId: item.platformVideoId,
         url: item.publish.platformUrl,
         title: item.publish.title ?? item.clip.title,
-        accountName: item.account?.name ?? item.publish.account?.name ?? "—",
+        accountName: item.account?.name ?? item.publish.account?.name ?? "вЂ”",
         game: item.clip.job.game,
-        templateName: item.publish.target?.template?.name ?? "—",
+        templateName: item.publish.target?.template?.name ?? "вЂ”",
         clipSeconds: item.clip.job.clipSeconds,
         uploadTimeNy: formatHour(item.publish.publishedAt),
         viewsNow: item.viewsNow,
@@ -388,31 +388,31 @@ export async function GET(request: Request) {
 
     if (bestTime) {
       recommendations.push(
-        `Лучшее окно сейчас: ${bestTime.label} New York, среднее ${bestTime.avgViews24h} views / 24h.`,
+        `Р›СѓС‡С€РµРµ РѕРєРЅРѕ СЃРµР№С‡Р°СЃ: ${bestTime.label} New York, СЃСЂРµРґРЅРµРµ ${bestTime.avgViews24h} views / 24h.`,
       );
     }
 
     if (bestTemplate) {
       recommendations.push(
-        `Лучший шаблон: ${bestTemplate.label}, win rate ${bestTemplate.winRate}%.`,
+        `Р›СѓС‡С€РёР№ С€Р°Р±Р»РѕРЅ: ${bestTemplate.label}, win rate ${bestTemplate.winRate}%.`,
       );
     }
 
     if (bestLength) {
       recommendations.push(
-        `Лучшая длина: ${bestLength.label}, среднее ${bestLength.avgViews24h} views / 24h.`,
+        `Р›СѓС‡С€Р°СЏ РґР»РёРЅР°: ${bestLength.label}, СЃСЂРµРґРЅРµРµ ${bestLength.avgViews24h} views / 24h.`,
       );
     }
 
     if (bestHook) {
       recommendations.push(
-        `Лучший hook: ${bestHook.label}, win rate ${bestHook.winRate}%.`,
+        `Р›СѓС‡С€РёР№ hook: ${bestHook.label}, win rate ${bestHook.winRate}%.`,
       );
     }
 
     if (winners.length > 0) {
       recommendations.push(
-        `Есть ${winners.length} победителей. Их нужно повторять похожими пакетами, а слабые связки не масштабировать.`,
+        `Р•СЃС‚СЊ ${winners.length} РїРѕР±РµРґРёС‚РµР»РµР№. РС… РЅСѓР¶РЅРѕ РїРѕРІС‚РѕСЂСЏС‚СЊ РїРѕС…РѕР¶РёРјРё РїР°РєРµС‚Р°РјРё, Р° СЃР»Р°Р±С‹Рµ СЃРІСЏР·РєРё РЅРµ РјР°СЃС€С‚Р°Р±РёСЂРѕРІР°С‚СЊ.`,
       );
     }
 
@@ -446,7 +446,7 @@ export async function GET(request: Request) {
         error:
           error instanceof Error
             ? error.message
-            : "Не получилось загрузить аналитику",
+            : "РќРµ РїРѕР»СѓС‡РёР»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р°РЅР°Р»РёС‚РёРєСѓ",
       },
       {
         status: 500,

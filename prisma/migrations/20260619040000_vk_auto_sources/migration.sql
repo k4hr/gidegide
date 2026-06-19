@@ -1,4 +1,4 @@
-CREATE TABLE "FactoryVkAutoSource" (
+﻿CREATE TABLE "FactoryVkAutoSource" (
     "id" TEXT NOT NULL,
     "chatId" TEXT NOT NULL,
     "sourceUrl" TEXT NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE "FactoryVkAutoSource" (
     "dailyLimit" INTEGER NOT NULL DEFAULT 10,
     "publishStartHour" INTEGER NOT NULL DEFAULT 15,
     "publishEndHour" INTEGER NOT NULL DEFAULT 23,
-    "timezone" TEXT NOT NULL DEFAULT 'America/New_York',
+    "timezone" TEXT NOT NULL DEFAULT 'Europe/Moscow',
     "lastRunDate" TEXT,
     "lastRunAt" TIMESTAMP(3),
     "nextRunAt" TIMESTAMP(3),

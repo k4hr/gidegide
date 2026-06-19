@@ -1,6 +1,6 @@
-import type { FactoryPublishTiming } from "@prisma/client";
+﻿import type { FactoryPublishTiming } from "@prisma/client";
 
-const NEW_YORK_TIME_ZONE = "America/New_York";
+const NEW_YORK_TIME_ZONE = "Europe/Moscow";
 const MOSCOW_TIME_ZONE = "Europe/Moscow";
 
 export const USA_SMART_CLIPS_PER_SLOT = 1;
@@ -16,12 +16,12 @@ const PUBLISH_SLOTS: Record<RegularPublishTiming, number | null> = {
 };
 
 const PUBLISH_LABELS: Record<FactoryPublishTiming, string> = {
-  NOW: "Загрузить сейчас",
-  NY_14: "14:00 New York = 21:00 МСК",
-  NY_17: "17:00 New York = 00:00 МСК",
-  NY_20: "20:00 New York = 03:00 МСК",
-  NY_22: "22:00 New York = 05:00 МСК",
-  USA_SMART: "Грамотный залив под USA",
+  NOW: "Р—Р°РіСЂСѓР·РёС‚СЊ СЃРµР№С‡Р°СЃ",
+  NY_14: "14:00 New York = 21:00 РњРЎРљ",
+  NY_17: "17:00 New York = 00:00 РњРЎРљ",
+  NY_20: "20:00 New York = 03:00 РњРЎРљ",
+  NY_22: "22:00 New York = 05:00 РњРЎРљ",
+  USA_SMART: "Р“СЂР°РјРѕС‚РЅС‹Р№ Р·Р°Р»РёРІ РїРѕРґ USA",
 };
 
 const USA_SMART_MOSCOW_SLOTS: Array<{
@@ -34,61 +34,61 @@ const USA_SMART_MOSCOW_SLOTS: Array<{
     index: 1,
     hour: 21,
     minute: 0,
-    label: "21:00 МСК — ролик 1",
+    label: "21:00 РњРЎРљ вЂ” СЂРѕР»РёРє 1",
   },
   {
     index: 2,
     hour: 21,
     minute: 15,
-    label: "21:15 МСК — ролик 2",
+    label: "21:15 РњРЎРљ вЂ” СЂРѕР»РёРє 2",
   },
   {
     index: 3,
     hour: 23,
     minute: 0,
-    label: "23:00 МСК — ролик 3",
+    label: "23:00 РњРЎРљ вЂ” СЂРѕР»РёРє 3",
   },
   {
     index: 4,
     hour: 23,
     minute: 15,
-    label: "23:15 МСК — ролик 4",
+    label: "23:15 РњРЎРљ вЂ” СЂРѕР»РёРє 4",
   },
   {
     index: 5,
     hour: 1,
     minute: 0,
-    label: "01:00 МСК — ролик 5",
+    label: "01:00 РњРЎРљ вЂ” СЂРѕР»РёРє 5",
   },
   {
     index: 6,
     hour: 1,
     minute: 15,
-    label: "01:15 МСК — ролик 6",
+    label: "01:15 РњРЎРљ вЂ” СЂРѕР»РёРє 6",
   },
   {
     index: 7,
     hour: 3,
     minute: 0,
-    label: "03:00 МСК — ролик 7",
+    label: "03:00 РњРЎРљ вЂ” СЂРѕР»РёРє 7",
   },
   {
     index: 8,
     hour: 3,
     minute: 15,
-    label: "03:15 МСК — ролик 8",
+    label: "03:15 РњРЎРљ вЂ” СЂРѕР»РёРє 8",
   },
   {
     index: 9,
     hour: 5,
     minute: 0,
-    label: "05:00 МСК — ролик 9",
+    label: "05:00 РњРЎРљ вЂ” СЂРѕР»РёРє 9",
   },
   {
     index: 10,
     hour: 5,
     minute: 15,
-    label: "05:15 МСК — ролик 10",
+    label: "05:15 РњРЎРљ вЂ” СЂРѕР»РёРє 10",
   },
 ];
 
@@ -222,7 +222,7 @@ function getNextTimeInTimeZone(input: {
 }
 
 export function getPublishTimingLabel(value: FactoryPublishTiming) {
-  return PUBLISH_LABELS[value] ?? "Загрузить сейчас";
+  return PUBLISH_LABELS[value] ?? "Р—Р°РіСЂСѓР·РёС‚СЊ СЃРµР№С‡Р°СЃ";
 }
 
 export function getNextNewYorkPublishAt(value: FactoryPublishTiming) {
