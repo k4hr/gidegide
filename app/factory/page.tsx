@@ -83,6 +83,7 @@ export default function FactoryDashboardPage() {
   const [jobs, setJobs] = useState<FactoryJob[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [cancelingJobIds, setCancelingJobIds] = useState<string[]>([]);
 
   async function loadJobs() {
     try {
@@ -103,6 +104,37 @@ export default function FactoryDashboardPage() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+
+  async function cancelJob(jobId: string) {
+    const approved = window.confirm("Отменить эту задачу? Если она уже скачивается или рендерится, worker остановит её на ближайшей проверке.");
+
+    if (!approved) return;
+
+    try {
+      setError("");
+      setCancelingJobIds((current) => Array.from(new Set([...current, jobId])));
+
+      const response = await fetch(`/api/factory/jobs/${jobId}/cancel`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Не получилось отменить задачу");
+      }
+
+      await loadJobs();
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Не получилось отменить задачу");
+    } finally {
+      setCancelingJobIds((current) => current.filter((id) => id !== jobId));
+    }
+  }
+
+  function canCancelJob(status: string) {
+    return !["DONE", "FAILED", "CANCELED"].includes(status);
   }
 
   useEffect(() => {
@@ -236,6 +268,7 @@ export default function FactoryDashboardPage() {
                     <th>Клипы</th>
                     <th>Аккаунты</th>
                     <th>Создано</th>
+                    <th>Действие</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -261,6 +294,22 @@ export default function FactoryDashboardPage() {
                           : "—"}
                       </td>
                       <td>{formatDate(job.createdAt)}</td>
+                      <td>
+                        {canCancelJob(job.status) ? (
+                          <button
+                            className="factory-cancel-job-button"
+                            type="button"
+                            title="Отменить задачу"
+                            aria-label="Отменить задачу"
+                            disabled={cancelingJobIds.includes(job.id)}
+                            onClick={() => cancelJob(job.id)}
+                          >
+                            {cancelingJobIds.includes(job.id) ? "…" : "×"}
+                          </button>
+                        ) : (
+                          <span className="factory-muted">—</span>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
