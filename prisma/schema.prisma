@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = "postgresql://postgres:rseMfEcROKUWEQAhtudQNTsJcwHawJPs@postgres.railway.internal:5432/railway"
+  url      = "postgresql://postgres:rseMfEcROKUWEQAhtudQNTsJcwHawJPs@Postgres.railway.internal:5432/railway"
 }
 
 enum LessonPlatform {
