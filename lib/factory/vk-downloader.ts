@@ -34,8 +34,7 @@ export function isVkVideoUrl(value: string) {
       host === "m.vk.com" ||
       host === "vkvideo.ru" ||
       host.endsWith(".vk.com") ||
-      full.includes("video") ||
-      full.includes("clip")
+      full.includes("video")
     );
   } catch {
     return false;

@@ -129,7 +129,7 @@ export default function SuperUploadPage() {
     const data = (await response.json()) as GroupsResponse;
 
     if (!response.ok) {
-      throw new Error(data.error ?? "Не получилось загрузить VK-группы");
+      throw new Error(data.error ?? "Не получилось загрузить VK Video источники");
     }
 
     setGroups(data.groups ?? []);
@@ -161,15 +161,15 @@ export default function SuperUploadPage() {
       const data = (await response.json()) as GroupsResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось добавить VK-группу");
+        throw new Error(data.error ?? "Не получилось добавить VK Video источникову");
       }
 
       setGroupUrl("");
       setGroupName("");
       await loadGroups();
-      setMessage(data.message ?? "VK-группа добавлена");
+      setMessage(data.message ?? "VK Video источникова добавлена");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось добавить VK-группу");
+      setError(nextError instanceof Error ? nextError.message : "Не получилось добавить VK Video источникову");
     } finally {
       setIsAdding(false);
     }
@@ -188,13 +188,13 @@ export default function SuperUploadPage() {
       const data = (await response.json()) as GroupsResponse;
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось обновить VK-группу");
+        throw new Error(data.error ?? "Не получилось обновить VK Video источникову");
       }
 
       await loadGroups();
-      setMessage(data.message ?? "VK-группа обновлена");
+      setMessage(data.message ?? "VK Video источникова обновлена");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось обновить VK-группу");
+      setError(nextError instanceof Error ? nextError.message : "Не получилось обновить VK Video источникову");
     }
   }
 
@@ -213,13 +213,13 @@ export default function SuperUploadPage() {
       };
 
       if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось проверить VK-группы");
+        throw new Error(data.error ?? "Не получилось проверить VK Video источники");
       }
 
       await loadGroups();
-      setMessage(data.message ?? "VK-группы проверены, кандидаты обновлены");
+      setMessage(data.message ?? "VK Video источники проверены, кандидаты обновлены");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Не получилось проверить VK-группы");
+      setError(nextError instanceof Error ? nextError.message : "Не получилось проверить VK Video источники");
     } finally {
       setIsChecking(false);
     }
@@ -279,20 +279,20 @@ export default function SuperUploadPage() {
         </nav>
 
         <section className="card">
-          <h1>VK Супер залив</h1>
+          <h1>VK Video супер залив</h1>
           <p>
-            Добавляешь VK-группы с короткими смешными роликами, завод предлагает
-            2–3 видео под нарезку, скачивает выбранное VK-видео, проверяет звук,
+            Добавляешь VK Video каналы или VK-группы с короткими смешными видео, завод предлагает
+            2–3 видео под нарезку, скачивает выбранное видео, проверяет звук,
             режет его и генерирует русские названия из названия исходника.
           </p>
 
           <div className="grid grid-2">
             <label>
-              Ссылка на VK-группу
+              Ссылка на VK Video канал или VK-группу
               <input
                 value={groupUrl}
                 onChange={(event) => setGroupUrl(event.target.value)}
-                placeholder="https://vk.com/..."
+                placeholder="https://vkvideo.ru/@kinobro"
               />
             </label>
 
@@ -308,7 +308,7 @@ export default function SuperUploadPage() {
 
           <div className="inline-actions" style={{ marginTop: 14 }}>
             <button type="button" disabled={isAdding} onClick={addGroup}>
-              {isAdding ? "Добавляю..." : "Добавить VK-группу"}
+              {isAdding ? "Добавляю..." : "Добавить источник"}
             </button>
 
             <button
@@ -399,7 +399,7 @@ export default function SuperUploadPage() {
         <section className="card">
           <h2>Предложенные видео</h2>
           <p className="muted">
-            Нажми “Предложить 2–3 видео”. Завод возьмет свежие кандидаты из активных VK-групп.
+            Нажми “Предложить 2–3 видео”. Завод возьмет свежие кандидаты из активных VK Video источников.
           </p>
 
           <div className="source-grid">
@@ -418,7 +418,7 @@ export default function SuperUploadPage() {
                   </div>
 
                   <h3>{candidate.title}</h3>
-                  <p className="muted">{candidate.group?.name ?? "VK-группа"}</p>
+                  <p className="muted">{candidate.group?.name ?? "VK Video источникова"}</p>
                   <a href={candidate.sourceUrl} target="_blank" rel="noreferrer" className="success">
                     открыть VK-видео
                   </a>
@@ -436,14 +436,14 @@ export default function SuperUploadPage() {
           </div>
 
           {candidates.length === 0 ? (
-            <p className="muted">Пока нет кандидатов. Добавь VK-группу и нажми “Предложить 2–3 видео”.</p>
+            <p className="muted">Пока нет кандидатов. Добавь VK Video канал или VK Video источникову и нажми “Предложить 2–3 видео”.</p>
           ) : null}
         </section>
 
         <section style={{ height: 24 }} />
 
         <section className="card">
-          <h2>VK-группы</h2>
+          <h2>VK Video источники</h2>
 
           <table className="table">
             <thead>
@@ -481,7 +481,7 @@ export default function SuperUploadPage() {
               {groups.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="muted">
-                    VK-групп пока нет.
+                    VK Video источников пока нет.
                   </td>
                 </tr>
               ) : null}

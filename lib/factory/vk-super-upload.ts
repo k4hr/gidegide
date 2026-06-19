@@ -36,33 +36,84 @@ function normalizeVkGroupUrl(value: string) {
   const raw = value.trim();
 
   if (!raw) {
-    throw new Error("Вставь ссылку на VK-группу");
+    throw new Error("Вставь ссылку на VK-группу или VK Video канал");
   }
 
   const withProtocol = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
   const url = new URL(withProtocol);
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
 
+  if (host === "vkvideo.ru") {
+    const parts = url.pathname.split("/").filter(Boolean);
+    const first = parts[0] ?? "";
+
+    if (!first) {
+      throw new Error("Не получилось понять адрес VK Video канала");
+    }
+
+    if (first.startsWith("@")) {
+      return `https://vkvideo.ru/${first}`;
+    }
+
+    if (/^video-?\d+_\d+/i.test(first)) {
+      return `https://vkvideo.ru/${first}`;
+    }
+
+    throw new Error("Нужна ссылка на VK Video канал, например https://vkvideo.ru/@kinobro, или ссылка на VK-видео");
+  }
+
   if (host !== "vk.com" && host !== "m.vk.com") {
-    throw new Error("Нужна ссылка на группу VK, например https://vk.com/club123 или https://vk.com/publicname");
+    throw new Error("Нужна ссылка на VK-группу или VK Video канал, например https://vkvideo.ru/@kinobro");
   }
 
   const slug = url.pathname.split("/").filter(Boolean)[0];
 
   if (!slug) {
-    throw new Error("Не получилось понять адрес VK-группы");
+    throw new Error("Не получилось понять адрес VK-источника");
+  }
+
+  if (/^video-?\d+_\d+/i.test(slug)) {
+    return `https://vk.com/${slug}`;
   }
 
   return `https://vk.com/${slug}`;
 }
 
-function getGroupSlug(groupUrl: string) {
-  const url = new URL(groupUrl);
-  return url.pathname.split("/").filter(Boolean)[0] ?? "";
+function getSourceSlug(sourceUrl: string) {
+  const url = new URL(sourceUrl);
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const first = url.pathname.split("/").filter(Boolean)[0] ?? "";
+
+  if (host === "vkvideo.ru" && first.startsWith("@")) {
+    return first.slice(1);
+  }
+
+  return first;
 }
 
 function buildGroupScanUrls(groupUrl: string) {
-  const slug = getGroupSlug(groupUrl);
+  const url = new URL(groupUrl);
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const slug = getSourceSlug(groupUrl);
+
+  if (host === "vkvideo.ru") {
+    if (/^video-?\d+_\d+/i.test(url.pathname.split("/").filter(Boolean)[0] ?? "")) {
+      return [groupUrl];
+    }
+
+    return Array.from(
+      new Set([
+        groupUrl,
+        `https://vkvideo.ru/@${slug}`,
+        `https://vkvideo.ru/@${slug}/videos`,
+        `https://vkvideo.ru/@${slug}/all`,
+      ]),
+    );
+  }
+
+  if (/^video-?\d+_\d+/i.test(slug)) {
+    return [groupUrl];
+  }
 
   return Array.from(
     new Set([
@@ -72,9 +123,10 @@ function buildGroupScanUrls(groupUrl: string) {
       `https://vk.com/video/@${slug}`,
       `https://vk.com/video/${slug}`,
       `https://vk.com/videos/${slug}`,
-      `https://vk.com/clips/${slug}`,
       `https://m.vk.com/${slug}`,
       `https://m.vk.com/video/${slug}`,
+      `https://vkvideo.ru/@${slug}`,
+      `https://vkvideo.ru/@${slug}/videos`,
     ]),
   );
 }
@@ -82,7 +134,7 @@ function buildGroupScanUrls(groupUrl: string) {
 function extractMetaTitle(html: string) {
   const og = html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i)?.[1];
   const title = html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
-  return cleanText(og || title || "VK-группа").replace(/\s*\|\s*VK$/i, "");
+  return cleanText(og || title || "VK-источник").replace(/\s*\|\s*VK$/i, "");
 }
 
 function titleNear(html: string, position: number) {
@@ -214,7 +266,7 @@ async function collectVkVideoLinksFromPage(page: Page) {
         return cleanText(card ? card.textContent : element.textContent);
       };
 
-      return Array.from(document.querySelectorAll("a[href*='video'], a[href*='clip']"))
+      return Array.from(document.querySelectorAll("a[href*='video']"))
         .map((link) => {
           const href = link.href || link.getAttribute("href") || "";
           const text = [
@@ -241,9 +293,6 @@ function parseVkVideoIdFromUrl(value: string) {
   const video = normalized.match(/video(-?\d+_\d+)/i)?.[1];
   if (video) return video;
 
-  const clip = normalized.match(/clip(-?\d+_\d+)/i)?.[1];
-  if (clip) return clip;
-
   return null;
 }
 
@@ -261,7 +310,7 @@ function normalizeVkVideoUrl(value: string) {
 
 function videoTitleFromBrowserText(text: string) {
   const cleaned = cleanText(text)
-    .replace(/^(Смотреть|Видео|Клип|VK Видео|ВКонтакте)\s*/i, "")
+    .replace(/^(Смотреть|Видео|VK Видео|ВКонтакте)\s*/i, "")
     .replace(/\b(?:нравится|комментарии|поделиться|просмотры|просмотров)\b.*$/i, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -351,7 +400,7 @@ export async function listVkGroups() {
 
 export async function addVkGroup(input: { sourceUrl: string; name?: string | null; category?: string | null }) {
   const url = normalizeVkGroupUrl(input.sourceUrl);
-  const slug = getGroupSlug(url);
+  const slug = getSourceSlug(url);
   let name = cleanText(input.name || "");
 
   if (!name) {
@@ -396,7 +445,7 @@ export async function scanVkGroup(groupId: string, limit = 12) {
     prisma.factoryVkGroup.findUnique({ where: { id: groupId } }),
   );
 
-  if (!group) throw new Error("VK-группа не найдена");
+  if (!group) throw new Error("VK-источник или VK Video канал не найдены");
 
   const parsed: ParsedVkVideo[] = [];
   let lastError: unknown = null;
@@ -425,7 +474,7 @@ export async function scanVkGroup(groupId: string, limit = 12) {
     const message =
       lastError instanceof Error
         ? lastError.message
-        : "VK не отдал видео на публичной странице. Часто такое бывает, если группа закрывает видео от гостей или VK показывает страницу только после авторизации.";
+        : "VK не отдал видео на публичной странице. Часто такое бывает, если источник закрывает видео от гостей или VK показывает страницу только после авторизации.";
 
     await withDbRetry(() =>
       prisma.factoryVkGroup.update({
@@ -434,7 +483,7 @@ export async function scanVkGroup(groupId: string, limit = 12) {
       }),
     );
 
-    throw new Error(`Не нашел видео в группе ${group.name}. ${message}`);
+    throw new Error(`Не нашел видео в источнике ${group.name}. ${message}`);
   }
 
   const candidates = [];
@@ -509,7 +558,7 @@ export async function scanAllVkGroups(input: { limitPerGroup?: number } = {}) {
       errors.push({
         groupId: group.id,
         name: group.name,
-        message: error instanceof Error ? error.message : "Не получилось проверить группу",
+        message: error instanceof Error ? error.message : "Не получилось проверить источник",
       });
     }
   }
