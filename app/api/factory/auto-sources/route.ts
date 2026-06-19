@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { normalizeVkSourceUrl } from "@/lib/factory/vk-auto-source";
+import { getVkDownloadProviderConfig } from "@/lib/factory/vk-download-provider";
 
 export const runtime = "nodejs";
 
@@ -21,7 +22,7 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
     include: { chat: { select: { chatId: true, username: true } }, runs: { orderBy: { startedAt: "desc" }, take: 1 }, _count: { select: { videos: true } } },
   });
-  return NextResponse.json({ sources });
+  return NextResponse.json({ sources, downloader: getVkDownloadProviderConfig() });
 }
 
 export async function POST(request: Request) {

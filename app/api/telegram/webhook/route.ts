@@ -219,7 +219,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   const telegramJob = await prisma.factoryTelegramJob.create({
     data: { chatId: chat.id, sourceUrl, settings: DEFAULT_SETTINGS },
   });
-  const sent = await sendTelegramMessage(chatId, "🎬 Ссылка получена.\nЧто делаем?", previewKeyboard(telegramJob.id));
+  const sent = await sendTelegramMessage(chatId, "🎬 Видео получено.\nСкачивание будет через vkvideodownload.com.\n\nЧто делаем?", previewKeyboard(telegramJob.id));
   await prisma.factoryTelegramJob.update({ where: { id: telegramJob.id }, data: { telegramMessageId: String(sent.message_id) } });
 }
 
@@ -264,12 +264,12 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
         const videos = await getVkSourceVideos({ sourceUrl: source.sourceUrl, limit: 3 });
         if (sourceAction === "check") return editTelegramMessage(chatId, sourceMessageId, `👀 Источник доступен. Найдено видео: ${videos.length}.`, autoSourceKeyboard(source.id));
         await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: null } });
-        return editTelegramMessage(chatId, sourceMessageId, `✅ Источник добавлен.\nНайдено видео: ${videos.length}.\nСегодня или завтра система возьмёт до ${source.dailyLimit} новых видео и поставит публикации с ${source.publishStartHour}:00 до ${source.publishEndHour}:00.`);
+        return editTelegramMessage(chatId, sourceMessageId, `✅ Источник добавлен.\nСписок видео получаю из публичного VK-раздела.\nСкачивание видео: через vkvideodownload.com.\nКаждый день беру до ${source.dailyLimit} новых видео и публикую с ${source.publishStartHour}:00 до ${source.publishEndHour}:00.\n\nСейчас найдено: ${videos.length}.`);
       } catch (error) {
         const reason = humanizeFactoryError(error);
         if (sourceAction === "add") {
           await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: reason } });
-          return editTelegramMessage(chatId, sourceMessageId, `⚠️ Источник добавлен, но сейчас видео не найдено. Я попробую снова при ежедневном запуске.\n\n${reason}`);
+          return editTelegramMessage(chatId, sourceMessageId, `⚠️ Источник добавлен, но список видео сейчас не прочитался.\nСкачивание отдельных VK-видео через vkvideodownload.com подключено, но для автозабора из группы нужен доступный публичный список видео.\nЯ попробую снова при ежедневном запуске.\n\n${reason}`);
         }
         return editTelegramMessage(chatId, sourceMessageId, `❌ Не получилось прочитать VK-источник.\n${reason}`, autoSourceKeyboard(source.id));
       }

@@ -120,6 +120,7 @@ export function extractVkVideoUrl(text: string) {
 export function humanizeFactoryError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
   const lower = message.toLowerCase();
+  if (lower.includes("vkvideodownload.com")) return message.trim();
   if (lower.includes("database_url")) return "не настроен DATABASE_URL";
   if (lower.includes("r2") && (lower.includes("not") || lower.includes("не "))) return "R2 не настроен";
   if (lower.includes("youtube") && (lower.includes("token") || lower.includes("oauth"))) return "истёк YouTube OAuth-токен";

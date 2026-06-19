@@ -828,7 +828,7 @@ async function processOneJob() {
               await updateVkAutoSourceVideoFromJob(job.id, {
                 status: "PUBLISHED",
                 url: result.url,
-              });
+              }).catch((error) => console.error("VK auto-source publish update failed:", error));
             } catch (error) {
               await safeDb(() =>
                 prisma.factoryPublish.update({
@@ -851,7 +851,7 @@ async function processOneJob() {
               await updateVkAutoSourceVideoFromJob(job.id, {
                 status: "FAILED",
                 error,
-              });
+              }).catch((updateError) => console.error("VK auto-source failure update failed:", updateError));
             }
           }
 
@@ -952,14 +952,14 @@ async function processOneJob() {
       await updateVkAutoSourceVideoFromJob(job.id, {
         status: "FAILED",
         error: new Error("Задача отменена"),
-      });
+      }).catch((updateError) => console.error("VK auto-source cancel update failed:", updateError));
     } else {
       await markJobFailed(job.id, error);
       await notifyTelegramJob(job.id, `❌ Ошибка: ${humanizeFactoryError(error)}`);
       await updateVkAutoSourceVideoFromJob(job.id, {
         status: "FAILED",
         error,
-      });
+      }).catch((updateError) => console.error("VK auto-source failure update failed:", updateError));
     }
 
     if (sourcePath) {

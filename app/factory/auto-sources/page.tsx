@@ -17,17 +17,25 @@ type Source = {
   _count: { videos: number };
 };
 
+type DownloaderConfig = {
+  provider: string;
+  allowYtDlpFallback: boolean;
+  preferredQuality: string;
+};
+
 export default function AutoSourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [downloader, setDownloader] = useState<DownloaderConfig | null>(null);
 
   const load = useCallback(async () => {
     const response = await fetch("/api/factory/auto-sources", { cache: "no-store" });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Не удалось загрузить источники");
     setSources(data.sources);
+    setDownloader(data.downloader);
   }, []);
 
   useEffect(() => { load().catch((error) => setMessage(error.message)); }, [load]);
@@ -70,6 +78,7 @@ export default function AutoSourcesPage() {
     <main className="page"><div className="shell">
       <nav className="nav"><Link href="/factory">Завод</Link><Link href="/factory/super-upload">Супер залив</Link><Link href="/factory/auto-sources">VK автозабор</Link><Link href="/factory/accounts">Аккаунты</Link></nav>
       <section className="factory-hero-card"><div><p className="factory-eyebrow">Content Factory</p><h1>VK автозабор</h1><p>Ежедневно находит новые видео, создаёт по одной публикации на видео и распределяет их по окну.</p></div></section>
+      <section className="factory-panel"><h2>Downloader</h2><div className="factory-grid-cards"><div className="factory-stat-card"><span>Provider</span><strong style={{ fontSize: 20 }}>{downloader?.provider || "vkvideodownload"}</strong></div><div className="factory-stat-card"><span>Основной сервис</span><strong style={{ fontSize: 20 }}>vkvideodownload.com</strong></div><div className="factory-stat-card"><span>Качество</span><strong style={{ fontSize: 24 }}>{downloader?.preferredQuality || "720p"}</strong></div><div className="factory-stat-card"><span>yt-dlp fallback</span><strong style={{ fontSize: 24 }}>{downloader?.allowYtDlpFallback ? "ON" : "OFF"}</strong></div></div></section>
       <section className="factory-panel">
         <h2>Добавить источник</h2>
         <form className="inline-actions" onSubmit={add}><input required type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://vk.com/videos-123456789"/><button disabled={busy === "add"}>Добавить</button></form>

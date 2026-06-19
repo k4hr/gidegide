@@ -761,6 +761,43 @@ export async function scanVkGroup(groupId: string, limit = 12) {
   return candidates;
 }
 
+export async function getPublicVkSourceVideos(input: {
+  sourceUrl: string;
+  limit: number;
+}) {
+  const sourceUrl = normalizeVkGroupUrl(input.sourceUrl);
+  const parsed: ParsedVkVideo[] = [];
+  let lastError: unknown = null;
+
+  for (const url of buildGroupScanUrls(sourceUrl)) {
+    try {
+      parsed.push(...parseVkVideosFromHtml(await fetchVkHtml(url)));
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const unique = Array.from(
+    new Map(parsed.map((video) => [video.sourceVideoId, video])).values(),
+  ).slice(0, Math.max(1, Math.min(200, input.limit)));
+
+  if (!unique.length) {
+    throw new Error(
+      lastError instanceof Error
+        ? `Публичный список VK недоступен: ${lastError.message}`
+        : "Публичный список VK не содержит видео",
+    );
+  }
+
+  return unique.map((video) => ({
+    providerVideoId: video.sourceVideoId,
+    videoUrl: normalizeVkVideoUrl(video.sourceUrl),
+    title: video.title,
+    durationSec: video.durationSeconds ?? undefined,
+    thumbnailUrl: video.thumbnailUrl ?? undefined,
+  }));
+}
+
 export async function buildVkDailyCandidates(input: { limit?: number } = {}) {
   const limit = Math.max(1, Math.min(20, input.limit ?? 3));
 

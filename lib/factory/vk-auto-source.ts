@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
 import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
 import { runCommand } from "@/lib/factory/video";
+import { getPublicVkSourceVideos } from "@/lib/factory/vk-super-upload";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -117,6 +118,9 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
     try { videos = await getViaVkApi(sourceUrl, limit, token); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
   }
   if (!videos.length) {
+    try { videos = await getPublicVkSourceVideos({ sourceUrl, limit }); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+  }
+  if (!videos.length && process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true") {
     try { videos = await getViaYtDlp(sourceUrl, limit); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
   }
   const unique = new Map<string, VkSourceVideo>();
@@ -127,8 +131,7 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
     if (!unique.has(key)) unique.set(key, { ...video, videoUrl: normalizedVideoUrl });
   }
   if (!unique.size) {
-    if (!token) throw new Error("❌ Не получилось прочитать VK-источник. Нужен VK_SERVICE_TOKEN или рабочий fallback через yt-dlp.");
-    throw new Error(errors.join("; ") || "VK не отдал список видео");
+    throw new Error("Не получилось получить список видео из VK-источника. Скачивание отдельных видео через vkvideodownload.com работает, но для группы нужен доступный публичный список видео.");
   }
   return Array.from(unique.values()).slice(0, limit);
 }
@@ -136,6 +139,7 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
 export function humanizeVkAutoSourceError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
   const lower = message.toLowerCase();
+  if (lower.includes("не получилось получить список видео из vk-источника")) return message;
   if (lower.includes("service_token") || lower.includes("access token")) return "VK_SERVICE_TOKEN не настроен или недействителен";
   if (lower.includes("yt-dlp")) return "yt-dlp не смог получить список";
   if (lower.includes("ffmpeg")) return "ошибка ffmpeg";
@@ -268,13 +272,79 @@ export async function processDueVkAutoSources(now = new Date()) {
   return started;
 }
 
+async function queueReplacementVideo(input: {
+  source: {
+    id: string;
+    dailyLimit: number;
+    publishStartHour: number;
+    publishEndHour: number;
+    timezone: string;
+  };
+  run: {
+    id: string;
+    startedAt: Date;
+    createdJobCount: number;
+  };
+}) {
+  if (input.run.createdJobCount >= input.source.dailyLimit * 2) return false;
+  const successfulOrActive = await prisma.factoryVkAutoSourceVideo.count({
+    where: {
+      sourceId: input.source.id,
+      pickedAt: { gte: input.run.startedAt },
+      status: { in: ["PUBLISHED", "QUEUED", "PROCESSING"] },
+    },
+  });
+  if (successfulOrActive >= input.source.dailyLimit) return false;
+  const replacement = await prisma.factoryVkAutoSourceVideo.findFirst({
+    where: { sourceId: input.source.id, status: "NEW", factoryJobId: null },
+    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  });
+  if (!replacement) return false;
+  const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({
+    where: { id: replacement.id, status: "NEW", factoryJobId: null },
+    data: { status: "PROCESSING", pickedAt: new Date(), error: null },
+  });
+  if (!claimed.count) return false;
+  try {
+    const job = await createVkMovieJob({
+      sourceUrl: replacement.videoUrl,
+      movieTitle: replacement.title || "VK видео",
+      clipCount: 1,
+      clipSeconds: Math.max(15, Math.min(60, replacement.durationSec || 60)),
+      scheduleMode: "NOW",
+      scheduleStartHour: input.source.publishStartHour,
+      scheduleEndHour: input.source.publishEndHour,
+      scheduleIntervalMinutes: 60,
+      timeZone: input.source.timezone,
+      scheduledAt: new Date(),
+    });
+    await prisma.$transaction([
+      prisma.factoryVkAutoSourceVideo.update({ where: { id: replacement.id }, data: { status: "QUEUED", factoryJobId: job.id } }),
+      prisma.factoryVkAutoSourceRun.update({ where: { id: input.run.id }, data: { pickedCount: { increment: 1 }, createdJobCount: { increment: 1 } } }),
+    ]);
+    await notifyVkAutoSourceRun(input.run.id, `🔄 Вместо неудачного видео взято следующее: ${replacement.title || replacement.videoUrl}`);
+    return true;
+  } catch (error) {
+    await prisma.$transaction([
+      prisma.factoryVkAutoSourceVideo.update({ where: { id: replacement.id }, data: { status: "FAILED", error: humanizeVkAutoSourceError(error) } }),
+      prisma.factoryVkAutoSourceRun.update({ where: { id: input.run.id }, data: { pickedCount: { increment: 1 }, failedCount: { increment: 1 } } }),
+    ]);
+    return false;
+  }
+}
+
 export async function updateVkAutoSourceVideoFromJob(factoryJobId: string, result: { status: "PUBLISHED" | "FAILED"; url?: string; error?: unknown }) {
   const video = await prisma.factoryVkAutoSourceVideo.findFirst({ where: { factoryJobId }, include: { source: true } });
   if (!video) return;
   const error = result.status === "FAILED" ? humanizeVkAutoSourceError(result.error) : null;
   await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: result.status, publishedUrl: result.url || null, error } });
-  const run = await prisma.factoryVkAutoSourceRun.findFirst({ where: { sourceId: video.sourceId, status: "JOBS_CREATED", startedAt: { lte: video.pickedAt || new Date() } }, orderBy: { startedAt: "desc" } });
+  let run = await prisma.factoryVkAutoSourceRun.findFirst({ where: { sourceId: video.sourceId, status: "JOBS_CREATED", startedAt: { lte: video.pickedAt || new Date() } }, orderBy: { startedAt: "desc" } });
   if (!run) return;
+  if (result.status === "FAILED") {
+    await queueReplacementVideo({ source: video.source, run });
+    run = await prisma.factoryVkAutoSourceRun.findUnique({ where: { id: run.id } });
+    if (!run) return;
+  }
   const runVideos = await prisma.factoryVkAutoSourceVideo.findMany({ where: { sourceId: video.sourceId, factoryJobId: { not: null }, pickedAt: { gte: run.startedAt } }, select: { status: true } });
   const publishedCount = runVideos.filter((item) => item.status === "PUBLISHED").length;
   const failedJobs = runVideos.filter((item) => item.status === "FAILED").length;
