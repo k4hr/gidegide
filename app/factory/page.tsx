@@ -166,6 +166,7 @@ export default function FactoryDashboardPage() {
           <Link href="/factory/music">Музыка</Link>
           <Link href="/factory/templates">Шаблоны</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
+          <Link href="/factory/auto-sources">VK автозабор</Link>
         </nav>
 
         <section className="factory-hero-card">
