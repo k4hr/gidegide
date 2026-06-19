@@ -1,8 +1,13 @@
 import type { FactoryPublishTiming } from "@prisma/client";
 
 const NEW_YORK_TIME_ZONE = "America/New_York";
+const MOSCOW_TIME_ZONE = "Europe/Moscow";
 
-const PUBLISH_SLOTS: Record<FactoryPublishTiming, number | null> = {
+export const USA_SMART_CLIPS_PER_SLOT = 1;
+
+type RegularPublishTiming = Exclude<FactoryPublishTiming, "USA_SMART">;
+
+const PUBLISH_SLOTS: Record<RegularPublishTiming, number | null> = {
   NOW: null,
   NY_14: 14,
   NY_17: 17,
@@ -10,16 +15,84 @@ const PUBLISH_SLOTS: Record<FactoryPublishTiming, number | null> = {
   NY_22: 22,
 };
 
-type TimeZoneParts = {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-  second: number;
+const PUBLISH_LABELS: Record<FactoryPublishTiming, string> = {
+  NOW: "Загрузить сейчас",
+  NY_14: "14:00 New York = 21:00 МСК",
+  NY_17: "17:00 New York = 00:00 МСК",
+  NY_20: "20:00 New York = 03:00 МСК",
+  NY_22: "22:00 New York = 05:00 МСК",
+  USA_SMART: "Грамотный залив под USA",
 };
 
-function getTimeZoneParts(date: Date, timeZone: string): TimeZoneParts {
+const USA_SMART_MOSCOW_SLOTS: Array<{
+  index: number;
+  hour: number;
+  minute: number;
+  label: string;
+}> = [
+  {
+    index: 1,
+    hour: 21,
+    minute: 0,
+    label: "21:00 МСК — ролик 1",
+  },
+  {
+    index: 2,
+    hour: 21,
+    minute: 15,
+    label: "21:15 МСК — ролик 2",
+  },
+  {
+    index: 3,
+    hour: 23,
+    minute: 0,
+    label: "23:00 МСК — ролик 3",
+  },
+  {
+    index: 4,
+    hour: 23,
+    minute: 15,
+    label: "23:15 МСК — ролик 4",
+  },
+  {
+    index: 5,
+    hour: 1,
+    minute: 0,
+    label: "01:00 МСК — ролик 5",
+  },
+  {
+    index: 6,
+    hour: 1,
+    minute: 15,
+    label: "01:15 МСК — ролик 6",
+  },
+  {
+    index: 7,
+    hour: 3,
+    minute: 0,
+    label: "03:00 МСК — ролик 7",
+  },
+  {
+    index: 8,
+    hour: 3,
+    minute: 15,
+    label: "03:15 МСК — ролик 8",
+  },
+  {
+    index: 9,
+    hour: 5,
+    minute: 0,
+    label: "05:00 МСК — ролик 9",
+  },
+  {
+    index: 10,
+    hour: 5,
+    minute: 15,
+    label: "05:15 МСК — ролик 10",
+  },
+];
+
+function getTimeZoneParts(date: Date, timeZone: string) {
   const formatter = new Intl.DateTimeFormat("en-US", {
     timeZone,
     year: "numeric",
@@ -28,27 +101,32 @@ function getTimeZoneParts(date: Date, timeZone: string): TimeZoneParts {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hourCycle: "h23",
+    hour12: false,
   });
 
   const parts = formatter.formatToParts(date);
-  const value = (type: string) =>
-    Number(parts.find((part) => part.type === type)?.value ?? 0);
+  const result: Record<string, number> = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      result[part.type] = Number(part.value);
+    }
+  }
 
   return {
-    year: value("year"),
-    month: value("month"),
-    day: value("day"),
-    hour: value("hour"),
-    minute: value("minute"),
-    second: value("second"),
+    year: result.year,
+    month: result.month,
+    day: result.day,
+    hour: result.hour === 24 ? 0 : result.hour,
+    minute: result.minute,
+    second: result.second,
   };
 }
 
 function getTimeZoneOffsetMs(date: Date, timeZone: string) {
   const parts = getTimeZoneParts(date, timeZone);
 
-  const zonedAsUtc = Date.UTC(
+  const asUtc = Date.UTC(
     parts.year,
     parts.month - 1,
     parts.day,
@@ -57,93 +135,136 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string) {
     parts.second,
   );
 
-  return zonedAsUtc - date.getTime();
+  return asUtc - date.getTime();
 }
 
-function zonedTimeToUtc(input: {
-  timeZone: string;
+function makeDateInTimeZone(input: {
   year: number;
   month: number;
   day: number;
   hour: number;
   minute: number;
+  second?: number;
+  timeZone: string;
 }) {
-  const localAsUtc = Date.UTC(
-    input.year,
-    input.month - 1,
-    input.day,
-    input.hour,
-    input.minute,
-    0,
+  const utcGuess = new Date(
+    Date.UTC(
+      input.year,
+      input.month - 1,
+      input.day,
+      input.hour,
+      input.minute,
+      input.second ?? 0,
+    ),
   );
 
-  let utc = localAsUtc;
+  const offsetMs = getTimeZoneOffsetMs(utcGuess, input.timeZone);
 
-  for (let i = 0; i < 3; i += 1) {
-    const offset = getTimeZoneOffsetMs(new Date(utc), input.timeZone);
-    utc = localAsUtc - offset;
-  }
-
-  return new Date(utc);
+  return new Date(utcGuess.getTime() - offsetMs);
 }
 
-function addOneCalendarDay(input: { year: number; month: number; day: number }) {
-  const next = new Date(
-    Date.UTC(input.year, input.month - 1, input.day + 1, 12, 0, 0),
+function addDaysToDateParts(input: {
+  year: number;
+  month: number;
+  day: number;
+  days: number;
+}) {
+  const date = new Date(
+    Date.UTC(input.year, input.month - 1, input.day + input.days, 12, 0, 0),
   );
 
   return {
-    year: next.getUTCFullYear(),
-    month: next.getUTCMonth() + 1,
-    day: next.getUTCDate(),
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
   };
 }
 
-export function getNextNewYorkPublishAt(
-  publishTiming: FactoryPublishTiming,
-  now = new Date(),
-) {
-  const slotHour = PUBLISH_SLOTS[publishTiming];
+function getNextTimeInTimeZone(input: {
+  hour: number;
+  minute: number;
+  timeZone: string;
+  now?: Date;
+}) {
+  const now = input.now ?? new Date();
+  const nowParts = getTimeZoneParts(now, input.timeZone);
 
-  if (slotHour === null) {
+  let targetParts = {
+    year: nowParts.year,
+    month: nowParts.month,
+    day: nowParts.day,
+  };
+
+  let target = makeDateInTimeZone({
+    ...targetParts,
+    hour: input.hour,
+    minute: input.minute,
+    second: 0,
+    timeZone: input.timeZone,
+  });
+
+  if (target.getTime() <= now.getTime()) {
+    targetParts = addDaysToDateParts({
+      ...targetParts,
+      days: 1,
+    });
+
+    target = makeDateInTimeZone({
+      ...targetParts,
+      hour: input.hour,
+      minute: input.minute,
+      second: 0,
+      timeZone: input.timeZone,
+    });
+  }
+
+  return target;
+}
+
+export function getPublishTimingLabel(value: FactoryPublishTiming) {
+  return PUBLISH_LABELS[value] ?? "Загрузить сейчас";
+}
+
+export function getNextNewYorkPublishAt(value: FactoryPublishTiming) {
+  if (value === "USA_SMART") {
     return null;
   }
 
-  const ny = getTimeZoneParts(now, NEW_YORK_TIME_ZONE);
+  const hour = PUBLISH_SLOTS[value];
 
-  let publishDate = {
-    year: ny.year,
-    month: ny.month,
-    day: ny.day,
-  };
-
-  const alreadyPassedToday = ny.hour > slotHour || ny.hour === slotHour;
-
-  if (alreadyPassedToday) {
-    publishDate = addOneCalendarDay(publishDate);
+  if (hour === null) {
+    return null;
   }
 
-  return zonedTimeToUtc({
-    timeZone: NEW_YORK_TIME_ZONE,
-    year: publishDate.year,
-    month: publishDate.month,
-    day: publishDate.day,
-    hour: slotHour,
+  return getNextTimeInTimeZone({
+    hour,
     minute: 0,
+    timeZone: NEW_YORK_TIME_ZONE,
   });
 }
 
-export function getPublishTimingLabel(publishTiming: FactoryPublishTiming) {
-  if (publishTiming === "NOW") return "Загрузить сейчас";
-  if (publishTiming === "NY_14") return "14:00 New York = 21:00 МСК";
-  if (publishTiming === "NY_17") return "17:00 New York = 00:00 МСК";
-  if (publishTiming === "NY_20") return "20:00 New York = 03:00 МСК";
-  return "22:00 New York = 05:00 МСК";
+export function getUsaSmartUploadSlots() {
+  return USA_SMART_MOSCOW_SLOTS.map((slot) => ({
+    ...slot,
+    scheduledAt: getNextTimeInTimeZone({
+      hour: slot.hour,
+      minute: slot.minute,
+      timeZone: MOSCOW_TIME_ZONE,
+    }),
+  }));
 }
 
 export function formatScheduledAtForLabel(date: Date) {
   return new Intl.DateTimeFormat("ru-RU", {
     timeZone: NEW_YORK_TIME_ZONE,
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+export function formatMoscowScheduledAtForLabel(date: Date) {
+  return new Intl.DateTimeFormat("ru-RU", {
+    timeZone: MOSCOW_TIME_ZONE,
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
