@@ -421,7 +421,7 @@ export default function MovieMomentsPage() {
             <label>
               Шаблон рендера
               <select value={templateId} onChange={(event) => setTemplateId(event.target.value)} required>
-                <option value="CENTER_VIDEO">Кино-шаблон — видео по центру + zoom 108%</option>
+                <option value="CENTER_VIDEO">Кино-шаблон — видео по центру + zoom 130%</option>
                 <option value="">Выбери шаблон</option>
                 {shortsTemplates.map((template) => (
                   <option key={template.id} value={template.id}>{template.name}</option>
@@ -547,7 +547,7 @@ export default function MovieMomentsPage() {
               <b>Как это работает</b>
               <span>
                 Worker анализирует фильм через smart cut: движение, звук, смены сцен и пики. Потом выбирает лучшие моменты,
-                рендерит видео по центру с мягким фоном и zoom 108%, генерирует уникальные title, а описание берет из твоего поля выше.
+                рендерит видео по центру с мягким фоном и zoom 130%, генерирует уникальные title, а описание берет из твоего поля выше.
               </span>
             </div>
 

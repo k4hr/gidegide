@@ -23,7 +23,7 @@ function buildCenteredMovieFilter() {
   return [
     "[0:v]split=2[bgsrc][fgsrc]",
     "[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=32,eq=brightness=-0.07:saturation=0.85,setsar=1[bg]",
-    "[fgsrc]scale='trunc(min(1080/iw\\,1920/ih)*iw*1.08/2)*2':'trunc(min(1080/iw\\,1920/ih)*ih*1.08/2)*2',crop='trunc(min(iw\\,1080)/2)*2':'trunc(min(ih\\,1920)/2)*2',setsar=1[fg]",
+    "[fgsrc]scale='trunc(min(1080/iw\\,1920/ih)*iw*1.30/2)*2':'trunc(min(1080/iw\\,1920/ih)*ih*1.30/2)*2',crop='trunc(min(iw\\,1080)/2)*2':'trunc(min(ih\\,1920)/2)*2',setsar=1[fg]",
     "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]",
   ].join(";");
 }

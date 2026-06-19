@@ -448,7 +448,7 @@ export default function SuperUploadPage() {
                 onChange={(event) => setSelectedTemplateId(event.target.value)}
               >
                 <option value="CENTER_VIDEO">
-                  Кино-шаблон — видео по центру + zoom 108%
+                  Кино-шаблон — видео по центру + zoom 130%
                 </option>
                 {templates.length === 0 ? (
                   <option value="">Нет шаблонов</option>
