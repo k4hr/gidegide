@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Lana Content Factory",
-  description: "Автоматический завод коротких видео для YouTube Shorts и TikTok.",
+  title: "DESTROY-ALGORITM — уроки по алгоритмам соцсетей",
+  description:
+    "Мини-уроки по Instagram, TikTok и YouTube Shorts. Разбери алгоритмы соцсетей и начни делать контент, который получает охваты.",
 };
 
 export default function RootLayout({

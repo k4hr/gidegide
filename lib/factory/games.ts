@@ -894,6 +894,59 @@ export function buildFactoryDescription(input: {
   return `${input.title}\n\n${angle}\n${sourceContext}\n\n${hashtags}`;
 }
 
+
+function cleanRussianSourceTitle(value?: string | null) {
+  return (value ?? "")
+    .replace(/#\S+/g, "")
+    .replace(/https?:\/\/\S+/g, "")
+    .replace(/[|•]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildVkRussianTitle(input: { sourceTitle?: string | null; clipIndex: number }) {
+  const base = cleanRussianSourceTitle(input.sourceTitle);
+  const fallback = [
+    "Котик выдал слишком смешную реакцию",
+    "Этот момент с котом хочется пересмотреть",
+    "Кот явно был не готов к такому повороту",
+    "Смешной момент с котиком пошел не по плану",
+    "Этот кот устроил хаос за пару секунд",
+    "Реакция кота получилась слишком жизненной",
+    "Котик сделал этот момент смешнее в два раза",
+    "Этот пушистый момент невозможно смотреть спокойно",
+  ];
+  const endings = [
+    " — смешной момент",
+    " — реакция котика",
+    " — это надо видеть",
+    " — неожиданный поворот",
+    " — короткая нарезка",
+    " — слишком смешно",
+    " — момент дня",
+    " — котик удивил",
+  ];
+
+  if (!base || base.length < 6 || /^(video|clip|без названия|смешное видео)$/i.test(base)) {
+    return fallback[(input.clipIndex - 1) % fallback.length];
+  }
+
+  const shortBase = base.length > 62 ? `${base.slice(0, 62).trim()}…` : base;
+  return `${shortBase}${endings[(input.clipIndex - 1) % endings.length]}`.slice(0, 95);
+}
+
+function buildVkRussianDescription(sourceTitle?: string | null) {
+  const title = cleanRussianSourceTitle(sourceTitle);
+
+  return [
+    title ? `Смешная короткая нарезка: ${title}` : "Смешная короткая нарезка с котиками и животными.",
+    "",
+    "Подборка сделана автоматически из VK-видео.",
+    "",
+    "#котики #животные #shorts",
+  ].join("\n");
+}
+
 /**
  * Старый wrapper для worker/factory-worker.ts.
  *
@@ -914,6 +967,13 @@ export function buildClipTitle(input: {
 }) {
   const titlePrefix = input.titlePrefix ?? input.customPrefix ?? "auto mix";
   const index = input.index ?? input.clipIndex ?? 1;
+
+  if (titlePrefix.startsWith("VK_RU:")) {
+    return buildVkRussianTitle({
+      sourceTitle: input.sourceTitle ?? titlePrefix.replace(/^VK_RU:/, ""),
+      clipIndex: index,
+    });
+  }
 
   return buildFactoryTitle({
     game: input.game,
@@ -940,6 +1000,11 @@ export function buildClipDescription(input: {
   sourceTitle?: string | null;
 }) {
   const titlePrefix = input.customPrefix ?? input.titlePrefix ?? getGameMeta(input.game).titlePrefix;
+
+  if (titlePrefix.startsWith("VK_RU:")) {
+    return buildVkRussianDescription(input.sourceTitle ?? titlePrefix.replace(/^VK_RU:/, ""));
+  }
+
   const title =
     input.title ??
     input.clipTitle ??

@@ -1,6 +1,5 @@
 "use client";
 
-import type { FormEvent } from "react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
@@ -15,17 +14,6 @@ type FactoryGame =
   | "BRAWL_STARS"
   | "DOTA2"
   | "OTHER";
-
-type FactoryPublishTiming =
-  | "NOW"
-  | "NY_14"
-  | "NY_17"
-  | "NY_20"
-  | "NY_22"
-  | "USA_SMART";
-
-type FactoryCutMode = "SEQUENTIAL" | "SMART_LITE" | "SMART_HOOK_AI" | "ROBLOX_STORY_AI";
-type PublishAction = "DEFAULT" | "USA_SMART";
 
 type FactoryTemplate = {
   id: string;
@@ -45,7 +33,6 @@ type TargetState = {
   enabled: boolean;
   templateId: string;
   titlePrefix: string;
-  maxClips: number;
 };
 
 type FactoryJob = {
@@ -54,7 +41,6 @@ type FactoryJob = {
   sourceOriginalName: string | null;
   sourceSizeBytes: number | null;
   clipSeconds: number;
-  clipStartIndex: number;
   titlePrefix: string;
   game: FactoryGame;
   platforms: string[];
@@ -63,25 +49,12 @@ type FactoryJob = {
   totalClips: number;
   progress: number;
   progressLabel: string | null;
-  publishTiming: FactoryPublishTiming;
-  scheduledAt: string | null;
-  cutMode: FactoryCutMode;
-  smartStepSeconds: number;
-  smartCandidates: number;
-  smartMinGapSeconds: number;
-  hookPreviewSeconds: number;
-  storyStyle?: string;
-  storyMinSeconds?: number;
-  storyMaxSeconds?: number;
-  renderFormat?: "SHORTS_9_16" | "LONG_16_9";
-  longVideoTitle?: string | null;
   cancelRequested: boolean;
   createdAt: string;
   targets: {
     id: string;
     platform: FactoryPlatform;
     titlePrefix: string | null;
-    maxClips: number;
     account: FactoryAccount;
     template: FactoryTemplate | null;
   }[];
@@ -108,77 +81,16 @@ const gameOptions: Array<{
   label: string;
   titlePrefix: string;
 }> = [
-  {
-    value: "ROBLOX",
-    label: "Roblox",
-    titlePrefix: "auto mix",
-  },
-  {
-    value: "FORTNITE",
-    label: "Fortnite",
-    titlePrefix: "auto mix",
-  },
-  {
-    value: "MINECRAFT",
-    label: "Minecraft",
-    titlePrefix: "auto mix",
-  },
-  {
-    value: "BRAWL_STARS",
-    label: "Brawl Stars",
-    titlePrefix: "auto mix",
-  },
-  {
-    value: "DOTA2",
-    label: "Dota 2",
-    titlePrefix: "auto mix",
-  },
-  {
-    value: "OTHER",
-    label: "Other",
-    titlePrefix: "auto mix",
-  },
-];
-
-const publishTimingOptions: Array<{
-  value: Exclude<FactoryPublishTiming, "USA_SMART">;
-  title: string;
-  description: string;
-}> = [
-  {
-    value: "NOW",
-    title: "Загрузить сейчас",
-    description:
-      "Worker начнет обработку и публикацию сразу после создания задачи.",
-  },
-  {
-    value: "NY_14",
-    title: "14:00 New York = 21:00 МСК",
-    description: "Задача будет ждать ближайшее 14:00 по New York time.",
-  },
-  {
-    value: "NY_17",
-    title: "17:00 New York = 00:00 МСК",
-    description: "Задача будет ждать ближайшее 17:00 по New York time.",
-  },
-  {
-    value: "NY_20",
-    title: "20:00 New York = 03:00 МСК",
-    description: "Основное вечернее окно для USA-аудитории.",
-  },
-  {
-    value: "NY_22",
-    title: "22:00 New York = 05:00 МСК",
-    description: "Позднее вечернее окно для USA-аудитории.",
-  },
+  { value: "ROBLOX", label: "Roblox", titlePrefix: "Lana watches Roblox" },
+  { value: "FORTNITE", label: "Fortnite", titlePrefix: "Lana watches Fortnite" },
+  { value: "MINECRAFT", label: "Minecraft", titlePrefix: "Lana watches Minecraft" },
+  { value: "BRAWL_STARS", label: "Brawl Stars", titlePrefix: "Lana watches Brawl Stars" },
+  { value: "DOTA2", label: "Dota 2", titlePrefix: "Lana watches Dota 2" },
+  { value: "OTHER", label: "Other", titlePrefix: "Lana watches games" },
 ];
 
 function canCancel(job: FactoryJob) {
   return !["DONE", "FAILED", "CANCELED"].includes(job.status);
-}
-
-function canRunNow(job: FactoryJob) {
-  return job.status === "QUEUED" && Boolean(job.scheduledAt);
 }
 
 function formatMb(bytes: number | null) {
@@ -195,63 +107,13 @@ function getDefaultTemplateId(templates: FactoryTemplate[]) {
   );
 }
 
-function formatDateTime(value: string | null) {
-  if (!value) return "—";
-
-  return new Date(value).toLocaleString("ru-RU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
-function getPublishTimingLabel(value: FactoryPublishTiming) {
-  if (value === "USA_SMART") {
-    return "Грамотный залив под USA";
-  }
-
-  return (
-    publishTimingOptions.find((option) => option.value === value)?.title ??
-    "Загрузить сейчас"
-  );
-}
-
-function getSubmitAction(event: FormEvent<HTMLFormElement>): PublishAction {
-  const nativeEvent = event.nativeEvent as SubmitEvent;
-  const submitter = nativeEvent.submitter;
-
-  if (submitter instanceof HTMLButtonElement) {
-    if (submitter.value === "USA_SMART") return "USA_SMART";
-  }
-
-  return "DEFAULT";
-}
-
-function getSubmitPublishTiming(
-  action: PublishAction,
-  fallback: FactoryPublishTiming,
-) {
-  if (action === "USA_SMART") {
-    return "USA_SMART" as const;
-  }
-
-  return fallback;
-}
-
 export default function FactoryPage() {
   const [sourceMode, setSourceMode] = useState<SourceMode>("YOUTUBE");
   const [sourceUrl, setSourceUrl] = useState("");
   const [sourceFile, setSourceFile] = useState<File | null>(null);
   const [clipSeconds, setClipSeconds] = useState("45");
   const [game, setGame] = useState<FactoryGame>("ROBLOX");
-  const [titlePrefix, setTitlePrefix] = useState("auto mix");
-  const [publishTiming, setPublishTiming] =
-    useState<FactoryPublishTiming>("NOW");
-
-  const cutMode: FactoryCutMode = "SEQUENTIAL";
-  const smartStepSeconds = "10";
-  const smartCandidates = "80";
-  const smartMinGapSeconds = "30";
-
+  const [titlePrefix, setTitlePrefix] = useState("Lana watches Roblox");
   const [templateId, setTemplateId] = useState("");
   const [templates, setTemplates] = useState<FactoryTemplate[]>([]);
   const [accounts, setAccounts] = useState<FactoryAccount[]>([]);
@@ -260,7 +122,6 @@ export default function FactoryPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [cancelingJobId, setCancelingJobId] = useState("");
-  const [runningNowJobId, setRunningNowJobId] = useState("");
   const [error, setError] = useState("");
 
   const selectedGame = useMemo(
@@ -290,74 +151,64 @@ export default function FactoryPage() {
   }
 
   async function loadTemplates() {
-    try {
-      const response = await fetch("/api/factory/templates", {
-        cache: "no-store",
-      });
+    const response = await fetch("/api/factory/templates", {
+      cache: "no-store",
+    });
 
-      const data = (await response.json()) as {
-        templates: FactoryTemplate[];
-      };
+    const data = (await response.json()) as {
+      templates: FactoryTemplate[];
+    };
 
-      setTemplates(data.templates);
+    setTemplates(data.templates);
 
-      const defaultTemplateId = getDefaultTemplateId(data.templates);
+    const defaultTemplateId = getDefaultTemplateId(data.templates);
 
-      if (!templateId && defaultTemplateId) {
-        setTemplateId(defaultTemplateId);
+    if (!templateId && defaultTemplateId) {
+      setTemplateId(defaultTemplateId);
+    }
+
+    setTargets((current) => {
+      const next = { ...current };
+
+      for (const accountId of Object.keys(next)) {
+        if (!next[accountId].templateId && defaultTemplateId) {
+          next[accountId] = {
+            ...next[accountId],
+            templateId: defaultTemplateId,
+          };
+        }
       }
 
-      setTargets((current) => {
-        const next = { ...current };
-
-        for (const accountId of Object.keys(next)) {
-          if (!next[accountId].templateId && defaultTemplateId) {
-            next[accountId] = {
-              ...next[accountId],
-              templateId: defaultTemplateId,
-            };
-          }
-        }
-
-        return next;
-      });
-    } catch (templatesError) {
-      console.error(templatesError);
-    }
+      return next;
+    });
   }
 
   async function loadAccounts() {
-    try {
-      const response = await fetch("/api/factory/accounts", {
-        cache: "no-store",
-      });
+    const response = await fetch("/api/factory/accounts", {
+      cache: "no-store",
+    });
 
-      const data = (await response.json()) as {
-        accounts: FactoryAccount[];
-      };
+    const data = (await response.json()) as {
+      accounts: FactoryAccount[];
+    };
 
-      setAccounts(data.accounts);
+    setAccounts(data.accounts);
 
-      setTargets((current) => {
-        const next = { ...current };
-        const defaultTemplateId = templateId || getDefaultTemplateId(templates);
+    setTargets((current) => {
+      const next = { ...current };
 
-        for (const account of data.accounts) {
-          if (!next[account.id]) {
-            next[account.id] = {
-              enabled: false,
-              templateId: defaultTemplateId,
-              titlePrefix,
-              maxClips: 10,
-            };
-          }
+      for (const account of data.accounts) {
+        if (!next[account.id]) {
+          next[account.id] = {
+            enabled: false,
+            templateId,
+            titlePrefix,
+          };
         }
+      }
 
-        return next;
-      });
-    } catch (accountsError) {
-      console.error(accountsError);
-    }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -370,36 +221,7 @@ export default function FactoryPage() {
     }, 5000);
 
     return () => window.clearInterval(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    const defaultTemplateId = templateId || getDefaultTemplateId(templates);
-
-    if (!defaultTemplateId) return;
-
-    setTargets((current) => {
-      const next = { ...current };
-
-      for (const account of accounts) {
-        if (!next[account.id]) {
-          next[account.id] = {
-            enabled: false,
-            templateId: defaultTemplateId,
-            titlePrefix,
-            maxClips: 10,
-          };
-        } else if (!next[account.id].templateId) {
-          next[account.id] = {
-            ...next[account.id],
-            templateId: defaultTemplateId,
-          };
-        }
-      }
-
-      return next;
-    });
-  }, [accounts, templateId, templates, titlePrefix]);
 
   function handleGameChange(nextGame: FactoryGame) {
     const nextGameMeta =
@@ -432,7 +254,6 @@ export default function FactoryPage() {
           templateId ||
           getDefaultTemplateId(templates),
         titlePrefix: current[accountId]?.titlePrefix || titlePrefix,
-        maxClips: current[accountId]?.maxClips ?? 10,
         ...patch,
       },
     }));
@@ -448,23 +269,10 @@ export default function FactoryPage() {
           templateId ||
           getDefaultTemplateId(templates),
         titlePrefix: targets[account.id]?.titlePrefix || titlePrefix,
-        maxClips: targets[account.id]?.maxClips ?? 10,
       }));
   }
 
-  function getSmartSettingsPayload() {
-    return {
-      cutMode,
-      smartStepSeconds: Number(smartStepSeconds),
-      smartCandidates: Number(smartCandidates),
-      smartMinGapSeconds: Number(smartMinGapSeconds),
-    };
-  }
-
-  async function createYoutubeUrlJob(
-    nextPublishTiming: FactoryPublishTiming,
-    action: PublishAction,
-  ) {
+  async function createYoutubeUrlJob() {
     const response = await fetch("/api/factory/jobs", {
       method: "POST",
       headers: {
@@ -476,9 +284,6 @@ export default function FactoryPage() {
         game,
         titlePrefix,
         templateId: templateId || null,
-        publishTiming: nextPublishTiming,
-        packageMode: "NORMAL",
-        ...getSmartSettingsPayload(),
         targets: getSelectedTargets(),
       }),
     });
@@ -492,10 +297,7 @@ export default function FactoryPage() {
     }
   }
 
-  async function createUploadJob(
-    nextPublishTiming: FactoryPublishTiming,
-    action: PublishAction,
-  ) {
+  async function createUploadJob() {
     if (!sourceFile) {
       throw new Error("Выбери исходный MP4-файл");
     }
@@ -507,12 +309,6 @@ export default function FactoryPage() {
     formData.set("game", game);
     formData.set("titlePrefix", titlePrefix);
     formData.set("templateId", templateId);
-    formData.set("publishTiming", nextPublishTiming);
-    formData.set("packageMode", "NORMAL");
-    formData.set("cutMode", cutMode);
-    formData.set("smartStepSeconds", smartStepSeconds);
-    formData.set("smartCandidates", smartCandidates);
-    formData.set("smartMinGapSeconds", smartMinGapSeconds);
     formData.set("targets", JSON.stringify(getSelectedTargets()));
 
     await new Promise<void>((resolve, reject) => {
@@ -551,14 +347,8 @@ export default function FactoryPage() {
     });
   }
 
-  async function createJob(event: FormEvent<HTMLFormElement>) {
+  async function createJob(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const submitAction = getSubmitAction(event);
-    const nextPublishTiming = getSubmitPublishTiming(
-      submitAction,
-      publishTiming,
-    );
 
     setIsCreating(true);
     setError("");
@@ -566,9 +356,7 @@ export default function FactoryPage() {
 
     try {
       if (templates.length === 0) {
-        throw new Error(
-          "Сначала создай хотя бы один шаблон на странице /factory/templates",
-        );
+        throw new Error("Сначала создай хотя бы один шаблон на странице /factory/templates");
       }
 
       if (getSelectedTargets().length === 0) {
@@ -576,10 +364,10 @@ export default function FactoryPage() {
       }
 
       if (sourceMode === "UPLOAD") {
-        await createUploadJob(nextPublishTiming, submitAction);
+        await createUploadJob();
         setSourceFile(null);
       } else {
-        await createYoutubeUrlJob(nextPublishTiming, submitAction);
+        await createYoutubeUrlJob();
         setSourceUrl("");
       }
 
@@ -610,58 +398,24 @@ export default function FactoryPage() {
     }
   }
 
-  async function runJobNow(jobId: string) {
-    setRunningNowJobId(jobId);
-
-    try {
-      const response = await fetch(`/api/factory/jobs/${jobId}/run-now`, {
-        method: "POST",
-      });
-
-      const data = (await response.json()) as {
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Не получилось запустить задачу сейчас");
-      }
-
-      await loadJobs();
-    } catch (runError) {
-      setError(
-        runError instanceof Error
-          ? runError.message
-          : "Не получилось запустить задачу сейчас",
-      );
-    } finally {
-      setRunningNowJobId("");
-    }
-  }
-
   return (
     <main className="page">
       <div className="shell">
         <nav className="nav">
           <Link href="/factory">Завод</Link>
-          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
-          <Link href="/factory/viral-lab">Вирусная лаборатория</Link>
+          <Link href="/factory/super-upload">Супер залив</Link>
           <Link href="/factory/story-shorts">Story Shorts</Link>
-          <Link href="/factory/movie-moments">Кино моменты</Link>
           <Link href="/factory/music">Музыка</Link>
-          <Link href="/factory/long-video">Видео 16:9</Link>
-          <Link href="/factory/analytics">Аналитика</Link>
-          <Link href="/factory/assets">Видео персонажей</Link>
           <Link href="/factory/templates">Шаблоны</Link>
-          <Link href="/factory/thumbnails">Превью</Link>
           <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">
           <h1>Lana Content Factory</h1>
           <p>
-            Выбираешь игру, источник, время публикации и конкретные аккаунты.
-            Завод нарезает исходник подряд, собирает 9:16 ролики и отправляет их
-            в очередь публикации.
+            Выбираешь игру, источник и конкретные аккаунты. Для каждого
+            YouTube/TikTok аккаунта можно выбрать свой шаблон: Lana, Mia,
+            Amelia или любой другой.
           </p>
 
           <form className="grid" onSubmit={createJob}>
@@ -669,13 +423,9 @@ export default function FactoryPage() {
               Источник
               <select
                 value={sourceMode}
-                onChange={(event) =>
-                  setSourceMode(event.target.value as SourceMode)
-                }
+                onChange={(event) => setSourceMode(event.target.value as SourceMode)}
               >
-                <option value="YOUTUBE">
-                  YouTube URL → RIP auto downloader
-                </option>
+                <option value="YOUTUBE">YouTube URL → RIP auto downloader</option>
                 <option value="UPLOAD">Загрузить MP4 вручную</option>
               </select>
             </label>
@@ -684,7 +434,6 @@ export default function FactoryPage() {
               <label>
                 Исходный MP4
                 <input
-                  key={sourceFile?.name ?? "empty"}
                   type="file"
                   accept="video/mp4,video/quicktime,video/*"
                   onChange={(event) =>
@@ -776,69 +525,19 @@ export default function FactoryPage() {
               </label>
 
               <label>
-                Title hook
+                Название по умолчанию
                 <input
                   value={titlePrefix}
                   onChange={(event) => setTitlePrefix(event.target.value)}
-                  placeholder="auto mix"
+                  placeholder={selectedGame.titlePrefix}
                 />
-                <small className="muted">
-                  Оставь auto mix — завод сам подставит разные цепляющие hooks.
-                  Если впишешь свой текст, он будет использоваться вручную.
-                </small>
               </label>
             </div>
 
             <section className="target-panel">
-              <h2>Когда публиковать</h2>
-              <p className="muted">
-                Если выбираешь время New York, задача создастся сразу, но worker
-                начнет обработку и публикацию только когда наступит выбранное
-                время.
-              </p>
-
-              <button
-                type="button"
-                className={`usa-smart-button ${
-                  publishTiming === "USA_SMART" ? "active" : ""
-                }`}
-                onClick={() => setPublishTiming("USA_SMART")}
-              >
-                <span>Грамотный залив под USA</span>
-                <small>
-                  21:00 МСК — ролик 1 · 21:15 МСК — ролик 2 · 23:00 МСК — ролик
-                  3 · 23:15 МСК — ролик 4 · 01:00 МСК — ролик 5 · 01:15 МСК —
-                  ролик 6 · 03:00 МСК — ролик 7 · 03:15 МСК — ролик 8 · 05:00
-                  МСК — ролик 9 · 05:15 МСК — ролик 10
-                </small>
-              </button>
-
-              <div className="schedule-options">
-                {publishTimingOptions.map((option) => (
-                  <label
-                    className="target-checkbox schedule-option"
-                    key={option.value}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={publishTiming === option.value}
-                      onChange={() => setPublishTiming(option.value)}
-                    />
-
-                    <span>
-                      <b>{option.title}</b>
-                      <small>{option.description}</small>
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </section>
-
-            <section className="target-panel">
               <h2>Куда публиковать</h2>
               <p className="muted">
-                Отметь аккаунты, выбери отдельный шаблон под каждый канал и
-                укажи количество роликов для каждого аккаунта.
+                Отметь аккаунты и выбери отдельный шаблон под каждый канал.
               </p>
 
               <div className="target-list">
@@ -847,7 +546,6 @@ export default function FactoryPage() {
                     enabled: false,
                     templateId: templateId || getDefaultTemplateId(templates),
                     titlePrefix,
-                    maxClips: 10,
                   };
 
                   return (
@@ -866,7 +564,7 @@ export default function FactoryPage() {
                         <b>{account.name}</b>
                       </label>
 
-                      <div className="target-settings-grid">
+                      <div className="grid grid-2">
                         <label>
                           Шаблон
                           <select
@@ -890,7 +588,7 @@ export default function FactoryPage() {
                         </label>
 
                         <label>
-                          Title hook для аккаунта
+                          Название для этого аккаунта
                           <input
                             value={state.titlePrefix || ""}
                             onChange={(event) =>
@@ -898,31 +596,7 @@ export default function FactoryPage() {
                                 titlePrefix: event.target.value,
                               })
                             }
-                            placeholder="auto mix"
-                          />
-                          <small className="muted">
-                            auto mix = разные цепляющие hooks автоматически.
-                          </small>
-                        </label>
-
-                        <label>
-                          Кол-во видео
-                          <input
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={state.maxClips}
-                            onChange={(event) =>
-                              updateTarget(account.id, {
-                                maxClips: Math.max(
-                                  1,
-                                  Math.min(
-                                    100,
-                                    Number(event.target.value) || 1,
-                                  ),
-                                ),
-                              })
-                            }
+                            placeholder={titlePrefix}
                           />
                         </label>
                       </div>
@@ -940,31 +614,14 @@ export default function FactoryPage() {
             </section>
 
             <p className="muted">
-              Для {selectedGame.label} title и описание собираются
-              автоматически. Если в title hook стоит auto mix, каждый ролик
-              получит разный цепляющий заголовок.
+              Для {selectedGame.label} описание будет с 5 хэштегами автоматически.
             </p>
 
             {error ? <p className="error">{error}</p> : null}
 
-            <div className="submit-actions">
-              <button
-                name="publishAction"
-                value="DEFAULT"
-                disabled={isCreating}
-              >
-                {isCreating ? "Создаю задачу..." : "Generate & Publish"}
-              </button>
-
-              <button
-                name="publishAction"
-                value="USA_SMART"
-                className="secondary-button"
-                disabled={isCreating}
-              >
-                {isCreating ? "Создаю USA-пакет..." : "Грамотный залив под USA"}
-              </button>
-            </div>
+            <button disabled={isCreating}>
+              {isCreating ? "Создаю задачу..." : "Generate & Publish"}
+            </button>
           </form>
         </section>
 
@@ -989,31 +646,16 @@ export default function FactoryPage() {
                 <tr key={job.id}>
                   <td>
                     <div className="progress-row">
-                      <div className="progress-actions">
-                        <button
-                          type="button"
-                          className="cancel-button"
-                          disabled={!canCancel(job) || cancelingJobId === job.id}
-                          onClick={() => cancelJob(job.id)}
-                        >
-                          {job.cancelRequested || cancelingJobId === job.id
-                            ? "Отмена..."
-                            : "Отменить"}
-                        </button>
-
-                        {canRunNow(job) ? (
-                          <button
-                            type="button"
-                            className="run-now-button"
-                            disabled={runningNowJobId === job.id}
-                            onClick={() => runJobNow(job.id)}
-                          >
-                            {runningNowJobId === job.id
-                              ? "Запускаю..."
-                              : "Загрузить сейчас"}
-                          </button>
-                        ) : null}
-                      </div>
+                      <button
+                        type="button"
+                        className="cancel-button"
+                        disabled={!canCancel(job) || cancelingJobId === job.id}
+                        onClick={() => cancelJob(job.id)}
+                      >
+                        {job.cancelRequested || cancelingJobId === job.id
+                          ? "Отмена..."
+                          : "Отменить"}
+                      </button>
 
                       <div className="progress-block">
                         <div className="progress-head">
@@ -1033,19 +675,9 @@ export default function FactoryPage() {
                           />
                         </div>
 
-                        <p className="muted">
-                          {job.progressLabel ?? "Ожидание"}
-                        </p>
+                        <p className="muted">{job.progressLabel ?? "Ожидание"}</p>
 
-                        {job.scheduledAt ? (
-                          <p className="muted">
-                            Запланировано: {formatDateTime(job.scheduledAt)}
-                          </p>
-                        ) : null}
-
-                        {job.error ? (
-                          <p className="error">{job.error}</p>
-                        ) : null}
+                        {job.error ? <p className="error">{job.error}</p> : null}
                       </div>
                     </div>
                   </td>
@@ -1056,42 +688,16 @@ export default function FactoryPage() {
                     </div>
 
                     <p className="muted">
-                      {job.sourceSizeBytes
-                        ? `${formatMb(job.sourceSizeBytes)} · `
-                        : ""}
+                      {job.sourceSizeBytes ? `${formatMb(job.sourceSizeBytes)} · ` : ""}
                       {job.clipSeconds} сек
                     </p>
-
-                    <p className="muted">
-                      {getPublishTimingLabel(job.publishTiming)}
-                    </p>
-
-                    <p className="muted">
-                      {job.renderFormat === "LONG_16_9"
-                        ? "Видео 16:9 · full video · facecam reaction"
-                        : job.cutMode === "ROBLOX_STORY_AI"
-                          ? `Roblox Story Shorts · AI длина ${job.storyMinSeconds ?? 10}-${job.storyMaxSeconds ?? 35} сек · ${job.storyStyle ?? "AUTO"}`
-                          : job.cutMode === "SMART_HOOK_AI"
-                            ? `AI Hook Cut · hook ${job.hookPreviewSeconds ?? 8} сек · кандидатов ${job.smartCandidates}`
-                            : job.cutMode === "SMART_LITE"
-                            ? `Smart Cut Lite · шаг ${job.smartStepSeconds} сек · кандидатов ${job.smartCandidates}`
-                            : "Обычная нарезка подряд"}
-                    </p>
-
-                    {job.clipStartIndex > 0 ? (
-                      <p className="muted">
-                        Смещение: ролик #{job.clipStartIndex + 1}
-                      </p>
-                    ) : null}
                   </td>
 
                   <td>
                     {job.targets.map((target) => (
                       <p key={target.id} className="muted">
                         <span className="badge">{target.platform}</span>{" "}
-                        {target.account.name} ·{" "}
-                        {target.template?.name ?? "Default"} · {target.maxClips}{" "}
-                        видео
+                        {target.account.name} · {target.template?.name ?? "Default"}
                       </p>
                     ))}
                   </td>
@@ -1105,8 +711,7 @@ export default function FactoryPage() {
                       clip.publishes.map((publish) => (
                         <div key={publish.id}>
                           <b>
-                            {clip.index}.{" "}
-                            {publish.account?.name ?? publish.platform}
+                            {clip.index}. {publish.account?.name ?? publish.platform}
                           </b>{" "}
                           <span className="badge">{publish.status}</span>
                           {publish.platformUrl ? (

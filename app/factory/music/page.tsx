@@ -324,18 +324,13 @@ export default function FactoryMusicPage() {
   return (
     <main className="factory-shell">
       <nav className="nav">
-        <Link href="/factory">Завод</Link>
-        <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
-        <Link href="/factory/story-shorts">Story Shorts</Link>
-        <Link href="/factory/movie-moments">Кино моменты</Link>
-        <Link href="/factory/music">Музыка</Link>
-        <Link href="/factory/long-video">Видео 16:9</Link>
-        <Link href="/factory/analytics">Аналитика</Link>
-        <Link href="/factory/assets">Видео персонажей</Link>
-        <Link href="/factory/templates">Шаблоны</Link>
-        <Link href="/factory/thumbnails">Превью</Link>
-        <Link href="/factory/accounts">Аккаунты</Link>
-      </nav>
+          <Link href="/factory">Завод</Link>
+          <Link href="/factory/super-upload">Супер залив</Link>
+          <Link href="/factory/story-shorts">Story Shorts</Link>
+          <Link href="/factory/music">Музыка</Link>
+          <Link href="/factory/templates">Шаблоны</Link>
+          <Link href="/factory/accounts">Аккаунты</Link>
+        </nav>
 
       <section className="factory-panel factory-panel-wide">
         <div className="factory-eyebrow">MUSIC SAFETY</div>

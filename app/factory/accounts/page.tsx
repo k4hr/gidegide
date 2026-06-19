@@ -133,16 +133,12 @@ export default function FactoryAccountsPage() {
     <main className="page">
       <div className="shell">
         <nav className="nav">
-          <Link href="/">Home</Link>
-          <Link href="/factory">Factory</Link>
-          <Link href="/factory/super-upload">СУПЕР ЗАЛИВ</Link>
+          <Link href="/factory">Завод</Link>
+          <Link href="/factory/super-upload">Супер залив</Link>
           <Link href="/factory/story-shorts">Story Shorts</Link>
-          <Link href="/factory/movie-moments">Кино моменты</Link>
           <Link href="/factory/music">Музыка</Link>
-          <Link href="/factory/long-video">Видео 16:9</Link>
-          <Link href="/factory/assets">Character Videos</Link>
-          <Link href="/factory/templates">Templates</Link>
-          <Link href="/factory/accounts">Accounts</Link>
+          <Link href="/factory/templates">Шаблоны</Link>
+          <Link href="/factory/accounts">Аккаунты</Link>
         </nav>
 
         <section className="card">

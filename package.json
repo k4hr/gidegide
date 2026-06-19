@@ -1,27 +1,25 @@
 {
-  "name": "lana-content-factory",
+  "name": "destroy-algoritm",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "prisma generate && next build",
-    "start": "prisma db push --accept-data-loss && prisma generate && next start -H 0.0.0.0 -p ${PORT:-3000}",
-    "worker": "prisma db push --accept-data-loss && prisma generate && tsx worker/factory-worker.ts",
+    "start": "next start",
     "lint": "eslint",
     "prisma:generate": "prisma generate",
-    "prisma:migrate:deploy": "prisma migrate deploy",
-    "db:push": "prisma db push --accept-data-loss && prisma generate",
-    "analytics-worker": "prisma db push --accept-data-loss && prisma generate && tsx worker/factory-analytics-worker.ts",
-    "daily-scout-worker": "prisma db push --accept-data-loss && prisma generate && tsx worker/factory-daily-scout-worker.ts"
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:seed": "tsx prisma/seed.ts",
+    "db:setup": "prisma migrate dev && prisma generate && tsx prisma/seed.ts",
+    "db:push": "prisma db push && prisma generate && tsx prisma/seed.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.787.0",
     "@prisma/client": "6.19.3",
-    "googleapis": "^144.0.0",
+    "clsx": "^2.1.1",
+    "framer-motion": "^12.23.24",
     "lucide-react": "^0.468.0",
-    "nanoid": "^5.0.9",
     "next": "latest",
-    "playwright": "^1.56.1",
     "prisma": "6.19.3",
     "react": "latest",
     "react-dom": "latest",
@@ -37,5 +35,8 @@
     "tailwindcss": "latest",
     "tsx": "^4.20.6",
     "typescript": "latest"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
