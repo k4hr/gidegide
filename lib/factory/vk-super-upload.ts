@@ -1,3 +1,5 @@
+import { chromium, type Page } from "playwright";
+
 import { prisma } from "@/lib/prisma";
 import { withDbRetry } from "@/lib/factory/db-retry";
 
@@ -66,9 +68,13 @@ function buildGroupScanUrls(groupUrl: string) {
     new Set([
       groupUrl,
       `https://vk.com/${slug}?z=video`,
-      `https://vk.com/videos/${slug}`,
+      `https://vk.com/${slug}?w=video`,
+      `https://vk.com/video/@${slug}`,
       `https://vk.com/video/${slug}`,
+      `https://vk.com/videos/${slug}`,
+      `https://vk.com/clips/${slug}`,
       `https://m.vk.com/${slug}`,
+      `https://m.vk.com/video/${slug}`,
     ]),
   );
 }
@@ -188,6 +194,147 @@ async function fetchVkHtml(url: string) {
   return response.text();
 }
 
+async function collectVkVideoLinksFromPage(page: Page) {
+  return (await page.evaluate(`
+    (() => {
+      const cleanText = (value) => String(value || "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+      const getAroundText = (element) => {
+        const card =
+          element.closest("article") ||
+          element.closest(".video_item") ||
+          element.closest(".VideoCard") ||
+          element.closest(".vkuiCard") ||
+          element.closest(".wall_item") ||
+          element.closest(".post") ||
+          element.closest("div");
+
+        return cleanText(card ? card.textContent : element.textContent);
+      };
+
+      return Array.from(document.querySelectorAll("a[href*='video'], a[href*='clip']"))
+        .map((link) => {
+          const href = link.href || link.getAttribute("href") || "";
+          const text = [
+            link.getAttribute("aria-label") || "",
+            link.getAttribute("title") || "",
+            link.textContent || "",
+            getAroundText(link),
+          ].join(" ");
+          const image = link.querySelector("img") || link.closest("div")?.querySelector("img");
+
+          return {
+            href,
+            text: cleanText(text),
+            thumbnailUrl: image ? (image.currentSrc || image.src || image.getAttribute("src") || "") : "",
+          };
+        })
+        .filter((item) => item.href);
+    })()
+  `)) as Array<{ href: string; text: string; thumbnailUrl: string }>;
+}
+
+function parseVkVideoIdFromUrl(value: string) {
+  const normalized = value.replace(/\\\//g, "/");
+  const video = normalized.match(/video(-?\d+_\d+)/i)?.[1];
+  if (video) return video;
+
+  const clip = normalized.match(/clip(-?\d+_\d+)/i)?.[1];
+  if (clip) return clip;
+
+  return null;
+}
+
+function normalizeVkVideoUrl(value: string) {
+  const id = parseVkVideoIdFromUrl(value);
+  if (id) return `https://vk.com/video${id}`;
+
+  try {
+    const url = new URL(value);
+    return `https://vk.com${url.pathname}${url.search}`;
+  } catch {
+    return value;
+  }
+}
+
+function videoTitleFromBrowserText(text: string) {
+  const cleaned = cleanText(text)
+    .replace(/^(Смотреть|Видео|Клип|VK Видео|ВКонтакте)\s*/i, "")
+    .replace(/\b(?:нравится|комментарии|поделиться|просмотры|просмотров)\b.*$/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned || cleaned.length < 4) {
+    return "Смешное видео с котиком";
+  }
+
+  return cleaned.slice(0, 180);
+}
+
+async function scanVkGroupWithBrowser(groupUrl: string, limit: number) {
+  const browser = await chromium.launch({
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-blink-features=AutomationControlled",
+    ],
+  });
+
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1365, height: 900 },
+      locale: "ru-RU",
+      userAgent: VK_UA,
+    });
+    const page = await context.newPage();
+    const found = new Map<string, ParsedVkVideo>();
+
+    for (const url of buildGroupScanUrls(groupUrl)) {
+      try {
+        await page.goto(url, { waitUntil: "domcontentloaded", timeout: 90000 });
+        await page.waitForTimeout(2500);
+
+        for (let step = 0; step < 4; step += 1) {
+          await page.mouse.wheel(0, 1400).catch(() => {});
+          await page.waitForTimeout(900);
+        }
+
+        const htmlCandidates = parseVkVideosFromHtml(await page.content());
+        for (const candidate of htmlCandidates) {
+          if (!found.has(candidate.sourceVideoId)) found.set(candidate.sourceVideoId, candidate);
+        }
+
+        const links = await collectVkVideoLinksFromPage(page);
+        for (const item of links) {
+          const sourceVideoId = parseVkVideoIdFromUrl(item.href);
+          if (!sourceVideoId || found.has(sourceVideoId)) continue;
+
+          const title = videoTitleFromBrowserText(item.text);
+          found.set(sourceVideoId, {
+            sourceVideoId,
+            sourceUrl: normalizeVkVideoUrl(item.href),
+            title,
+            description: null,
+            thumbnailUrl: item.thumbnailUrl || null,
+            durationSeconds: null,
+            score: scoreVkCandidate(title, null),
+          });
+        }
+      } catch {
+        // VK часто отдает разные страницы/редиректы. Пробуем следующий URL.
+      }
+    }
+
+    return Array.from(found.values()).sort((a, b) => b.score - a.score).slice(0, limit);
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 export async function listVkGroups() {
   return withDbRetry(() =>
     prisma.factoryVkGroup.findMany({
@@ -262,12 +409,23 @@ export async function scanVkGroup(groupId: string, limit = 12) {
     }
   }
 
-  const unique = Array.from(new Map(parsed.map((video) => [video.sourceVideoId, video])).values())
+  let unique = Array.from(new Map(parsed.map((video) => [video.sourceVideoId, video])).values())
     .sort((a, b) => b.score - a.score)
     .slice(0, limit);
 
   if (unique.length === 0) {
-    const message = lastError instanceof Error ? lastError.message : "VK не отдал видео на публичной странице";
+    try {
+      unique = await scanVkGroupWithBrowser(group.url, limit);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  if (unique.length === 0) {
+    const message =
+      lastError instanceof Error
+        ? lastError.message
+        : "VK не отдал видео на публичной странице. Часто такое бывает, если группа закрывает видео от гостей или VK показывает страницу только после авторизации.";
 
     await withDbRetry(() =>
       prisma.factoryVkGroup.update({
