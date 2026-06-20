@@ -21,7 +21,7 @@ import {
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
-import { generateMovieAiTitlePack } from "@/lib/factory/movie-ai-titles";
+import { buildMovieClipRedfilmDescription, generateMovieAiTitlePack } from "@/lib/factory/movie-ai-titles";
 import {
   buildMovieSmartClipStarts,
   buildSequentialClipStarts,
@@ -642,8 +642,8 @@ async function processOneJob() {
         job.id,
         36,
         movieAiTitles.source === "openai"
-          ? `AI-названия готовы: ${movieAiTitles.movieTitle}`
-          : `AI недоступен, использую сильные шаблоны: ${movieAiTitles.movieTitle}`,
+          ? `AI-названия и REDFILM-описания готовы: ${movieAiTitles.movieTitle}`
+          : `AI недоступен, использую сильные шаблоны и REDFILM-описания: ${movieAiTitles.movieTitle}`,
       );
     }
 
@@ -692,15 +692,23 @@ async function processOneJob() {
             sourceTitle: job.sourceOriginalName,
           });
 
-        const description =
-          job.longVideoDescription?.trim() ||
-          movieAiTitles?.description ||
-          buildClipDescription({
-            game: job.game,
-            customPrefix: titlePrefixForTarget,
-            title,
-            sourceTitle: job.sourceOriginalName,
-          });
+        const description = movieSmartJob
+          ? movieAiTitles?.descriptions[i] ??
+            buildMovieClipRedfilmDescription({
+              movieTitle: movieAiTitles?.movieTitle ?? job.sourceOriginalName ?? "VK фильм",
+              movieYear: movieAiTitles?.movieYear ?? null,
+              movieDescription: movieAiTitles?.movieDescription ?? job.longVideoDescription ?? job.sourceOriginalName,
+              clipTitle: title,
+              clipIndex,
+              sourceTitle: job.sourceOriginalName,
+            })
+          : job.longVideoDescription?.trim() ||
+            buildClipDescription({
+              game: job.game,
+              customPrefix: titlePrefixForTarget,
+              title,
+              sourceTitle: job.sourceOriginalName,
+            });
 
         const renderProgress =
           30 + Math.round((completedRenders / Math.max(1, totalRenders)) * 45);

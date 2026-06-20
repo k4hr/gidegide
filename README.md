@@ -151,3 +151,13 @@ Telegram diagnostics:
 - `/sources` → `🔍 Проверить список` — показывает, какая стратегия нашла видео: HTML, yt-dlp или Playwright.
 
 Значения cookies никогда не логируются и не отправляются в Telegram.
+
+## Movie Shorts: REDFILM descriptions
+
+For VK Movie Smart jobs the worker now generates a separate description for every published clip. Each description is forced to include:
+
+- the resolved movie/project title from Kinopoisk or the VK source title;
+- the exact call to action: `переходи смотреть на REDFILM`;
+- movie/shorts hashtags.
+
+If OpenAI is available, it can return per-clip descriptions together with titles. If OpenAI is unavailable or returns incomplete descriptions, the worker falls back to deterministic REDFILM descriptions so every upload still contains the movie title and REDFILM CTA.

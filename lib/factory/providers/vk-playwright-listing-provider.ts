@@ -59,7 +59,14 @@ function titleNear(text: string, position: number) {
     const raw = slice.match(pattern)?.[1];
     if (!raw) continue;
     const title = decodeText(raw).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
-    if (title && title.length > 3 && !/^video-?\d+_\d+$/i.test(title)) return title.slice(0, 180);
+    if (
+      title &&
+      title.length > 3 &&
+      !/^video-?\d+_\d+$/i.test(title) &&
+      !/^(главная|новые|популярное|подписки|плейлисты|клипы|vk|vk video|vk видео)$/i.test(title)
+    ) {
+      return title.slice(0, 180);
+    }
   }
   return undefined;
 }

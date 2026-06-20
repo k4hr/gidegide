@@ -155,9 +155,32 @@ function normalizeListingTitle(value?: string | null) {
     .trim();
 
   if (!title || title.length < 4) return undefined;
-  if (/^(vk|вк|vk video|vk видео|видео|video|без названия)$/i.test(title)) return undefined;
+  if (/^(vk|вк|vk video|vk видео|видео|video|без названия|главная|новые|популярное|подписки|плейлисты|клипы)$/i.test(title)) return undefined;
   if (/^видео\s*-?\d+_\d+$/i.test(title)) return undefined;
   return title.slice(0, 180);
+}
+
+function normalizeAutoSourceMovieTitle(value?: string | null) {
+  const title = normalizeListingTitle(value);
+  if (!title) return null;
+  if (/^https?:\/\//i.test(title)) return null;
+  if (/^(главная|новые|популярное|подписки|плейлисты|клипы)$/i.test(title)) return null;
+  return title;
+}
+
+function buildAutoSourceMovieTitle(input: {
+  videoTitle?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  fallback?: string;
+}) {
+  return (
+    normalizeAutoSourceMovieTitle(input.videoTitle) ||
+    normalizeAutoSourceMovieTitle(input.sourceTitle) ||
+    normalizeAutoSourceMovieTitle(input.sourceUrl) ||
+    input.fallback ||
+    "VK фильм"
+  );
 }
 
 function titleNear(html: string, position: number) {
@@ -680,7 +703,7 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
         const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({ where: { id: video.id, status: "NEW", factoryJobId: null }, data: { status: "PROCESSING", pickedAt: new Date(), error: null } });
         if (!claimed.count) continue;
         const clipSeconds = Math.max(15, Math.min(60, video.durationSec || 60));
-        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
+        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: buildAutoSourceMovieTitle({ videoTitle: video.title, sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl }), clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
         await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: "QUEUED", factoryJobId: job.id } });
         created += 1;
       } catch (error) {
@@ -729,6 +752,8 @@ async function queueReplacementVideo(input: {
     publishStartHour: number;
     publishEndHour: number;
     timezone: string;
+    sourceTitle?: string | null;
+    sourceUrl?: string | null;
   };
   run: {
     id: string;
@@ -758,7 +783,7 @@ async function queueReplacementVideo(input: {
   try {
     const job = await createVkMovieJob({
       sourceUrl: replacement.videoUrl,
-      movieTitle: replacement.title || "VK видео",
+      movieTitle: buildAutoSourceMovieTitle({ videoTitle: replacement.title, sourceTitle: input.source.sourceTitle, sourceUrl: input.source.sourceUrl }),
       clipCount: 1,
       clipSeconds: Math.max(15, Math.min(60, replacement.durationSec || 60)),
       scheduleMode: "NOW",

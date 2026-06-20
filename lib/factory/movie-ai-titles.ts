@@ -8,7 +8,10 @@ export type MovieAiTitlePack = {
   movieYear: string | null;
   movieDescription: string;
   titles: string[];
+  /** Общий fallback description для совместимости со старым кодом. */
   description: string;
+  /** Отдельное описание для каждого ролика. */
+  descriptions: string[];
   source: "openai" | "fallback";
 };
 
@@ -28,6 +31,7 @@ type KinopoiskMovie = {
 type OpenAiTitleResponse = {
   titles?: string[];
   description?: string;
+  descriptions?: string[];
 };
 
 function cleanText(value?: string | null) {
@@ -274,6 +278,103 @@ function fallbackTitleTemplates(style: string) {
   ];
 }
 
+
+function movieTitleLine(input: { movieTitle: string; movieYear: string | null }) {
+  const title = cleanText(input.movieTitle) || "фильм";
+  return `${title}${input.movieYear ? ` (${input.movieYear})` : ""}`;
+}
+
+export function buildMovieClipRedfilmDescription(input: {
+  movieTitle: string;
+  movieYear?: string | null;
+  movieDescription?: string | null;
+  clipTitle?: string | null;
+  clipIndex?: number;
+  sourceTitle?: string | null;
+}) {
+  const titleLine = movieTitleLine({
+    movieTitle: input.movieTitle,
+    movieYear: input.movieYear ?? null,
+  });
+  const clipTitle = cleanText(input.clipTitle);
+  const overviewSource = cleanText(input.movieDescription) || cleanText(input.sourceTitle);
+  const overview = overviewSource.length > 220
+    ? `${overviewSource.slice(0, 220).trim()}…`
+    : overviewSource;
+
+  return [
+    clipTitle ? `${clipTitle}.` : `Кино-момент #${input.clipIndex ?? 1}.`,
+    `Фильм: ${titleLine}.`,
+    overview ? `Описание: ${overview}` : "",
+    "",
+    "переходи смотреть на REDFILM",
+    "",
+    "#кино #фильмы #shorts #redfilm",
+  ].filter(Boolean).join("\n");
+}
+
+function buildMovieClipDescriptions(input: {
+  titles: string[];
+  totalClips: number;
+  movieTitle: string;
+  movieYear: string | null;
+  movieDescription: string;
+  sourceTitle?: string | null;
+}) {
+  return Array.from({ length: input.totalClips }, (_, index) =>
+    buildMovieClipRedfilmDescription({
+      movieTitle: input.movieTitle,
+      movieYear: input.movieYear,
+      movieDescription: input.movieDescription,
+      clipTitle: input.titles[index],
+      clipIndex: index + 1,
+      sourceTitle: input.sourceTitle,
+    }),
+  );
+}
+
+function ensureDescriptionCount(input: {
+  descriptions?: string[] | null;
+  titles: string[];
+  totalClips: number;
+  movieTitle: string;
+  movieYear: string | null;
+  movieDescription: string;
+  sourceTitle?: string | null;
+}) {
+  const result: string[] = [];
+
+  for (let index = 0; index < input.totalClips; index += 1) {
+    const raw = cleanText(input.descriptions?.[index]);
+    const fallback = buildMovieClipRedfilmDescription({
+      movieTitle: input.movieTitle,
+      movieYear: input.movieYear,
+      movieDescription: input.movieDescription,
+      clipTitle: input.titles[index],
+      clipIndex: index + 1,
+      sourceTitle: input.sourceTitle,
+    });
+
+    const titleLine = movieTitleLine({ movieTitle: input.movieTitle, movieYear: input.movieYear });
+    const hasMovieTitle = raw.toLowerCase().includes(cleanText(input.movieTitle).toLowerCase());
+    const hasRedfilm = /переходи\s+смотреть\s+на\s+redfilm/i.test(raw);
+
+    if (!raw) {
+      result.push(fallback);
+      continue;
+    }
+
+    const lines = [raw];
+    if (!hasMovieTitle) lines.push(`Фильм: ${titleLine}.`);
+    if (!hasRedfilm) lines.push("", "переходи смотреть на REDFILM");
+    lines.push("", "#кино #фильмы #shorts #redfilm");
+
+    result.push(lines.join("\n").slice(0, 4500).trim());
+  }
+
+  return result;
+}
+
 function buildFallbackPack(input: {
   sourceTitle?: string | null;
   totalClips: number;
@@ -292,17 +393,28 @@ function buildFallbackPack(input: {
     titles.push(cleanTitle(`${base}${suffix}`));
   }
 
+  const finalTitles = uniqueNormalized(titles).slice(0, input.totalClips);
+  const descriptions = buildMovieClipDescriptions({
+    titles: finalTitles,
+    totalClips: input.totalClips,
+    movieTitle: input.movieTitle,
+    movieYear: input.movieYear,
+    movieDescription: input.movieDescription,
+    sourceTitle: input.sourceTitle,
+  });
+
   return {
     movieTitle: input.movieTitle,
     movieYear: input.movieYear,
     movieDescription: input.movieDescription,
-    titles: uniqueNormalized(titles).slice(0, input.totalClips),
-    description: buildRussianMovieDescription({
+    titles: finalTitles,
+    description: descriptions[0] ?? buildRussianMovieDescription({
       movieTitle: input.movieTitle,
       movieYear: input.movieYear,
       movieDescription: input.movieDescription,
       sourceTitle: input.sourceTitle,
     }),
+    descriptions,
     source: "fallback" as const,
   };
 }
@@ -360,7 +472,7 @@ async function callOpenAiForTitles(input: {
   ].join(" ");
 
   const userPrompt = [
-    `Сгенерируй ровно ${input.totalClips} уникальных названий и одно описание канала/публикации.`,
+    `Сгенерируй ровно ${input.totalClips} уникальных названий и ровно ${input.totalClips} отдельных описаний для каждого ролика.`,
     "",
     "Стиль названий:",
     style,
@@ -376,6 +488,10 @@ async function callOpenAiForTitles(input: {
     "- не повторять одинаковую структуру подряд;",
     "- не писать название фильма в начале каждого title;",
     "- title должен звучать как отдельный сюжетный конфликт.",
+    "- descriptions должны быть отдельными для каждого ролика;",
+    "- в каждом description обязательно должно быть название фильма/проекта;",
+    "- в каждом description обязательно должна быть точная фраза: переходи смотреть на REDFILM;",
+    "- descriptions без выдуманных ссылок и без markdown.",
     "",
     "Примеры стиля:",
     "Русский офицер нашёл жену среди врагов",
@@ -397,7 +513,7 @@ async function callOpenAiForTitles(input: {
     clipRanges,
     "",
     "Верни строго JSON без markdown:",
-    `{"titles":["..."],"description":"..."}`,
+    `{"titles":["..."],"descriptions":["описание 1 с названием фильма и фразой переходи смотреть на REDFILM","описание 2 ..."],"description":"общий fallback"}`,
   ].filter(Boolean).join("\n");
 
   const response = await fetch(OPENAI_CHAT_COMPLETIONS_URL, {
@@ -513,7 +629,16 @@ export async function generateMovieAiTitlePack(input: {
   }
 
   const titles = ensureTitleCount(ai.titles, totalClips, fallback.titles);
-  const description = cleanText(ai.description) || fallback.description;
+  const descriptions = ensureDescriptionCount({
+    descriptions: ai.descriptions,
+    titles,
+    totalClips,
+    movieTitle: context.movieTitle,
+    movieYear: context.movieYear,
+    movieDescription: context.movieDescription,
+    sourceTitle: input.sourceTitle,
+  });
+  const description = descriptions[0] || cleanText(ai.description) || fallback.description;
 
   return {
     movieTitle: context.movieTitle,
@@ -521,6 +646,7 @@ export async function generateMovieAiTitlePack(input: {
     movieDescription: context.movieDescription,
     titles,
     description: description.length > 4500 ? description.slice(0, 4500).trim() : description,
+    descriptions,
     source: "openai",
   };
 }
