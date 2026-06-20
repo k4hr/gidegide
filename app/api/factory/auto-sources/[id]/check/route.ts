@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { checkVkSourceVideos, humanizeVkAutoSourceError } from "@/lib/factory/vk-auto-source";
+import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -12,6 +13,7 @@ export async function POST(_request: Request, context: Context) {
   if (!source) return NextResponse.json({ error: "Источник не найден" }, { status: 404 });
 
   try {
+    const vkCookies = await getVkCookiesStatus();
     const result = await checkVkSourceVideos({ sourceUrl: source.sourceUrl, limit: 10 });
     await prisma.factoryVkAutoSource.update({
       where: { id: source.id },
@@ -23,11 +25,13 @@ export async function POST(_request: Request, context: Context) {
       foundCount: result.videos.length,
       videos: result.videos.slice(0, 10),
       candidatesTried: result.attempts,
-      error: result.videos.length ? null : "Список видео не найден на публичной странице",
+      vkCookies,
+      error: result.videos.length ? null : vkCookies.enabled ? "Список видео не найден даже с VK cookies" : "Список видео не найден на публичной странице. Возможно, нужны VK cookies.",
     });
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastError: reason } });
-    return NextResponse.json({ ok: false, foundCount: 0, videos: [], candidatesTried: [], error: reason }, { status: 200 });
+    const vkCookies = await getVkCookiesStatus();
+    return NextResponse.json({ ok: false, foundCount: 0, videos: [], candidatesTried: [], vkCookies, error: reason }, { status: 200 });
   }
 }

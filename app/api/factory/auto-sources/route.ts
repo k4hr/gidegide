@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { normalizeVkAutoSourceTimezone, normalizeVkSourceUrl } from "@/lib/factory/vk-auto-source";
 import { getVkDownloadProviderConfig } from "@/lib/factory/vk-download-provider";
+import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 
@@ -18,11 +19,12 @@ const createSchema = z.object({
 });
 
 export async function GET() {
+  const vkCookies = await getVkCookiesStatus();
   const sources = await prisma.factoryVkAutoSource.findMany({
     orderBy: { createdAt: "desc" },
     include: { chat: { select: { chatId: true, username: true } }, runs: { orderBy: { startedAt: "desc" }, take: 1 }, _count: { select: { videos: true } } },
   });
-  return NextResponse.json({ sources, downloader: getVkDownloadProviderConfig() });
+  return NextResponse.json({ sources, downloader: getVkDownloadProviderConfig(), vkCookies });
 }
 
 export async function POST(request: Request) {

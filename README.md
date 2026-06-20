@@ -94,3 +94,30 @@ https://vk.ru/video/playlist/-123456789_1
 ```
 
 Скачивание отдельных видео при этом продолжает работать через `vkvideodownload.com`.
+
+## VK Auto Sources: cookies authorization
+
+VK/VKVideo sometimes hides video lists from anonymous server requests. Single video downloads still go through `vkvideodownload.com`, but group/channel/playlist listing may need browser cookies from an account that can see the source.
+
+Optional Railway variables for authenticated listing:
+
+```env
+VK_AUTH_MODE=cookies
+VK_COOKIES_B64=
+VK_COOKIES_PATH=
+```
+
+Preferred setup is `VK_COOKIES_B64`:
+
+1. Open VK/VKVideo on your desktop browser and sign in.
+2. Export cookies for `vk.com` and `vkvideo.ru` in Netscape `cookies.txt` format.
+3. Convert the file to base64 in PowerShell:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\cookies.txt")) | Set-Clipboard
+```
+
+4. Add the copied value to Railway Variables as `VK_COOKIES_B64` for both web and worker services.
+5. Restart/redeploy web and worker.
+
+Never commit cookies to GitHub and never send cookies in Telegram. Treat them like account credentials.

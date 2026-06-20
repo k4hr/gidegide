@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
 import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
 import { runCommand } from "@/lib/factory/video";
+import { getVkCookieHeader, getVkCookiesFileForYtDlp, hasVkCookies } from "@/lib/factory/vk-cookies";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -106,7 +107,24 @@ const VK_PUBLIC_HEADERS = {
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
   accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
   "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+  referer: "https://vk.com/",
 };
+
+async function buildVkRequestHeaders(url: string) {
+  const cookie = await getVkCookieHeader();
+  const headers: Record<string, string> = { ...VK_PUBLIC_HEADERS };
+  if (url.includes("vkvideo.ru")) headers.referer = "https://vkvideo.ru/";
+  if (cookie) headers.cookie = cookie;
+  return headers;
+}
+
+function decodePercentEncoding(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
 
 function decodeHtmlEntities(value: string) {
   return value
@@ -176,7 +194,10 @@ function normalizeFoundVkVideoUrl(providerVideoId: string) {
 }
 
 export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"): VkSourceVideo[] {
-  const normalizedHtml = decodeHtmlEntities(html).replace(/\\\//g, "/");
+  const decoded = decodeHtmlEntities(html).replace(/\\\//g, "/");
+  const percentDecoded = decodePercentEncoding(decoded);
+  const normalizedHtml = percentDecoded === decoded ? decoded : `${decoded}
+${percentDecoded}`;
   const matches: Array<{ id: string; index: number }> = [];
   const patterns = [
     /(?:https?:\/\/(?:m\.)?vk\.(?:com|ru))?\/video(-?\d+_\d+)/gi,
@@ -187,6 +208,8 @@ export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"
     /\bvideo(-?\d+_\d+)\b/gi,
     /"video_id"\s*:\s*"?(-?\d+_\d+)"?/gi,
     /"id"\s*:\s*"?video(-?\d+_\d+)"?/gi,
+    /data-video=["'](-?\d+_\d+)["']/gi,
+    /"video"\s*:\s*"(-?\d+_\d+)"/gi,
   ];
 
   for (const pattern of patterns) {
@@ -194,6 +217,19 @@ export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"
     while ((match = pattern.exec(normalizedHtml))) {
       if (!match[1]) continue;
       matches.push({ id: normalizeProviderVideoId(match[1]), index: match.index });
+    }
+  }
+
+  const ownerIdPatterns: Array<{ pattern: RegExp; reversed?: boolean }> = [
+    { pattern: /["\']owner_id["\']\s*:\s*(-?\d+)[\s\S]{0,600}?["\']id["\']\s*:\s*(\d+)/gi },
+    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,600}?["\']owner_id["\']\s*:\s*(-?\d+)/gi, reversed: true },
+  ];
+  for (const { pattern, reversed } of ownerIdPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(normalizedHtml))) {
+      const ownerId = reversed ? match[2] : match[1];
+      const videoId = reversed ? match[1] : match[2];
+      if (ownerId && videoId) matches.push({ id: `${ownerId}_${videoId}`, index: match.index });
     }
   }
 
@@ -304,7 +340,7 @@ async function fetchVkListingHtml(url: string) {
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const response = await fetch(url, {
-      headers: VK_PUBLIC_HEADERS,
+      headers: await buildVkRequestHeaders(url),
       cache: "no-store",
       redirect: "follow",
       signal: controller.signal,
@@ -320,7 +356,7 @@ async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkLi
   const found = new Map<string, VkSourceVideo>();
   const candidates = buildVkSourceCandidateUrls(sourceUrl);
 
-  console.info("[VK_AUTO_SOURCE] public listing candidates", { sourceUrl, candidates });
+  console.info("[VK_AUTO_SOURCE] public listing candidates", { sourceUrl, candidates, cookiesEnabled: await hasVkCookies() });
 
   for (const url of candidates) {
     const attempt: VkListingAttempt = { provider: candidateProvider(url), url };
@@ -387,9 +423,13 @@ async function getViaVkApi(sourceUrl: string, limit: number, token: string): Pro
 
 async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVideo[]> {
   let output = "";
+  const cookiesFile = await getVkCookiesFileForYtDlp();
+  const args = ["--flat-playlist", "--dump-json", "--playlist-end", String(limit), "--socket-timeout", "30"];
+  if (cookiesFile) args.push("--cookies", cookiesFile);
+  args.push(sourceUrl);
   await runCommand(
     "yt-dlp",
-    ["--flat-playlist", "--dump-json", "--playlist-end", String(limit), "--socket-timeout", "30", sourceUrl],
+    args,
     { onOutput: (text) => { output += text; } },
   );
   const videos: VkSourceVideo[] = [];
@@ -417,7 +457,7 @@ async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }
   const errors: string[] = [];
   let videos: VkSourceVideo[] = [];
 
-  console.info("[VK_AUTO_SOURCE] start", { sourceUrl, limit, hasVkToken: Boolean(token) });
+  console.info("[VK_AUTO_SOURCE] start", { sourceUrl, limit, hasVkToken: Boolean(token), cookiesEnabled: await hasVkCookies() });
 
   if (token) {
     try {
@@ -485,7 +525,7 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
 
   if (!result.videos.length) {
     throw new Error(
-      "Не получилось получить список видео из VK-источника. Попробуй отправить раздел видео https://vk.com/videos-123456789, канал https://vk.com/video/@groupname или плейлист https://vk.com/video/playlist/-123456789_1. Если VK закрывает страницу от гостей, список без авторизации не прочитается.",
+      "Не получилось получить список видео из VK-источника. Попробуй раздел видео https://vk.com/videos-123456789, канал https://vk.com/video/@groupname или плейлист https://vk.com/video/playlist/-123456789_1. Если VK скрывает список без авторизации, добавь VK cookies в Railway. Инструкция: /cookies_help.",
     );
   }
 

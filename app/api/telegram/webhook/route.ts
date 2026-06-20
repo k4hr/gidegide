@@ -22,6 +22,7 @@ import {
   upsertTelegramChat,
   type TelegramReplyMarkup,
 } from "@/lib/factory/telegram";
+import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 
@@ -91,7 +92,8 @@ https://vk.ru/video/playlist/-220018529_16
 /status — задачи
 /queue — очередь публикаций
 /run_today — запустить автозабор сейчас
-/help — помощь`;
+/help — помощь
+/cookies_help — как подключить VK cookies, если источник не читается`;
 }
 
 function mainMenuKeyboard(): TelegramReplyMarkup {
@@ -106,9 +108,36 @@ function mainMenuKeyboard(): TelegramReplyMarkup {
         { text: "📋 Задачи", callback_data: "tg:menu:status" },
         { text: "🗓 Очередь", callback_data: "tg:menu:queue" },
       ],
-      factoryUrl ? [{ text: "Открыть завод", url: factoryUrl }] : [{ text: "ℹ️ Помощь", callback_data: "tg:menu:help" }],
+      [
+        { text: "🔐 VK cookies", callback_data: "tg:menu:cookies_help" },
+        ...(factoryUrl ? [{ text: "Открыть завод", url: factoryUrl }] : [{ text: "ℹ️ Помощь", callback_data: "tg:menu:help" }]),
+      ],
     ],
   };
+}
+
+
+function cookiesHelpText() {
+  return `🔐 Как дать боту доступ к списку VK-видео без логина и пароля
+
+VK иногда скрывает список видео от неавторизованного сервера. Тогда нужно один раз экспортировать cookies из своего браузера и добавить их в Railway Variables.
+
+Как сделать:
+1. На компьютере открой VK/VKVideo в браузере и войди в свой аккаунт.
+2. Установи расширение для экспорта cookies в формате Netscape cookies.txt.
+3. Экспортируй cookies для vk.com и vkvideo.ru.
+4. В PowerShell закодируй файл cookies.txt в base64:
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:/path/cookies.txt")) | Set-Clipboard
+5. В Railway добавь переменные и в web, и в worker:
+VK_AUTH_MODE=cookies
+VK_COOKIES_B64=<то, что скопировалось>
+6. Перезапусти web и worker.
+
+Важно:
+— не отправляй cookies в Telegram;
+— не публикуй cookies в GitHub;
+— cookies дают доступ к аккаунту, храни их как секрет;
+— если вышел из VK или сменил пароль, cookies могут устареть.`;
 }
 
 function parseSettings(value: unknown): JobSettings {
@@ -353,14 +382,54 @@ async function checkSourceAndReply(chatId: string, sourceId: string, messageId?:
     }
 
     const lastAttempt = result.attempts[result.attempts.length - 1];
-    const text = `❌ Список видео не прочитался.\n\nИсточник:\n${source.sourceUrl}\n\nЧто попробовать:\n1) отправить ссылку именно на раздел видео:\nhttps://vk.com/video/@groupname\n2) отправить ссылку формата:\nhttps://vk.com/videos-123456789\n3) отправить 1 отдельную ссылку на видео — она должна скачаться через vkvideodownload.com\n4) если канал закрыт от публичного просмотра, нужен другой публичный источник.\n\nТехнически:\nпоследняя стратегия: ${lastAttempt?.provider || "нет"}\nпроверено URL: ${result.attempts.length}\nнайдено ссылок: 0`;
+    const vkCookies = await getVkCookiesStatus();
+    const authAdvice = vkCookies.enabled
+      ? "VK cookies подключены, но список всё равно не найден. Возможные причины: у аккаунта нет доступа, источник закрыт или VK изменил разметку."
+      : "Скорее всего VK скрывает список без авторизации. Подключи VK cookies в Railway. Инструкция: /cookies_help";
+    const text = `❌ Список видео не прочитался.
+
+Источник:
+${source.sourceUrl}
+
+Что попробовать:
+1) отправить ссылку именно на раздел видео:
+https://vk.com/video/@groupname
+2) отправить ссылку формата:
+https://vk.com/videos-123456789
+3) отправить плейлист:
+https://vk.com/video/playlist/-123456789_1
+4) отправить 1 отдельную ссылку на видео — она должна скачаться через vkvideodownload.com
+
+${authAdvice}
+
+Технически:
+VK cookies: ${vkCookies.enabled ? "ON" : "OFF"}
+последняя стратегия: ${lastAttempt?.provider || "нет"}
+проверено URL: ${result.attempts.length}
+найдено ссылок: 0`;
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastError: "Список видео не прочитался" } });
     if (messageId) return editTelegramMessage(chatId, messageId, text, autoSourceActionKeyboard(source));
     return sendTelegramMessage(chatId, text, autoSourceActionKeyboard(source));
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastError: reason } });
-    const text = `❌ Список видео не прочитался.\n\nИсточник:\n${source.sourceUrl}\n\nЧто попробовать:\n1) https://vk.com/video/@groupname\n2) https://vk.com/videos-123456789\n3) отдельную ссылку на видео\n\nПричина:\n${reason}`;
+    const vkCookies = await getVkCookiesStatus();
+    const text = `❌ Список видео не прочитался.
+
+Источник:
+${source.sourceUrl}
+
+Что попробовать:
+1) https://vk.com/video/@groupname
+2) https://vk.com/videos-123456789
+3) https://vk.com/video/playlist/-123456789_1
+4) отдельную ссылку на видео
+
+VK cookies: ${vkCookies.enabled ? "ON" : "OFF"}
+${vkCookies.enabled ? "Если список не читается даже с cookies, проверь доступ аккаунта к источнику." : "Если VK скрывает список без авторизации, подключи cookies: /cookies_help"}
+
+Причина:
+${reason}`;
     if (messageId) return editTelegramMessage(chatId, messageId, text, autoSourceActionKeyboard(source));
     return sendTelegramMessage(chatId, text, autoSourceActionKeyboard(source));
   }
@@ -375,6 +444,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
 
   if (command === "/start" || command === "/menu") return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
   if (command === "/help") return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
+  if (command === "/cookies_help") return sendTelegramMessage(chatId, cookiesHelpText());
   if (command === "/status") return showStatus(chat.id, chatId);
   if (command === "/queue") return showQueue(chat.id, chatId);
   if (command === "/sources" || command === "/source_status") return showSources(chat.id, chatId);
@@ -456,6 +526,7 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
     if (action === "run_today") return handleMessage({ message_id: callbackMessage!.message_id, chat: { id: Number(chatId) }, from: query.from, text: "/run_today" });
     if (action === "status") return showStatus(chat.id, chatId);
     if (action === "queue") return showQueue(chat.id, chatId);
+    if (action === "cookies_help") return sendTelegramMessage(chatId, cookiesHelpText());
     return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
   }
 
@@ -524,7 +595,11 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
 https://vk.com/video/@groupname
 2) отправить ссылку формата:
 https://vk.com/videos-123456789
-3) отправить 1 отдельную ссылку на видео — она должна скачаться через vkvideodownload.com
+3) отправить плейлист:
+https://vk.com/video/playlist/-123456789_1
+4) отправить 1 отдельную ссылку на видео — она должна скачаться через vkvideodownload.com
+
+Если VK скрывает список без авторизации, подключи cookies: /cookies_help
 
 Я попробую снова при ежедневном запуске.`, autoSourceActionKeyboard(updated));
       } catch (error) {
@@ -540,6 +615,8 @@ https://vk.com/video/@groupname
 https://vk.com/video/playlist/-123456789_1
 
 Скачивание отдельных VK-видео через vkvideodownload.com подключено. Я попробую снова при ежедневном запуске.
+
+Если VK скрывает список без авторизации, подключи cookies: /cookies_help
 
 ${reason}`, autoSourceActionKeyboard(updated));
       }
