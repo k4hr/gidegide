@@ -67,7 +67,7 @@ function sourceScreenName(sourceUrl: string) {
 }
 
 
-type VkListingAttempt = {
+export type VkListingAttempt = {
   provider: "vk-api" | "vkvideo-html" | "vk-html" | "vk-mobile-html" | "yt-dlp";
   url: string;
   status?: number;
@@ -266,7 +266,7 @@ async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkLi
   const found = new Map<string, VkSourceVideo>();
   const candidates = buildVkSourceCandidateUrls(sourceUrl);
 
-  console.info("VK auto-source public listing started", { sourceUrl, candidates });
+  console.info("[VK_AUTO_SOURCE] public listing candidates", { sourceUrl, candidates });
 
   for (const url of candidates) {
     const attempt: VkListingAttempt = { provider: candidateProvider(url), url };
@@ -274,10 +274,12 @@ async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkLi
     try {
       const response = await fetchVkListingHtml(url);
       attempt.status = response.status;
+      console.info("[VK_AUTO_SOURCE] candidate", { url, status: response.status, provider: attempt.provider });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const videos = extractVkVideosFromHtml(response.html, url);
       attempt.foundCount = videos.length;
+      console.info("[VK_AUTO_SOURCE] extracted videos", { url, provider: attempt.provider, foundCount: videos.length });
       for (const video of videos) {
         const key = video.providerVideoId || video.videoUrl;
         if (!found.has(key)) found.set(key, video);
@@ -290,7 +292,7 @@ async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkLi
   }
 
   const result = Array.from(found.values()).slice(0, limit);
-  console.info("VK auto-source public listing finished", {
+  console.info("[VK_AUTO_SOURCE] public listing finished", {
     sourceUrl,
     foundCount: result.length,
     attempts,
@@ -353,7 +355,7 @@ async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVi
   return videos;
 }
 
-export async function getVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }) {
   const sourceUrl = normalizeVkSourceUrl(input.sourceUrl);
   const limit = Math.max(1, Math.min(200, input.limit));
   const token = process.env.VK_SERVICE_TOKEN?.trim() || process.env.VK_ACCESS_TOKEN?.trim();
@@ -361,21 +363,29 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
   const errors: string[] = [];
   let videos: VkSourceVideo[] = [];
 
+  console.info("[VK_AUTO_SOURCE] start", { sourceUrl, limit, hasVkToken: Boolean(token) });
+
   if (token) {
     try {
       videos = await getViaVkApi(sourceUrl, limit, token);
       attempts.push({ provider: "vk-api", url: sourceUrl, foundCount: videos.length });
+      console.info("[VK_AUTO_SOURCE] strategy vk-api", { sourceUrl, foundCount: videos.length });
     } catch (error) {
-      errors.push(humanizeVkAutoSourceError(error));
-      attempts.push({ provider: "vk-api", url: sourceUrl, error: humanizeVkAutoSourceError(error) });
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "vk-api", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy vk-api failed", { sourceUrl, reason });
     }
   }
 
   if (!videos.length) {
     try {
       videos = await getViaPublicHtml(sourceUrl, limit, attempts);
+      console.info("[VK_AUTO_SOURCE] strategy public-html", { sourceUrl, foundCount: videos.length });
     } catch (error) {
-      errors.push(humanizeVkAutoSourceError(error));
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      console.warn("[VK_AUTO_SOURCE] strategy public-html failed", { sourceUrl, reason });
     }
   }
 
@@ -383,9 +393,12 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
     try {
       videos = await getViaYtDlp(sourceUrl, limit);
       attempts.push({ provider: "yt-dlp", url: sourceUrl, foundCount: videos.length });
+      console.info("[VK_AUTO_SOURCE] strategy yt-dlp", { sourceUrl, foundCount: videos.length });
     } catch (error) {
-      errors.push(humanizeVkAutoSourceError(error));
-      attempts.push({ provider: "yt-dlp", url: sourceUrl, error: humanizeVkAutoSourceError(error) });
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "yt-dlp", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy yt-dlp failed", { sourceUrl, reason });
     }
   }
 
@@ -398,20 +411,31 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
     if (!unique.has(key)) unique.set(key, { ...video, providerVideoId, videoUrl: normalizedVideoUrl });
   }
 
-  console.info("VK auto-source listing result", {
+  const result = Array.from(unique.values()).slice(0, limit);
+  console.info("[VK_AUTO_SOURCE] final", {
     sourceUrl,
-    foundCount: unique.size,
+    foundCount: result.length,
     attempts,
     errors,
   });
 
-  if (!unique.size) {
+  return { sourceUrl, videos: result, attempts, errors };
+}
+
+export async function checkVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+  return collectVkSourceVideos(input);
+}
+
+export async function getVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+  const result = await collectVkSourceVideos(input);
+
+  if (!result.videos.length) {
     throw new Error(
       "Не получилось получить список видео из VK-источника. Попробуй отправить именно раздел видео: https://vk.com/videos-123456789 или https://vk.com/video/@groupname. Если VK закрывает страницу от гостей, список без авторизации не прочитается.",
     );
   }
 
-  return Array.from(unique.values()).slice(0, limit);
+  return result.videos;
 }
 
 export function humanizeVkAutoSourceError(error: unknown) {

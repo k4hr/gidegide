@@ -23,6 +23,14 @@ type DownloaderConfig = {
   preferredQuality: string;
 };
 
+type CheckResult = {
+  ok: boolean;
+  foundCount: number;
+  videos: Array<{ title?: string; videoUrl: string }>;
+  candidatesTried: Array<{ url: string; status?: number; foundCount?: number; provider?: string; error?: string }>;
+  error?: string | null;
+};
+
 const DEFAULT_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
 
 function normalizeTimezone(timezone: string) {
@@ -40,6 +48,7 @@ export default function AutoSourcesPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
   const [downloader, setDownloader] = useState<DownloaderConfig | null>(null);
+  const [checks, setChecks] = useState<Record<string, CheckResult>>({});
 
   const load = useCallback(async () => {
     const response = await fetch("/api/factory/auto-sources", { cache: "no-store" });
@@ -49,30 +58,68 @@ export default function AutoSourcesPage() {
     setDownloader(data.downloader);
   }, []);
 
-  useEffect(() => { load().catch((error) => setMessage(error.message)); }, [load]);
+  useEffect(() => {
+    load().catch((error) => setMessage(error.message));
+  }, [load]);
 
   async function add(event: FormEvent) {
     event.preventDefault();
-    setBusy("add"); setMessage("");
+    setBusy("add");
+    setMessage("");
     try {
-      const response = await fetch("/api/factory/auto-sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl }) });
+      const response = await fetch("/api/factory/auto-sources", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ sourceUrl, timezone: DEFAULT_AUTO_SOURCE_TIMEZONE }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Не удалось добавить источник");
-      setSourceUrl(""); setMessage("Источник добавлен"); await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Ошибка"); }
-    finally { setBusy(null); }
+      setSourceUrl("");
+      setMessage("Источник добавлен");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ошибка");
+    } finally {
+      setBusy(null);
+    }
   }
 
   async function action(id: string, method: "PATCH" | "DELETE" | "RUN", body?: object) {
-    setBusy(id); setMessage("");
+    setBusy(id);
+    setMessage("");
     try {
       const url = method === "RUN" ? `/api/factory/auto-sources/${id}/run-now` : `/api/factory/auto-sources/${id}`;
-      const response = await fetch(url, { method: method === "RUN" ? "POST" : method, headers: body ? { "content-type": "application/json" } : undefined, body: body ? JSON.stringify(body) : undefined });
+      const response = await fetch(url, {
+        method: method === "RUN" ? "POST" : method,
+        headers: body ? { "content-type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Операция не выполнена");
-      setMessage(method === "RUN" ? "Автозабор запущен" : "Сохранено"); await load();
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Ошибка"); }
-    finally { setBusy(null); }
+      setMessage(method === "RUN" ? "Автозабор запущен" : "Сохранено");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ошибка");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function checkSource(id: string) {
+    setBusy(`check:${id}`);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/factory/auto-sources/${id}/check`, { method: "POST" });
+      const data = await response.json() as CheckResult;
+      if (!response.ok) throw new Error(data.error || "Проверка не выполнена");
+      setChecks((current) => ({ ...current, [id]: data }));
+      setMessage(data.ok ? `Источник читается. Найдено видео: ${data.foundCount}` : "Источник не прочитался. Смотри подсказки в карточке.");
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Ошибка");
+    } finally {
+      setBusy(null);
+    }
   }
 
   function configure(source: Source) {
@@ -86,25 +133,88 @@ export default function AutoSourcesPage() {
   }
 
   return (
-    <main className="page"><div className="shell">
-      <nav className="nav"><Link href="/factory">Завод</Link><Link href="/factory/super-upload">Супер залив</Link><Link href="/factory/auto-sources">VK автозабор</Link><Link href="/factory/accounts">Аккаунты</Link></nav>
-      <section className="factory-hero-card"><div><p className="factory-eyebrow">Content Factory</p><h1>VK автозабор</h1><p>Ежедневно находит новые видео, создаёт по одной публикации на видео и распределяет их по окну.</p></div></section>
-      <section className="factory-panel"><h2>Downloader</h2><div className="factory-grid-cards"><div className="factory-stat-card"><span>Provider</span><strong style={{ fontSize: 20 }}>{downloader?.provider || "vkvideodownload"}</strong></div><div className="factory-stat-card"><span>Основной сервис</span><strong style={{ fontSize: 20 }}>vkvideodownload.com</strong></div><div className="factory-stat-card"><span>Качество</span><strong style={{ fontSize: 24 }}>{downloader?.preferredQuality || "720p"}</strong></div><div className="factory-stat-card"><span>yt-dlp fallback</span><strong style={{ fontSize: 24 }}>{downloader?.allowYtDlpFallback ? "ON" : "OFF"}</strong></div></div></section>
-      <section className="factory-panel">
-        <h2>Добавить источник</h2>
-        <form className="inline-actions" onSubmit={add}><input required type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://vk.com/videos-123456789"/><button disabled={busy === "add"}>Добавить</button></form>
-        {message && <p className={message.includes("Ошибка") || message.includes("не ") ? "factory-error-text" : "factory-success-text"}>{message}</p>}
-      </section>
-      <section className="factory-panel"><h2>Источники</h2>
-        {!sources.length ? <div className="empty-state"><strong>Источников пока нет</strong><span>Добавьте VK-группу или VK Video канал.</span></div> :
-          <div className="factory-table-wrap"><table className="factory-table"><thead><tr><th>Источник</th><th>Настройки</th><th>Состояние</th><th>Действия</th></tr></thead><tbody>
-            {sources.map((source) => <tr key={source.id}>
-              <td><strong>{source.sourceTitle || source.sourceUrl}</strong><small>{source._count.videos} сохранённых видео</small></td>
-              <td>{source.dailyLimit} в день<br/>{source.publishStartHour}:00–{source.publishEndHour}:00 МСК<br/><small>{timezoneLabel(source.timezone)}</small></td>
-              <td><span className={source.isEnabled ? "factory-status-ok" : "factory-status-warn"}>{source.isEnabled ? "Включён" : "Пауза"}</span><br/><small>{source.lastRunAt ? `Запуск: ${new Date(source.lastRunAt).toLocaleString("ru-RU", { timeZone: normalizeTimezone(source.timezone) })}` : "Ещё не запускался"}</small>{source.lastError && <p className="factory-error-text">{source.lastError}</p>}</td>
-              <td><div className="factory-row-actions"><button disabled={busy === source.id} onClick={() => action(source.id, "RUN")}>Запустить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => configure(source)}>Настроить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "PATCH", { isEnabled: !source.isEnabled })}>{source.isEnabled ? "Пауза" : "Включить"}</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "DELETE")}>Удалить</button></div></td>
-            </tr>)}</tbody></table></div>}
-      </section>
-    </div></main>
+    <main className="page">
+      <div className="shell">
+        <nav className="nav">
+          <Link href="/factory">Завод</Link>
+          <Link href="/factory/super-upload">Супер залив</Link>
+          <Link href="/factory/auto-sources">VK автозабор</Link>
+          <Link href="/factory/accounts">Аккаунты</Link>
+        </nav>
+
+        <section className="factory-hero-card">
+          <div>
+            <p className="factory-eyebrow">Content Factory</p>
+            <h1>VK автозабор</h1>
+            <p>Ежедневно находит новые видео, создаёт по одной публикации на видео и распределяет их по окну 15:00–23:00 МСК.</p>
+          </div>
+        </section>
+
+        <section className="factory-panel">
+          <h2>Provider status</h2>
+          <div className="factory-grid-cards">
+            <div className="factory-stat-card"><span>Downloader</span><strong style={{ fontSize: 20 }}>{downloader?.provider || "vkvideodownload"}</strong></div>
+            <div className="factory-stat-card"><span>Скачивание</span><strong style={{ fontSize: 20 }}>vkvideodownload.com</strong></div>
+            <div className="factory-stat-card"><span>Listing</span><strong style={{ fontSize: 18 }}>public VK/VKVideo HTML parser</strong></div>
+            <div className="factory-stat-card"><span>Timezone</span><strong style={{ fontSize: 20 }}>Europe/Moscow</strong></div>
+            <div className="factory-stat-card"><span>Качество</span><strong style={{ fontSize: 24 }}>{downloader?.preferredQuality || "720p"}</strong></div>
+            <div className="factory-stat-card"><span>yt-dlp fallback</span><strong style={{ fontSize: 24 }}>{downloader?.allowYtDlpFallback ? "ON" : "OFF"}</strong></div>
+          </div>
+        </section>
+
+        <section className="factory-panel">
+          <h2>Добавить источник</h2>
+          <p className="muted">Лучше отправлять раздел видео: https://vkvideo.ru/@kinobro, https://vk.com/video/@kinobro или https://vk.com/videos-123456789.</p>
+          <form className="inline-actions" onSubmit={add}>
+            <input required type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://vkvideo.ru/@kinobro" />
+            <button disabled={busy === "add"}>Добавить</button>
+          </form>
+          {message && <p className={message.includes("Ошибка") || message.includes("не ") ? "factory-error-text" : "factory-success-text"}>{message}</p>}
+        </section>
+
+        <section className="factory-panel">
+          <h2>Источники</h2>
+          {!sources.length ? (
+            <div className="empty-state"><strong>Источников пока нет</strong><span>Добавьте VK-группу или VK Video канал.</span></div>
+          ) : (
+            <div className="factory-table-wrap">
+              <table className="factory-table">
+                <thead><tr><th>Источник</th><th>Настройки</th><th>Состояние</th><th>Проверка</th><th>Действия</th></tr></thead>
+                <tbody>
+                  {sources.map((source) => {
+                    const check = checks[source.id];
+                    return (
+                      <tr key={source.id}>
+                        <td><strong>{source.sourceTitle || source.sourceUrl}</strong><small>{source._count.videos} сохранённых видео</small></td>
+                        <td>{source.dailyLimit} в день<br />{source.publishStartHour}:00–{source.publishEndHour}:00 МСК<br /><small>{timezoneLabel(source.timezone)}</small></td>
+                        <td><span className={source.isEnabled ? "factory-status-ok" : "factory-status-warn"}>{source.isEnabled ? "Включён" : "Пауза"}</span><br /><small>{source.lastRunAt ? `Запуск: ${new Date(source.lastRunAt).toLocaleString("ru-RU", { timeZone: normalizeTimezone(source.timezone) })}` : "Ещё не запускался"}</small>{source.lastError && <p className="factory-error-text">{source.lastError}</p>}</td>
+                        <td>
+                          {check ? (
+                            <div>
+                              <strong>{check.ok ? `Найдено: ${check.foundCount}` : "Не прочиталось"}</strong>
+                              {!check.ok && <p className="factory-error-text">Попробуй vk.com/video/@name или vk.com/videos-...</p>}
+                              {!!check.videos?.length && <small>{check.videos.slice(0, 2).map((video) => video.title || video.videoUrl).join(" · ")}</small>}
+                            </div>
+                          ) : <small>Не проверялось</small>}
+                        </td>
+                        <td>
+                          <div className="factory-row-actions">
+                            <button disabled={busy === source.id} onClick={() => action(source.id, "RUN")}>Запустить</button>
+                            <button className="secondary-button" disabled={busy === `check:${source.id}`} onClick={() => checkSource(source.id)}>Проверить список</button>
+                            <button className="secondary-button" disabled={busy === source.id} onClick={() => configure(source)}>Настроить</button>
+                            <button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "PATCH", { isEnabled: !source.isEnabled })}>{source.isEnabled ? "Пауза" : "Включить"}</button>
+                            <button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "DELETE")}>Удалить</button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
   );
 }
