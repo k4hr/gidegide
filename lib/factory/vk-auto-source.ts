@@ -17,7 +17,6 @@ export type VkSourceVideo = {
 
 const VK_API_VERSION = "5.199";
 
-<<<<<<< HEAD
 export const DEFAULT_VK_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
 export const LEGACY_VK_AUTO_SOURCE_TIMEZONE = "America/New_York";
 
@@ -32,8 +31,6 @@ export function vkAutoSourceTimezoneLabel(timezone?: string | null) {
   return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
-=======
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
 export function isVkGroupOrVideoSourceUrl(text: string) {
   try {
     const match = text.match(/https?:\/\/[^\s<>]+/i)?.[0] || text;
@@ -167,12 +164,7 @@ export function humanizeVkAutoSourceError(error: unknown) {
 }
 
 function localParts(date: Date, timezone: string) {
-<<<<<<< HEAD
-  const safeTimezone = normalizeVkAutoSourceTimezone(timezone);
-  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: safeTimezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)])) as Record<string, number>;
-=======
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)])) as Record<string, number>;
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
   return { year: parts.year, month: parts.month, day: parts.day, hour: parts.hour === 24 ? 0 : parts.hour, minute: parts.minute };
 }
 
@@ -211,19 +203,13 @@ export async function notifyVkAutoSourceRun(runId: string, text: string) {
 export async function runVkAutoSourceDaily(sourceId: string, options: { force?: boolean } = {}) {
   const source = await prisma.factoryVkAutoSource.findUnique({ where: { id: sourceId }, include: { chat: true } });
   if (!source) throw new Error("VK источник не найден");
-<<<<<<< HEAD
+  if (!source.chat.isAllowed || !isChatAllowed(source.chat.chatId)) throw new Error("Автозабор доступен только разрешённым chatId");
+  if (!source.isEnabled && !options.force) return null;
   const sourceTimezone = normalizeVkAutoSourceTimezone(source.timezone);
   if (source.timezone !== sourceTimezone) {
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { timezone: sourceTimezone } });
   }
-  if (!source.chat.isAllowed || !isChatAllowed(source.chat.chatId)) throw new Error("Автозабор доступен только разрешённым chatId");
-  if (!source.isEnabled && !options.force) return null;
   const today = getSourceRunDate(sourceTimezone);
-=======
-  if (!source.chat.isAllowed || !isChatAllowed(source.chat.chatId)) throw new Error("Автозабор доступен только разрешённым chatId");
-  if (!source.isEnabled && !options.force) return null;
-  const today = getSourceRunDate(source.timezone);
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
   const runDate = options.force ? `${today}#${Date.now()}` : today;
   let run;
   try {
@@ -261,20 +247,12 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
     for (let index = 0; index < picked.length; index += 1) {
       const video = picked[index];
       const totalMinutes = source.publishStartHour * 60 + intervalMinutes * index;
-<<<<<<< HEAD
       const scheduledAt = dateInTimezone(today, Math.floor(totalMinutes / 60), totalMinutes % 60, sourceTimezone);
-=======
-      const scheduledAt = dateInTimezone(today, Math.floor(totalMinutes / 60), totalMinutes % 60, source.timezone);
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
       try {
         const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({ where: { id: video.id, status: "NEW", factoryJobId: null }, data: { status: "PROCESSING", pickedAt: new Date(), error: null } });
         if (!claimed.count) continue;
         const clipSeconds = Math.max(15, Math.min(60, video.durationSec || 60));
-<<<<<<< HEAD
         const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
-=======
-        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: source.timezone, scheduledAt });
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
         await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: "QUEUED", factoryJobId: job.id } });
         created += 1;
       } catch (error) {
@@ -284,22 +262,14 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
     }
 
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: created ? "JOBS_CREATED" : "DONE", foundCount, pickedCount: picked.length, createdJobCount: created, failedCount: failed, ...(created ? {} : { finishedAt: new Date() }) } });
-<<<<<<< HEAD
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: null } });
-=======
-    await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, source.timezone), lastError: null } });
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
     await notifyVkAutoSourceRun(run.id, `✅ Найдено и взято в работу: ${created} видео.\nСоздано задач: ${created}.\nПубликация: ${source.publishStartHour}:00–${source.publishEndHour}:00.${failed ? `\nОшибок создания: ${failed}.` : ""}`);
     if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${source.sourceTitle || source.sourceUrl}\nСоздано задач: 0\nОпубликовано: 0\nОшибок: ${failed}`);
     return run;
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: "FAILED", error: reason, failedCount: 1, finishedAt: new Date() } });
-<<<<<<< HEAD
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: reason } });
-=======
-    await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, source.timezone), lastError: reason } });
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
     await notifyVkAutoSourceRun(run.id, `❌ Ошибка автозабора VK:\nИсточник: ${source.sourceTitle || source.sourceUrl}\nПричина: ${reason}`);
     throw error;
   }
@@ -311,17 +281,12 @@ export async function processDueVkAutoSources(now = new Date()) {
   const sources = await prisma.factoryVkAutoSource.findMany({ where: { isEnabled: true, chat: { isAllowed: true } } });
   let started = 0;
   for (const source of sources) {
-<<<<<<< HEAD
     const sourceTimezone = normalizeVkAutoSourceTimezone(source.timezone);
     if (source.timezone !== sourceTimezone) {
       await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { timezone: sourceTimezone } });
     }
     const parts = localParts(now, sourceTimezone);
     const today = getSourceRunDate(sourceTimezone, now);
-=======
-    const parts = localParts(now, source.timezone);
-    const today = getSourceRunDate(source.timezone, now);
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
     if (source.lastRunDate === today || parts.hour < scanHour || parts.hour >= source.publishEndHour) continue;
     const run = await runVkAutoSourceDaily(source.id).catch((error) => { console.error("VK auto-source run failed:", error); return null; });
     if (run) started += 1;
@@ -343,10 +308,6 @@ async function queueReplacementVideo(input: {
     createdJobCount: number;
   };
 }) {
-<<<<<<< HEAD
-  const sourceTimezone = normalizeVkAutoSourceTimezone(input.source.timezone);
-=======
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
   if (input.run.createdJobCount >= input.source.dailyLimit * 2) return false;
   const successfulOrActive = await prisma.factoryVkAutoSourceVideo.count({
     where: {
@@ -376,11 +337,7 @@ async function queueReplacementVideo(input: {
       scheduleStartHour: input.source.publishStartHour,
       scheduleEndHour: input.source.publishEndHour,
       scheduleIntervalMinutes: 60,
-<<<<<<< HEAD
-      timeZone: sourceTimezone,
-=======
-      timeZone: input.source.timezone,
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
+      timeZone: normalizeVkAutoSourceTimezone(input.source.timezone),
       scheduledAt: new Date(),
     });
     await prisma.$transaction([

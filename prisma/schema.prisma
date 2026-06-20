@@ -316,11 +316,7 @@ model FactoryVkAutoSource {
   dailyLimit       Int                 @default(10)
   publishStartHour Int                 @default(15)
   publishEndHour   Int                 @default(23)
-<<<<<<< HEAD
   timezone         String              @default("Europe/Moscow")
-=======
-  timezone         String              @default("America/New_York")
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
   lastRunDate      String?
   lastRunAt        DateTime?
   nextRunAt        DateTime?

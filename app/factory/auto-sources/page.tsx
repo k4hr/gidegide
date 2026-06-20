@@ -23,7 +23,6 @@ type DownloaderConfig = {
   preferredQuality: string;
 };
 
-<<<<<<< HEAD
 const DEFAULT_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
 
 function normalizeTimezone(timezone: string) {
@@ -35,8 +34,6 @@ function timezoneLabel(timezone: string) {
   return normalized === DEFAULT_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
-=======
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
 export default function AutoSourcesPage() {
   const [sources, setSources] = useState<Source[]>([]);
   const [sourceUrl, setSourceUrl] = useState("");
@@ -58,11 +55,7 @@ export default function AutoSourcesPage() {
     event.preventDefault();
     setBusy("add"); setMessage("");
     try {
-<<<<<<< HEAD
-      const response = await fetch("/api/factory/auto-sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl, timezone: DEFAULT_AUTO_SOURCE_TIMEZONE }) });
-=======
       const response = await fetch("/api/factory/auto-sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl }) });
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Не удалось добавить источник");
       setSourceUrl(""); setMessage("Источник добавлен"); await load();
@@ -87,11 +80,7 @@ export default function AutoSourcesPage() {
     if (!Number.isInteger(dailyLimit) || dailyLimit < 1 || dailyLimit > 20) return;
     const publishStartHour = Number(window.prompt("Начало окна (0–23)", String(source.publishStartHour)));
     const publishEndHour = Number(window.prompt("Конец окна (1–24)", String(source.publishEndHour)));
-<<<<<<< HEAD
     const timezone = window.prompt("Часовой пояс IANA (МСК = Europe/Moscow)", normalizeTimezone(source.timezone))?.trim();
-=======
-    const timezone = window.prompt("Часовой пояс IANA", source.timezone)?.trim();
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
     if (!timezone || publishEndHour <= publishStartHour) return;
     void action(source.id, "PATCH", { dailyLimit, publishStartHour, publishEndHour, timezone });
   }
@@ -111,13 +100,8 @@ export default function AutoSourcesPage() {
           <div className="factory-table-wrap"><table className="factory-table"><thead><tr><th>Источник</th><th>Настройки</th><th>Состояние</th><th>Действия</th></tr></thead><tbody>
             {sources.map((source) => <tr key={source.id}>
               <td><strong>{source.sourceTitle || source.sourceUrl}</strong><small>{source._count.videos} сохранённых видео</small></td>
-<<<<<<< HEAD
               <td>{source.dailyLimit} в день<br/>{source.publishStartHour}:00–{source.publishEndHour}:00 МСК<br/><small>{timezoneLabel(source.timezone)}</small></td>
               <td><span className={source.isEnabled ? "factory-status-ok" : "factory-status-warn"}>{source.isEnabled ? "Включён" : "Пауза"}</span><br/><small>{source.lastRunAt ? `Запуск: ${new Date(source.lastRunAt).toLocaleString("ru-RU", { timeZone: normalizeTimezone(source.timezone) })}` : "Ещё не запускался"}</small>{source.lastError && <p className="factory-error-text">{source.lastError}</p>}</td>
-=======
-              <td>{source.dailyLimit} в день<br/>{source.publishStartHour}:00–{source.publishEndHour}:00<br/><small>{source.timezone}</small></td>
-              <td><span className={source.isEnabled ? "factory-status-ok" : "factory-status-warn"}>{source.isEnabled ? "Включён" : "Пауза"}</span><br/><small>{source.lastRunAt ? `Запуск: ${new Date(source.lastRunAt).toLocaleString("ru-RU")}` : "Ещё не запускался"}</small>{source.lastError && <p className="factory-error-text">{source.lastError}</p>}</td>
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
               <td><div className="factory-row-actions"><button disabled={busy === source.id} onClick={() => action(source.id, "RUN")}>Запустить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => configure(source)}>Настроить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "PATCH", { isEnabled: !source.isEnabled })}>{source.isEnabled ? "Пауза" : "Включить"}</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "DELETE")}>Удалить</button></div></td>
             </tr>)}</tbody></table></div>}
       </section>

@@ -2,10 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
-<<<<<<< HEAD
 import { normalizeVkAutoSourceTimezone } from "@/lib/factory/vk-auto-source";
-=======
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };
@@ -22,10 +19,7 @@ export async function PATCH(request: Request, context: Context) {
   try {
     const { id } = await context.params;
     const data = patchSchema.parse(await request.json());
-<<<<<<< HEAD
-    if (data.timezone) data.timezone = normalizeVkAutoSourceTimezone(data.timezone);
-=======
->>>>>>> e69342d9ff2972d7b19aa9106f14b89241b46dc8
+    if (data.timezone !== undefined) data.timezone = normalizeVkAutoSourceTimezone(data.timezone);
     const current = await prisma.factoryVkAutoSource.findUnique({ where: { id } });
     if (!current) return NextResponse.json({ error: "Источник не найден" }, { status: 404 });
     const start = data.publishStartHour ?? current.publishStartHour;
