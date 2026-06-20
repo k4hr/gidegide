@@ -59,50 +59,201 @@ function sourceTimeZoneLabel(source: { timezone: string }) {
   return vkAutoSourceTimezoneLabel(source.timezone);
 }
 
+function denied(chatId: string | number) {
+  return sendTelegramMessage(chatId, `⛔ Доступ не выдан. Ваш chatId: ${chatId}`);
+}
+
+function menu(): TelegramReplyMarkup | undefined {
+  const url = appUrl();
+  return url ? { inline_keyboard: [[{ text: "Открыть завод", url }]] } : undefined;
+}
+
+function parseSettings(value: unknown): JobSettings {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return { ...DEFAULT_SETTINGS };
+  const input = value as Partial<JobSettings>;
+  return {
+    clips: [5, 10, 20].includes(Number(input.clips)) ? Number(input.clips) : 10,
+    seconds: [30, 60].includes(Number(input.seconds)) ? Number(input.seconds) : 60,
+    interval: [15, 30, 60].includes(Number(input.interval)) ? Number(input.interval) : 60,
+    start: Number(input.start) === 18 ? 18 : 14,
+    end: 23,
+  };
+}
+
+function previewKeyboard(id: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "🚀 10 видео с 14:00 до 23:00", callback_data: `tg:auto:${id}` }],
+      [{ text: "⚙️ Настроить", callback_data: `tg:settings:${id}` }],
+      [{ text: "👀 Только проверить", callback_data: `tg:check:${id}` }],
+      [{ text: "❌ Отмена", callback_data: `tg:cancel:${id}` }],
     ],
-    [{ text: "вњ… Р”РѕР±Р°РІРёС‚СЊ", callback_data: `tg:autosource:add:${id}` }],
+  };
+}
+
+function autoSourceKeyboard(id: string): TelegramReplyMarkup {
+  return { inline_keyboard: [
+    [{ text: "✅ Добавить автозабор", callback_data: `tg:autosource:add:${id}` }],
+    [{ text: "⚙️ Настроить", callback_data: `tg:autosource:settings:${id}` }],
+    [{ text: "👀 Проверить источник", callback_data: `tg:autosource:check:${id}` }],
+    [{ text: "❌ Отмена", callback_data: `tg:autosource:cancel:${id}` }],
+  ] };
+}
+
+function autoSourceSettingsKeyboard(id: string): TelegramReplyMarkup {
+  return { inline_keyboard: [
+    [5, 10, 20].map((value) => ({ text: `${value} видео`, callback_data: `tg:autosource:set:${id}:limit:${value}` })),
+    [
+      { text: "15–23", callback_data: `tg:autosource:set:${id}:window:15` },
+      { text: "18–23", callback_data: `tg:autosource:set:${id}:window:18` },
+    ],
+    [{ text: "✅ Добавить", callback_data: `tg:autosource:add:${id}` }],
   ] };
 }
 
 async function showSources(chatDbId: string, telegramChatId: string, runButtons = false) {
-  await prisma.factoryVkAutoSource.updateMany({
-    where: { chatId: chatDbId, timezone: "Europe/Moscow" },
-    data: { timezone: DEFAULT_VK_AUTO_SOURCE_TIMEZONE },
-  });
   const sources = await prisma.factoryVkAutoSource.findMany({ where: { chatId: chatDbId }, orderBy: { createdAt: "asc" } });
-  if (!sources.length) return sendTelegramMessage(telegramChatId, "рџ“Ў РСЃС‚РѕС‡РЅРёРєРѕРІ РїРѕРєР° РЅРµС‚. РџСЂРёС€Р»Рё СЃСЃС‹Р»РєСѓ РЅР° VK-РіСЂСѓРїРїСѓ РёР»Рё VK Video РєР°РЅР°Р».");
-  const lines = sources.map((source, index) => `${index + 1}. ${source.sourceTitle || source.sourceUrl}\nРЎС‚Р°С‚СѓСЃ: ${source.isEnabled ? "РІРєР»СЋС‡С‘РЅ" : "РїР°СѓР·Р°"}\nРљР°Р¶РґС‹Р№ РґРµРЅСЊ: ${source.dailyLimit} РІРёРґРµРѕ\nРџСѓР±Р»РёРєР°С†РёСЏ: ${source.publishStartHour}:00вЂ“${source.publishEndHour}:00 РњРЎРљ\nР§Р°СЃРѕРІРѕР№ РїРѕСЏСЃ: ${sourceTimeZoneLabel(source)}\nРџРѕСЃР»РµРґРЅРёР№ Р·Р°РїСѓСЃРє: ${source.lastRunAt ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: sourceTimeZone(source) }).format(source.lastRunAt) : "РµС‰С‘ РЅРµ Р·Р°РїСѓСЃРєР°Р»СЃСЏ"}${source.lastError ? `\nРћС€РёР±РєР°: ${source.lastError}` : ""}`);
+  if (!sources.length) return sendTelegramMessage(telegramChatId, "📡 Источников пока нет. Пришли ссылку на VK-группу или VK Video канал.");
+  const lines = sources.map((source, index) => `${index + 1}. ${source.sourceTitle || source.sourceUrl}
+Статус: ${source.isEnabled ? "включён" : "пауза"}
+Каждый день: ${source.dailyLimit} видео
+Публикация: ${source.publishStartHour}:00–${source.publishEndHour}:00 МСК
+Часовой пояс: ${sourceTimeZoneLabel(source)}
+Последний запуск: ${source.lastRunAt ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: sourceTimeZone(source) }).format(source.lastRunAt) : "ещё не запускался"}${source.lastError ? `
+Ошибка: ${source.lastError}` : ""}`);
   const keyboard: TelegramReplyMarkup = {
     inline_keyboard: sources.flatMap((source) =>
       runButtons
-        ? [[{ text: `в–¶пёЏ ${source.sourceTitle || source.sourceUrl.slice(0, 24)}`, callback_data: `tg:autosource:run:${source.id}` }]]
+        ? [[{ text: `▶️ ${source.sourceTitle || source.sourceUrl.slice(0, 24)}`, callback_data: `tg:autosource:run:${source.id}` }]]
         : [[
-            { text: "в–¶пёЏ Р—Р°РїСѓСЃС‚РёС‚СЊ", callback_data: `tg:autosource:run:${source.id}` },
-            { text: source.isEnabled ? "вЏё РџР°СѓР·Р°" : "в–¶пёЏ Р’РєР»СЋС‡РёС‚СЊ", callback_data: `tg:autosource:${source.isEnabled ? "pause" : "resume"}:${source.id}` },
-            { text: "рџ—‘ РЈРґР°Р»РёС‚СЊ", callback_data: `tg:autosource:delete:${source.id}` },
+            { text: "▶️ Запустить", callback_data: `tg:autosource:run:${source.id}` },
+            { text: source.isEnabled ? "⏸ Пауза" : "▶️ Включить", callback_data: `tg:autosource:${source.isEnabled ? "pause" : "resume"}:${source.id}` },
+            { text: "🗑 Удалить", callback_data: `tg:autosource:delete:${source.id}` },
           ]],
     ),
   };
-  return sendTelegramMessage(telegramChatId, `рџ“Ў РСЃС‚РѕС‡РЅРёРєРё:\n\n${lines.join("\n\n")}`, keyboard);
+  return sendTelegramMessage(telegramChatId, `📡 Источники:\n\n${lines.join("\n\n")}`, keyboard);
 }
 
+function settingsKeyboard(id: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [5, 10, 20].map((n) => ({ text: String(n), callback_data: `tg:set:${id}:clips:${n}` })),
+      [30, 60].map((n) => ({ text: `${n} сек`, callback_data: `tg:set:${id}:seconds:${n}` })),
+      [15, 30, 60].map((n) => ({ text: n === 60 ? "1 час" : `${n} мин`, callback_data: `tg:set:${id}:interval:${n}` })),
+      [
+        { text: "14–23", callback_data: `tg:set:${id}:window:14` },
+        { text: "18–23", callback_data: `tg:set:${id}:window:18` },
+      ],
+      [{ text: "🚀 Запустить", callback_data: `tg:auto:${id}` }],
+      [{ text: "❌ Отмена", callback_data: `tg:cancel:${id}` }],
+    ],
+  };
+}
+
+function settingsText(settings: JobSettings) {
+  return `⚙️ Настройки задачи\n\nСколько роликов? ${settings.clips}\nДлина? ${settings.seconds} сек\nИнтервал? ${settings.interval} мин\nОкно? ${settings.start}:00–${settings.end}:00`;
+}
+
+function statusName(status: string) {
+  const names: Record<string, string> = {
+    QUEUED: "в очереди", DOWNLOADING: "скачивание", RENDERING: "рендер", PUBLISHING: "публикация",
+    DONE: "готово", FAILED: "ошибка", CANCELED: "отменено", CREATED: "ожидает запуска", PROCESSING: "обрабатывается",
+  };
+  return names[status] || status.toLowerCase();
+}
+
+async function showStatus(chatDbId: string, telegramChatId: string) {
+  const jobs = await prisma.factoryTelegramJob.findMany({
+    where: { chatId: chatDbId },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+    include: { factoryJob: true },
+  });
+  if (!jobs.length) return sendTelegramMessage(telegramChatId, "Пока нет задач.");
+  const base = appUrl("/factory");
+  const lines = jobs.map((item, index) => {
+    const job = item.factoryJob;
+    const source = item.sourceUrl.length > 55 ? `${item.sourceUrl.slice(0, 52)}…` : item.sourceUrl;
+    const status = statusName(job?.status || item.status);
+    const progress = job ? `${job.progress}%${job.progressLabel ? ` — ${job.progressLabel}` : ""}` : "—";
+    return `${index + 1}. ${source}\n${status} · ${progress}${base && job ? `\n${base}` : ""}`;
+  });
+  return sendTelegramMessage(telegramChatId, `📋 Последние задачи\n\n${lines.join("\n\n")}`);
+}
+
+async function showQueue(chatDbId: string, telegramChatId: string) {
+  const items = await prisma.factoryTelegramJob.findMany({
+    where: { chatId: chatDbId, factoryJob: { status: { in: ["QUEUED", "DOWNLOADING", "RENDERING", "PUBLISHING"] } } },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+    include: { factoryJob: true },
+  });
+  if (!items.length) return sendTelegramMessage(telegramChatId, "🗓 Очередь публикаций пуста.");
+  const lines = items.map((item, i) => {
+    const job = item.factoryJob!;
+    const when = job.scheduledAt ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Moscow" }).format(job.scheduledAt) : "после рендера";
+    return `${i + 1}. #${job.id.slice(-8)} — ${when} · ${statusName(job.status)}`;
+  });
+  return sendTelegramMessage(telegramChatId, `🗓 Ближайшие публикации\n\n${lines.join("\n")}`);
+}
+
+async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
+  const chatId = String(message.chat.id);
+  const chat = await upsertTelegramChat({ chatId, user: message.from });
+  if (!chat.isAllowed) return denied(chatId);
+  const text = message.text?.trim() || "";
+  const command = text.split(/\s+/)[0].toLowerCase().replace(/@[^\s]+$/, "");
+
+  if (command === "/start") return sendTelegramMessage(chatId, "🎬 Завод готов. Пришли отдельное VK-видео или ссылку на VK-группу/VK Video канал для ежедневного автозабора.", menu());
+  if (command === "/help") return sendTelegramMessage(chatId, "Пришли ссылку на отдельное VK-видео для разовой задачи или ссылку на VK-группу/VK Video канал для ежедневного автозабора.\n\n/status — последние задачи\n/queue — очередь публикаций\n/sources — VK-источники\n/source_status — состояние источников\n/run_today — запустить сегодня\n/pause_sources — остановить источники\n/resume_sources — включить источники");
+  if (command === "/status") return showStatus(chat.id, chatId);
+  if (command === "/queue") return showQueue(chat.id, chatId);
+  if (command === "/sources" || command === "/source_status") return showSources(chat.id, chatId);
+  if (command === "/run_today") return showSources(chat.id, chatId, true);
+  if (command === "/pause_sources") {
+    const result = await prisma.factoryVkAutoSource.updateMany({ where: { chatId: chat.id }, data: { isEnabled: false } });
+    return sendTelegramMessage(chatId, `⏸ Источники приостановлены: ${result.count}.`);
+  }
+  if (command === "/resume_sources") {
+    const result = await prisma.factoryVkAutoSource.updateMany({ where: { chatId: chat.id }, data: { isEnabled: true } });
+    return sendTelegramMessage(chatId, `▶️ Источники включены: ${result.count}.`);
+  }
+
+  if (isVkGroupOrVideoSourceUrl(text)) {
+    const sourceUrl = normalizeVkSourceUrl(text);
+    const source = await prisma.factoryVkAutoSource.upsert({
+      where: { chatId_sourceUrl: { chatId: chat.id, sourceUrl } },
+      create: { chatId: chat.id, sourceUrl, isEnabled: false },
+      update: {},
+    });
+    if (source.isEnabled) return sendTelegramMessage(chatId, "📡 Этот источник уже добавлен в ежедневный автозабор.");
+    return sendTelegramMessage(chatId, `📡 Похоже, это VK-источник.
+
+Добавить его в ежедневный автозабор?
+
+Настройки:
+• ${source.dailyLimit} видео в день
+• публикация с ${source.publishStartHour}:00 до ${source.publishEndHour}:00 МСК
+• часовой пояс: ${sourceTimeZoneLabel(source)}`, autoSourceKeyboard(source.id));
+  }
 
   const sourceUrl = extractVkVideoUrl(text);
-  if (!sourceUrl) return sendTelegramMessage(chatId, "РќРµ РІРёР¶Сѓ VK/VKVideo СЃСЃС‹Р»РєРё. РџСЂРёС€Р»Рё РїРѕР»РЅСѓСЋ СЃСЃС‹Р»РєСѓ, РЅР°С‡РёРЅР°СЋС‰СѓСЋСЃСЏ СЃ https://");
+  if (!sourceUrl) return sendTelegramMessage(chatId, "Не вижу VK/VKVideo ссылки. Пришли полную ссылку, начинающуюся с https://");
   const telegramJob = await prisma.factoryTelegramJob.create({
     data: { chatId: chat.id, sourceUrl, settings: DEFAULT_SETTINGS },
   });
-  const sent = await sendTelegramMessage(chatId, "рџЋ¬ Р’РёРґРµРѕ РїРѕР»СѓС‡РµРЅРѕ.\nРЎРєР°С‡РёРІР°РЅРёРµ Р±СѓРґРµС‚ С‡РµСЂРµР· vkvideodownload.com.\n\nР§С‚Рѕ РґРµР»Р°РµРј?", previewKeyboard(telegramJob.id));
+  const sent = await sendTelegramMessage(chatId, "🎬 Видео получено.\nСкачивание будет через vkvideodownload.com.\n\nЧто делаем?", previewKeyboard(telegramJob.id));
   await prisma.factoryTelegramJob.update({ where: { id: telegramJob.id }, data: { telegramMessageId: String(sent.message_id) } });
 }
 
 async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"]>) {
   const callbackMessage = query.message;
   const chatId = callbackMessage ? String(callbackMessage.chat.id) : "";
-  if (!chatId || !query.data) return answerCallbackQuery(query.id, "РЎРѕРѕР±С‰РµРЅРёРµ СѓСЃС‚Р°СЂРµР»Рѕ");
+  if (!chatId || !query.data) return answerCallbackQuery(query.id, "Сообщение устарело");
   const chat = await upsertTelegramChat({ chatId, user: query.from });
   if (!chat.isAllowed) {
-    await answerCallbackQuery(query.id, "Р”РѕСЃС‚СѓРї РЅРµ РІС‹РґР°РЅ");
+    await answerCallbackQuery(query.id, "Доступ не выдан");
     return denied(chatId);
   }
 
@@ -111,12 +262,16 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
     const sourceAction = parts[2];
     const sourceId = parts[3];
     const source = sourceId ? await prisma.factoryVkAutoSource.findFirst({ where: { id: sourceId, chatId: chat.id } }) : null;
-    if (!source) return answerCallbackQuery(query.id, "РСЃС‚РѕС‡РЅРёРє РЅРµ РЅР°Р№РґРµРЅ");
+    if (!source) return answerCallbackQuery(query.id, "Источник не найден");
     const sourceMessageId = callbackMessage!.message_id;
 
     if (sourceAction === "settings") {
       await answerCallbackQuery(query.id);
-      return editTelegramMessage(chatId, sourceMessageId, `вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё Р°РІС‚РѕР·Р°Р±РѕСЂР°\n\nР’РёРґРµРѕ РІ РґРµРЅСЊ: ${source.dailyLimit}\nРћРєРЅРѕ: ${source.publishStartHour}:00вЂ“${source.publishEndHour}:00 РњРЎРљ\nР§Р°СЃРѕРІРѕР№ РїРѕСЏСЃ: ${sourceTimeZoneLabel(source)}`, autoSourceSettingsKeyboard(source.id));
+      return editTelegramMessage(chatId, sourceMessageId, `⚙️ Настройки автозабора
+
+Видео в день: ${source.dailyLimit}
+Окно: ${source.publishStartHour}:00–${source.publishEndHour}:00 МСК
+Часовой пояс: ${sourceTimeZoneLabel(source)}`, autoSourceSettingsKeyboard(source.id));
     }
     if (sourceAction === "set") {
       const key = parts[4];
@@ -126,69 +281,73 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
         : key === "window" && [15, 18].includes(value)
           ? { publishStartHour: value, publishEndHour: 23 }
           : null;
-      if (!data) return answerCallbackQuery(query.id, "РќРµРєРѕСЂСЂРµРєС‚РЅР°СЏ РЅР°СЃС‚СЂРѕР№РєР°");
+      if (!data) return answerCallbackQuery(query.id, "Некорректная настройка");
       const updated = await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data });
-      await answerCallbackQuery(query.id, "РЎРѕС…СЂР°РЅРµРЅРѕ");
-      return editTelegramMessage(chatId, sourceMessageId, `вљ™пёЏ РќР°СЃС‚СЂРѕР№РєРё Р°РІС‚РѕР·Р°Р±РѕСЂР°\n\nР’РёРґРµРѕ РІ РґРµРЅСЊ: ${updated.dailyLimit}\nРћРєРЅРѕ: ${updated.publishStartHour}:00вЂ“${updated.publishEndHour}:00 РњРЎРљ\nР§Р°СЃРѕРІРѕР№ РїРѕСЏСЃ: ${sourceTimeZoneLabel(updated)}`, autoSourceSettingsKeyboard(source.id));
+      await answerCallbackQuery(query.id, "Сохранено");
+      return editTelegramMessage(chatId, sourceMessageId, `⚙️ Настройки автозабора
+
+Видео в день: ${updated.dailyLimit}
+Окно: ${updated.publishStartHour}:00–${updated.publishEndHour}:00 МСК
+Часовой пояс: ${sourceTimeZoneLabel(updated)}`, autoSourceSettingsKeyboard(source.id));
     }
     if (sourceAction === "check" || sourceAction === "add") {
-      await answerCallbackQuery(query.id, "РџСЂРѕРІРµСЂСЏСЋ РёСЃС‚РѕС‡РЅРёРєвЂ¦");
+      await answerCallbackQuery(query.id, "Проверяю источник…");
       try {
         const videos = await getVkSourceVideos({ sourceUrl: source.sourceUrl, limit: 3 });
-        if (sourceAction === "check") return editTelegramMessage(chatId, sourceMessageId, `рџ‘Ђ РСЃС‚РѕС‡РЅРёРє РґРѕСЃС‚СѓРїРµРЅ. РќР°Р№РґРµРЅРѕ РІРёРґРµРѕ: ${videos.length}.`, autoSourceKeyboard(source.id));
+        if (sourceAction === "check") return editTelegramMessage(chatId, sourceMessageId, `👀 Источник доступен. Найдено видео: ${videos.length}.`, autoSourceKeyboard(source.id));
         await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: null } });
-        return editTelegramMessage(chatId, sourceMessageId, `вњ… РСЃС‚РѕС‡РЅРёРє РґРѕР±Р°РІР»РµРЅ.\nРЎРїРёСЃРѕРє РІРёРґРµРѕ РїРѕР»СѓС‡Р°СЋ РёР· РїСѓР±Р»РёС‡РЅРѕРіРѕ VK-СЂР°Р·РґРµР»Р°.\nРЎРєР°С‡РёРІР°РЅРёРµ РІРёРґРµРѕ: С‡РµСЂРµР· vkvideodownload.com.\nРљР°Р¶РґС‹Р№ РґРµРЅСЊ Р±РµСЂСѓ РґРѕ ${source.dailyLimit} РЅРѕРІС‹С… РІРёРґРµРѕ Рё РїСѓР±Р»РёРєСѓСЋ СЃ ${source.publishStartHour}:00 РґРѕ ${source.publishEndHour}:00 РїРѕ РњРЎРљ.\nР§Р°СЃРѕРІРѕР№ РїРѕСЏСЃ: ${sourceTimeZoneLabel(source)}.\n\nРЎРµР№С‡Р°СЃ РЅР°Р№РґРµРЅРѕ: ${videos.length}.`);
+        return editTelegramMessage(chatId, sourceMessageId, `✅ Источник добавлен.\nСписок видео получаю из публичного VK-раздела.\nСкачивание видео: через vkvideodownload.com.\nКаждый день беру до ${source.dailyLimit} новых видео и публикую с ${source.publishStartHour}:00 до ${source.publishEndHour}:00 МСК.\n\nСейчас найдено: ${videos.length}.`);
       } catch (error) {
         const reason = humanizeFactoryError(error);
         if (sourceAction === "add") {
           await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: reason } });
-          return editTelegramMessage(chatId, sourceMessageId, `вљ пёЏ РСЃС‚РѕС‡РЅРёРє РґРѕР±Р°РІР»РµРЅ, РЅРѕ СЃРїРёСЃРѕРє РІРёРґРµРѕ СЃРµР№С‡Р°СЃ РЅРµ РїСЂРѕС‡РёС‚Р°Р»СЃСЏ.\nРЎРєР°С‡РёРІР°РЅРёРµ РѕС‚РґРµР»СЊРЅС‹С… VK-РІРёРґРµРѕ С‡РµСЂРµР· vkvideodownload.com РїРѕРґРєР»СЋС‡РµРЅРѕ, РЅРѕ РґР»СЏ Р°РІС‚РѕР·Р°Р±РѕСЂР° РёР· РіСЂСѓРїРїС‹ РЅСѓР¶РµРЅ РґРѕСЃС‚СѓРїРЅС‹Р№ РїСѓР±Р»РёС‡РЅС‹Р№ СЃРїРёСЃРѕРє РІРёРґРµРѕ.\nРЇ РїРѕРїСЂРѕР±СѓСЋ СЃРЅРѕРІР° РїСЂРё РµР¶РµРґРЅРµРІРЅРѕРј Р·Р°РїСѓСЃРєРµ.\n\n${reason}`);
+          return editTelegramMessage(chatId, sourceMessageId, `⚠️ Источник добавлен, но список видео сейчас не прочитался.\nСкачивание отдельных VK-видео через vkvideodownload.com подключено, но для автозабора из группы нужен доступный публичный список видео.\nЯ попробую снова при ежедневном запуске.\n\n${reason}`);
         }
-        return editTelegramMessage(chatId, sourceMessageId, `вќЊ РќРµ РїРѕР»СѓС‡РёР»РѕСЃСЊ РїСЂРѕС‡РёС‚Р°С‚СЊ VK-РёСЃС‚РѕС‡РЅРёРє.\n${reason}`, autoSourceKeyboard(source.id));
+        return editTelegramMessage(chatId, sourceMessageId, `❌ Не получилось прочитать VK-источник.\n${reason}`, autoSourceKeyboard(source.id));
       }
     }
     if (sourceAction === "cancel") {
       if (!source.isEnabled) await prisma.factoryVkAutoSource.delete({ where: { id: source.id } });
-      await answerCallbackQuery(query.id, "РћС‚РјРµРЅРµРЅРѕ");
-      return editTelegramMessage(chatId, sourceMessageId, "вќЊ Р”РѕР±Р°РІР»РµРЅРёРµ Р°РІС‚РѕР·Р°Р±РѕСЂР° РѕС‚РјРµРЅРµРЅРѕ.");
+      await answerCallbackQuery(query.id, "Отменено");
+      return editTelegramMessage(chatId, sourceMessageId, "❌ Добавление автозабора отменено.");
     }
     if (sourceAction === "pause" || sourceAction === "resume") {
       await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: sourceAction === "resume" } });
-      await answerCallbackQuery(query.id, sourceAction === "resume" ? "РСЃС‚РѕС‡РЅРёРє РІРєР»СЋС‡С‘РЅ" : "РСЃС‚РѕС‡РЅРёРє РЅР° РїР°СѓР·Рµ");
-      return editTelegramMessage(chatId, sourceMessageId, sourceAction === "resume" ? "в–¶пёЏ РСЃС‚РѕС‡РЅРёРє РІРєР»СЋС‡С‘РЅ." : "вЏё РСЃС‚РѕС‡РЅРёРє РїСЂРёРѕСЃС‚Р°РЅРѕРІР»РµРЅ.");
+      await answerCallbackQuery(query.id, sourceAction === "resume" ? "Источник включён" : "Источник на паузе");
+      return editTelegramMessage(chatId, sourceMessageId, sourceAction === "resume" ? "▶️ Источник включён." : "⏸ Источник приостановлен.");
     }
     if (sourceAction === "delete") {
       await prisma.factoryVkAutoSource.delete({ where: { id: source.id } });
-      await answerCallbackQuery(query.id, "РЈРґР°Р»РµРЅРѕ");
-      return editTelegramMessage(chatId, sourceMessageId, "рџ—‘ РСЃС‚РѕС‡РЅРёРє СѓРґР°Р»С‘РЅ.");
+      await answerCallbackQuery(query.id, "Удалено");
+      return editTelegramMessage(chatId, sourceMessageId, "🗑 Источник удалён.");
     }
     if (sourceAction === "run") {
       const today = getSourceRunDate(sourceTimeZone(source));
       if (source.lastRunDate === today) {
-        await answerCallbackQuery(query.id, "РЎРµРіРѕРґРЅСЏ СѓР¶Рµ Р·Р°РїСѓСЃРєР°Р»СЃСЏ");
-        return editTelegramMessage(chatId, sourceMessageId, "РЎРµРіРѕРґРЅСЏ СѓР¶Рµ Р·Р°РїСѓСЃРєР°Р»СЃСЏ. Р—Р°РїСѓСЃС‚РёС‚СЊ РµС‰С‘ СЂР°Р·? РќРѕРІС‹Рµ Р·Р°РґР°С‡Рё Р±СѓРґСѓС‚ СЃРѕР·РґР°РЅС‹ С‚РѕР»СЊРєРѕ РґР»СЏ РµС‰С‘ РЅРµ РѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹С… РІРёРґРµРѕ.", { inline_keyboard: [[{ text: "в–¶пёЏ Р—Р°РїСѓСЃС‚РёС‚СЊ РµС‰С‘ СЂР°Р·", callback_data: `tg:autosource:force:${source.id}` }, { text: "вќЊ РќРµС‚", callback_data: `tg:autosource:cancelrun:${source.id}` }]] });
+        await answerCallbackQuery(query.id, "Сегодня уже запускался");
+        return editTelegramMessage(chatId, sourceMessageId, "Сегодня уже запускался. Запустить ещё раз? Новые задачи будут созданы только для ещё не обработанных видео.", { inline_keyboard: [[{ text: "▶️ Запустить ещё раз", callback_data: `tg:autosource:force:${source.id}` }, { text: "❌ Нет", callback_data: `tg:autosource:cancelrun:${source.id}` }]] });
       }
-      await answerCallbackQuery(query.id, "Р—Р°РїСѓСЃРєР°СЋвЂ¦");
+      await answerCallbackQuery(query.id, "Запускаю…");
       void runVkAutoSourceDaily(source.id, { force: true }).catch((error) => console.error("Manual VK auto-source run failed:", error));
-      return editTelegramMessage(chatId, sourceMessageId, "рџ“Ў РђРІС‚РѕР·Р°Р±РѕСЂ Р·Р°РїСѓС‰РµРЅ. Р РµР·СѓР»СЊС‚Р°С‚С‹ РїСЂРёРґСѓС‚ РѕС‚РґРµР»СЊРЅС‹РјРё СЃРѕРѕР±С‰РµРЅРёСЏРјРё.");
+      return editTelegramMessage(chatId, sourceMessageId, "📡 Автозабор запущен. Результаты придут отдельными сообщениями.");
     }
     if (sourceAction === "force") {
-      await answerCallbackQuery(query.id, "Р—Р°РїСѓСЃРєР°СЋ РїРѕРІС‚РѕСЂРЅРѕвЂ¦");
+      await answerCallbackQuery(query.id, "Запускаю повторно…");
       void runVkAutoSourceDaily(source.id, { force: true }).catch((error) => console.error("Forced VK auto-source run failed:", error));
-      return editTelegramMessage(chatId, sourceMessageId, "рџ“Ў РџРѕРІС‚РѕСЂРЅС‹Р№ Р°РІС‚РѕР·Р°Р±РѕСЂ Р·Р°РїСѓС‰РµРЅ. РЈР¶Рµ РѕР±СЂР°Р±РѕС‚Р°РЅРЅС‹Рµ РІРёРґРµРѕ Р±СѓРґСѓС‚ РїСЂРѕРїСѓС‰РµРЅС‹.");
+      return editTelegramMessage(chatId, sourceMessageId, "📡 Повторный автозабор запущен. Уже обработанные видео будут пропущены.");
     }
     if (sourceAction === "cancelrun") {
-      await answerCallbackQuery(query.id, "РћС‚РјРµРЅРµРЅРѕ");
-      return editTelegramMessage(chatId, sourceMessageId, "Р—Р°РїСѓСЃРє РѕС‚РјРµРЅС‘РЅ.");
+      await answerCallbackQuery(query.id, "Отменено");
+      return editTelegramMessage(chatId, sourceMessageId, "Запуск отменён.");
     }
-    return answerCallbackQuery(query.id, "РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР° РёСЃС‚РѕС‡РЅРёРєР°");
+    return answerCallbackQuery(query.id, "Неизвестная команда источника");
   }
   const action = parts[1];
   const id = parts[2];
   const telegramJob = id
     ? await prisma.factoryTelegramJob.findFirst({ where: { id, chatId: chat.id }, include: { factoryJob: true } })
     : null;
-  if (!telegramJob) return answerCallbackQuery(query.id, "Р—Р°РґР°С‡Р° РЅРµ РЅР°Р№РґРµРЅР°");
+  if (!telegramJob) return answerCallbackQuery(query.id, "Задача не найдена");
   const messageId = telegramJob.telegramMessageId || callbackMessage!.message_id;
   let settings = parseSettings(telegramJob.settings);
 
@@ -204,28 +363,28 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
     if (key === "interval" && [15, 30, 60].includes(value)) settings.interval = value;
     if (key === "window" && [14, 18].includes(value)) settings.start = value;
     await prisma.factoryTelegramJob.update({ where: { id }, data: { settings } });
-    await answerCallbackQuery(query.id, "РЎРѕС…СЂР°РЅРµРЅРѕ");
+    await answerCallbackQuery(query.id, "Сохранено");
     return editTelegramMessage(chatId, messageId, settingsText(settings), settingsKeyboard(id));
   }
   if (action === "check") {
     await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "CHECKED" } });
-    await answerCallbackQuery(query.id, "РЎСЃС‹Р»РєР° РїСЂРёРЅСЏС‚Р°");
-    return editTelegramMessage(chatId, messageId, "рџ‘Ђ РЎСЃС‹Р»РєР° РїРѕС…РѕР¶Р° РЅР° РєРѕСЂСЂРµРєС‚РЅСѓСЋ VK/VKVideo СЃСЃС‹Р»РєСѓ. Р—Р°РґР°С‡Р° РЅРµ Р·Р°РїСѓСЃРєР°Р»Р°СЃСЊ.", previewKeyboard(id));
+    await answerCallbackQuery(query.id, "Ссылка принята");
+    return editTelegramMessage(chatId, messageId, "👀 Ссылка похожа на корректную VK/VKVideo ссылку. Задача не запускалась.", previewKeyboard(id));
   }
   if (action === "cancel") {
     if (telegramJob.factoryJobId) await cancelFactoryJob(telegramJob.factoryJobId);
-    await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "CANCELED", lastStatusText: "рџ›‘ Р—Р°РґР°С‡Р° РѕС‚РјРµРЅРµРЅР°." } });
-    await answerCallbackQuery(query.id, "РћС‚РјРµРЅРµРЅРѕ");
-    return editTelegramMessage(chatId, messageId, "рџ›‘ Р—Р°РґР°С‡Р° РѕС‚РјРµРЅРµРЅР°.");
+    await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "CANCELED", lastStatusText: "🛑 Задача отменена." } });
+    await answerCallbackQuery(query.id, "Отменено");
+    return editTelegramMessage(chatId, messageId, "🛑 Задача отменена.");
   }
   if (action === "auto") {
-    if (telegramJob.factoryJobId) return answerCallbackQuery(query.id, "Р—Р°РґР°С‡Р° СѓР¶Рµ СЃРѕР·РґР°РЅР°");
+    if (telegramJob.factoryJobId) return answerCallbackQuery(query.id, "Задача уже создана");
     const claimed = await prisma.factoryTelegramJob.updateMany({
       where: { id, factoryJobId: null, status: { not: "CREATING" } },
       data: { status: "CREATING" },
     });
-    if (claimed.count === 0) return answerCallbackQuery(query.id, "Р—Р°РґР°С‡Р° СѓР¶Рµ СЃРѕР·РґР°С‘С‚СЃСЏ");
-    await answerCallbackQuery(query.id, "РЎРѕР·РґР°СЋ Р·Р°РґР°С‡СѓвЂ¦");
+    if (claimed.count === 0) return answerCallbackQuery(query.id, "Задача уже создаётся");
+    await answerCallbackQuery(query.id, "Создаю задачу…");
     try {
       const job = await createVkMovieJob({
         sourceUrl: telegramJob.sourceUrl,
@@ -239,15 +398,15 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
       });
       await prisma.factoryTelegramJob.update({ where: { id }, data: { factoryJobId: job.id, status: "QUEUED" } });
       const site = appUrl("/factory");
-      const keyboard: TelegramReplyMarkup = { inline_keyboard: [[...(site ? [{ text: "РћС‚РєСЂС‹С‚СЊ СЃР°Р№С‚", url: site }] : []), { text: "РћС‚РјРµРЅРёС‚СЊ", callback_data: `tg:cancel:${id}` }]] };
-      return editTelegramMessage(chatId, messageId, `вњ… Р—Р°РґР°С‡Р° СЃРѕР·РґР°РЅР°: #${job.id}\nрџЋ¬ ${settings.clips} СЂРѕР»РёРєРѕРІ РїРѕ ${settings.seconds} СЃРµРєСѓРЅРґ\nвЏ° РџСѓР±Р»РёРєР°С†РёСЏ: ${settings.start}:00вЂ“${settings.end}:00, СЂР°Р· РІ ${settings.interval === 60 ? "С‡Р°СЃ" : `${settings.interval} РјРёРЅ`}`, keyboard);
+      const keyboard: TelegramReplyMarkup = { inline_keyboard: [[...(site ? [{ text: "Открыть сайт", url: site }] : []), { text: "Отменить", callback_data: `tg:cancel:${id}` }]] };
+      return editTelegramMessage(chatId, messageId, `✅ Задача создана: #${job.id}\n🎬 ${settings.clips} роликов по ${settings.seconds} секунд\n⏰ Публикация: ${settings.start}:00–${settings.end}:00, раз в ${settings.interval === 60 ? "час" : `${settings.interval} мин`}`, keyboard);
     } catch (error) {
       const reason = humanizeFactoryError(error);
-      await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "FAILED", lastStatusText: `вќЊ РћС€РёР±РєР°: ${reason}` } });
-      return editTelegramMessage(chatId, messageId, `вќЊ РћС€РёР±РєР°: ${reason}`, previewKeyboard(id));
+      await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "FAILED", lastStatusText: `❌ Ошибка: ${reason}` } });
+      return editTelegramMessage(chatId, messageId, `❌ Ошибка: ${reason}`, previewKeyboard(id));
     }
   }
-  return answerCallbackQuery(query.id, "РќРµРёР·РІРµСЃС‚РЅР°СЏ РєРѕРјР°РЅРґР°");
+  return answerCallbackQuery(query.id, "Неизвестная команда");
 }
 
 export async function POST(request: Request) {

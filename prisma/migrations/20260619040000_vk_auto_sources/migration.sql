@@ -1,4 +1,4 @@
-﻿CREATE TABLE "FactoryVkAutoSource" (
+CREATE TABLE "FactoryVkAutoSource" (
     "id" TEXT NOT NULL,
     "chatId" TEXT NOT NULL,
     "sourceUrl" TEXT NOT NULL,

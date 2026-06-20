@@ -18,7 +18,7 @@ export type VkSourceVideo = {
 const VK_API_VERSION = "5.199";
 
 export const DEFAULT_VK_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
-export const LEGACY_VK_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
+export const LEGACY_VK_AUTO_SOURCE_TIMEZONE = "America/New_York";
 
 export function normalizeVkAutoSourceTimezone(timezone?: string | null) {
   const value = timezone?.trim();
@@ -28,9 +28,143 @@ export function normalizeVkAutoSourceTimezone(timezone?: string | null) {
 
 export function vkAutoSourceTimezoneLabel(timezone?: string | null) {
   const normalized = normalizeVkAutoSourceTimezone(timezone);
-  return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "РњРЎРљ (Europe/Moscow)" : normalized;
+  return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
+export function isVkGroupOrVideoSourceUrl(text: string) {
+  try {
+    const match = text.match(/https?:\/\/[^\s<>]+/i)?.[0] || text;
+    const url = new URL(match);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!["vk.com", "m.vk.com", "vkvideo.ru"].includes(host)) return false;
+    const path = url.pathname.replace(/\/+$/, "");
+    if (/^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(url.search))) return false;
+    return path.length > 1;
+  } catch {
+    return false;
+  }
+}
+
+export function normalizeVkSourceUrl(value: string) {
+  const raw = value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim();
+  const url = new URL(raw);
+  let host = url.hostname.toLowerCase().replace(/^www\./, "");
+  if (host === "m.vk.com") host = "vk.com";
+  if (!["vk.com", "vkvideo.ru"].includes(host)) throw new Error("VK источник не открывается");
+  let path = url.pathname.replace(/\/+$/, "") || "/";
+  if (host === "vk.com" && /^\/videos\/[-\d]+$/i.test(path)) path = path.replace("/videos/", "/videos");
+  return `https://${host}${path}`;
+}
+
+function sourceScreenName(sourceUrl: string) {
+  const url = new URL(sourceUrl);
+  const parts = url.pathname.split("/").filter(Boolean);
+  const first = parts[0] || "";
+  const owner = first.match(/^videos(-?\d+)$/i)?.[1];
+  if (owner) return { ownerId: Number(owner), screenName: null };
+  if (first === "video" && parts[1]?.startsWith("@")) return { ownerId: null, screenName: parts[1].slice(1) };
+  if (first.startsWith("@")) return { ownerId: null, screenName: first.slice(1) };
+  return { ownerId: null, screenName: first };
+}
+
+async function vkApi<T>(method: string, params: Record<string, string | number>, token: string) {
+  const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([key, value]) => [key, String(value)])), access_token: token, v: VK_API_VERSION });
+  const response = await fetch(`https://api.vk.com/method/${method}?${query}`, { cache: "no-store" });
+  const body = (await response.json()) as { response?: T; error?: { error_msg?: string } };
+  if (!response.ok || body.error || body.response === undefined) throw new Error(body.error?.error_msg || `VK API HTTP ${response.status}`);
+  return body.response;
+}
+
+async function getViaVkApi(sourceUrl: string, limit: number, token: string): Promise<VkSourceVideo[]> {
+  const parsed = sourceScreenName(sourceUrl);
+  let ownerId = parsed.ownerId;
+  if (ownerId === null) {
+    const resolved = await vkApi<{ object_id?: number; type?: string }>("utils.resolveScreenName", { screen_name: parsed.screenName || "" }, token);
+    if (!resolved.object_id) throw new Error("VK источник не открывается");
+    ownerId = resolved.type === "group" || resolved.type === "page" ? -Math.abs(resolved.object_id) : resolved.object_id;
+  }
+  const result = await vkApi<{ items: Array<{ id: number; owner_id: number; title?: string; duration?: number; date?: number; image?: Array<{ url: string; width: number }> }> }>(
+    "video.get",
+    { owner_id: ownerId, count: Math.min(200, Math.max(1, limit)), extended: 0 },
+    token,
+  );
+  return result.items.map((item) => ({
+    providerVideoId: `${item.owner_id}_${item.id}`,
+    videoUrl: `https://vk.com/video${item.owner_id}_${item.id}`,
+    title: item.title?.trim() || undefined,
+    durationSec: item.duration || undefined,
+    publishedAt: item.date ? new Date(item.date * 1000) : undefined,
+    thumbnailUrl: item.image?.sort((a, b) => b.width - a.width)[0]?.url,
+  }));
+}
+
+async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVideo[]> {
+  let output = "";
+  await runCommand(
+    "yt-dlp",
+    ["--flat-playlist", "--dump-json", "--playlist-end", String(limit), "--socket-timeout", "30", sourceUrl],
+    { onOutput: (text) => { output += text; } },
+  );
+  const videos: VkSourceVideo[] = [];
+  for (const line of output.split(/\r?\n/)) {
+    if (!line.trim().startsWith("{")) continue;
+    try {
+      const item = JSON.parse(line) as { id?: string; url?: string; webpage_url?: string; title?: string; duration?: number; timestamp?: number; thumbnail?: string };
+      const id = item.id?.match(/-?\d+_\d+/)?.[0];
+      const videoUrl = id ? `https://vk.com/video${id}` : item.webpage_url || item.url;
+      if (!videoUrl?.startsWith("http")) continue;
+      videos.push({ providerVideoId: id || item.id, videoUrl, title: item.title, durationSec: item.duration, publishedAt: item.timestamp ? new Date(item.timestamp * 1000) : undefined, thumbnailUrl: item.thumbnail });
+    } catch {
+      // yt-dlp иногда пишет служебные строки между JSON-объектами.
+    }
+  }
+  if (!videos.length) throw new Error("yt-dlp не смог получить список");
+  return videos;
+}
+
+export async function getVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+  const sourceUrl = normalizeVkSourceUrl(input.sourceUrl);
+  const limit = Math.max(1, Math.min(200, input.limit));
+  const token = process.env.VK_SERVICE_TOKEN?.trim() || process.env.VK_ACCESS_TOKEN?.trim();
+  const errors: string[] = [];
+  let videos: VkSourceVideo[] = [];
+  if (token) {
+    try { videos = await getViaVkApi(sourceUrl, limit, token); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+  }
+  if (!videos.length) {
+    try { videos = await getPublicVkSourceVideos({ sourceUrl, limit }); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+  }
+  if (!videos.length && process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true") {
+    try { videos = await getViaYtDlp(sourceUrl, limit); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+  }
+  const unique = new Map<string, VkSourceVideo>();
+  for (const video of videos) {
+    if (video.durationSec !== undefined && video.durationSec < 15) continue;
+    const normalizedVideoUrl = video.providerVideoId ? `https://vk.com/video${video.providerVideoId}` : video.videoUrl.split(/[?#]/)[0];
+    const key = video.providerVideoId || normalizedVideoUrl;
+    if (!unique.has(key)) unique.set(key, { ...video, videoUrl: normalizedVideoUrl });
+  }
+  if (!unique.size) {
+    throw new Error("Не получилось получить список видео из VK-источника. Скачивание отдельных видео через vkvideodownload.com работает, но для группы нужен доступный публичный список видео.");
+  }
+  return Array.from(unique.values()).slice(0, limit);
+}
+
+export function humanizeVkAutoSourceError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "");
+  const lower = message.toLowerCase();
+  if (lower.includes("не получилось получить список видео из vk-источника")) return message;
+  if (lower.includes("service_token") || lower.includes("access token")) return "VK_SERVICE_TOKEN не настроен или недействителен";
+  if (lower.includes("yt-dlp")) return "yt-dlp не смог получить список";
+  if (lower.includes("ffmpeg")) return "ошибка ffmpeg";
+  if (lower.includes("youtube") || lower.includes("r2") || lower.includes("720")) return humanizeFactoryError(error);
+  if (lower.includes("http") || lower.includes("resolve") || lower.includes("не открывается")) return "VK источник не открывается";
+  if (lower.includes("список") || lower.includes("video.get")) return "VK не отдал список видео";
+  return message.trim() || "неизвестная ошибка";
+}
+
+function localParts(date: Date, timezone: string) {
+  const parts = Object.fromEntries(new Intl.DateTimeFormat("en-CA", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(date).filter((part) => part.type !== "literal").map((part) => [part.type, Number(part.value)])) as Record<string, number>;
   return { year: parts.year, month: parts.month, day: parts.day, hour: parts.hour === 24 ? 0 : parts.hour, minute: parts.minute };
 }
 
@@ -68,13 +202,13 @@ export async function notifyVkAutoSourceRun(runId: string, text: string) {
 
 export async function runVkAutoSourceDaily(sourceId: string, options: { force?: boolean } = {}) {
   const source = await prisma.factoryVkAutoSource.findUnique({ where: { id: sourceId }, include: { chat: true } });
-  if (!source) throw new Error("VK РёСЃС‚РѕС‡РЅРёРє РЅРµ РЅР°Р№РґРµРЅ");
+  if (!source) throw new Error("VK источник не найден");
+  if (!source.chat.isAllowed || !isChatAllowed(source.chat.chatId)) throw new Error("Автозабор доступен только разрешённым chatId");
+  if (!source.isEnabled && !options.force) return null;
   const sourceTimezone = normalizeVkAutoSourceTimezone(source.timezone);
   if (source.timezone !== sourceTimezone) {
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { timezone: sourceTimezone } });
   }
-  if (!source.chat.isAllowed || !isChatAllowed(source.chat.chatId)) throw new Error("РђРІС‚РѕР·Р°Р±РѕСЂ РґРѕСЃС‚СѓРїРµРЅ С‚РѕР»СЊРєРѕ СЂР°Р·СЂРµС€С‘РЅРЅС‹Рј chatId");
-  if (!source.isEnabled && !options.force) return null;
   const today = getSourceRunDate(sourceTimezone);
   const runDate = options.force ? `${today}#${Date.now()}` : today;
   let run;
@@ -85,7 +219,7 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
     throw error;
   }
 
-  await notifyVkAutoSourceRun(run.id, `рџ“Ў РђРІС‚РѕР·Р°Р±РѕСЂ Р·Р°РїСѓС‰РµРЅ: ${source.sourceTitle || source.sourceUrl}\nРС‰Сѓ РґРѕ ${source.dailyLimit} РЅРѕРІС‹С… РІРёРґРµРѕ.`);
+  await notifyVkAutoSourceRun(run.id, `📡 Автозабор запущен: ${source.sourceTitle || source.sourceUrl}\nИщу до ${source.dailyLimit} новых видео.`);
   try {
     const fetched = await getVkSourceVideos({ sourceUrl: source.sourceUrl, limit: 50 });
     let foundCount = 0;
@@ -118,7 +252,7 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
         const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({ where: { id: video.id, status: "NEW", factoryJobId: null }, data: { status: "PROCESSING", pickedAt: new Date(), error: null } });
         if (!claimed.count) continue;
         const clipSeconds = Math.max(15, Math.min(60, video.durationSec || 60));
-        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK РІРёРґРµРѕ", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
+        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
         await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: "QUEUED", factoryJobId: job.id } });
         created += 1;
       } catch (error) {
@@ -129,14 +263,14 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
 
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: created ? "JOBS_CREATED" : "DONE", foundCount, pickedCount: picked.length, createdJobCount: created, failedCount: failed, ...(created ? {} : { finishedAt: new Date() }) } });
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: null } });
-    await notifyVkAutoSourceRun(run.id, `вњ… РќР°Р№РґРµРЅРѕ Рё РІР·СЏС‚Рѕ РІ СЂР°Р±РѕС‚Сѓ: ${created} РІРёРґРµРѕ.\nРЎРѕР·РґР°РЅРѕ Р·Р°РґР°С‡: ${created}.\nРџСѓР±Р»РёРєР°С†РёСЏ: ${source.publishStartHour}:00вЂ“${source.publishEndHour}:00.${failed ? `\nРћС€РёР±РѕРє СЃРѕР·РґР°РЅРёСЏ: ${failed}.` : ""}`);
-    if (!created) await notifyVkAutoSourceRun(run.id, `рџЏЃ РђРІС‚РѕР·Р°Р±РѕСЂ Р·Р°РІРµСЂС€С‘РЅ.\nРСЃС‚РѕС‡РЅРёРє: ${source.sourceTitle || source.sourceUrl}\nРЎРѕР·РґР°РЅРѕ Р·Р°РґР°С‡: 0\nРћРїСѓР±Р»РёРєРѕРІР°РЅРѕ: 0\nРћС€РёР±РѕРє: ${failed}`);
+    await notifyVkAutoSourceRun(run.id, `✅ Найдено и взято в работу: ${created} видео.\nСоздано задач: ${created}.\nПубликация: ${source.publishStartHour}:00–${source.publishEndHour}:00.${failed ? `\nОшибок создания: ${failed}.` : ""}`);
+    if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${source.sourceTitle || source.sourceUrl}\nСоздано задач: 0\nОпубликовано: 0\nОшибок: ${failed}`);
     return run;
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: "FAILED", error: reason, failedCount: 1, finishedAt: new Date() } });
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: reason } });
-    await notifyVkAutoSourceRun(run.id, `вќЊ РћС€РёР±РєР° Р°РІС‚РѕР·Р°Р±РѕСЂР° VK:\nРСЃС‚РѕС‡РЅРёРє: ${source.sourceTitle || source.sourceUrl}\nРџСЂРёС‡РёРЅР°: ${reason}`);
+    await notifyVkAutoSourceRun(run.id, `❌ Ошибка автозабора VK:\nИсточник: ${source.sourceTitle || source.sourceUrl}\nПричина: ${reason}`);
     throw error;
   }
 }
@@ -174,14 +308,43 @@ async function queueReplacementVideo(input: {
     createdJobCount: number;
   };
 }) {
-  const sourceTimezone = normalizeVkAutoSourceTimezone(input.source.timezone);
+  if (input.run.createdJobCount >= input.source.dailyLimit * 2) return false;
+  const successfulOrActive = await prisma.factoryVkAutoSourceVideo.count({
+    where: {
+      sourceId: input.source.id,
+      pickedAt: { gte: input.run.startedAt },
+      status: { in: ["PUBLISHED", "QUEUED", "PROCESSING"] },
+    },
+  });
+  if (successfulOrActive >= input.source.dailyLimit) return false;
+  const replacement = await prisma.factoryVkAutoSourceVideo.findFirst({
+    where: { sourceId: input.source.id, status: "NEW", factoryJobId: null },
+    orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+  });
+  if (!replacement) return false;
+  const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({
+    where: { id: replacement.id, status: "NEW", factoryJobId: null },
+    data: { status: "PROCESSING", pickedAt: new Date(), error: null },
+  });
+  if (!claimed.count) return false;
+  try {
+    const job = await createVkMovieJob({
+      sourceUrl: replacement.videoUrl,
+      movieTitle: replacement.title || "VK видео",
+      clipCount: 1,
+      clipSeconds: Math.max(15, Math.min(60, replacement.durationSec || 60)),
+      scheduleMode: "NOW",
+      scheduleStartHour: input.source.publishStartHour,
+      scheduleEndHour: input.source.publishEndHour,
+      scheduleIntervalMinutes: 60,
+      timeZone: normalizeVkAutoSourceTimezone(input.source.timezone),
       scheduledAt: new Date(),
     });
     await prisma.$transaction([
       prisma.factoryVkAutoSourceVideo.update({ where: { id: replacement.id }, data: { status: "QUEUED", factoryJobId: job.id } }),
       prisma.factoryVkAutoSourceRun.update({ where: { id: input.run.id }, data: { pickedCount: { increment: 1 }, createdJobCount: { increment: 1 } } }),
     ]);
-    await notifyVkAutoSourceRun(input.run.id, `рџ”„ Р’РјРµСЃС‚Рѕ РЅРµСѓРґР°С‡РЅРѕРіРѕ РІРёРґРµРѕ РІР·СЏС‚Рѕ СЃР»РµРґСѓСЋС‰РµРµ: ${replacement.title || replacement.videoUrl}`);
+    await notifyVkAutoSourceRun(input.run.id, `🔄 Вместо неудачного видео взято следующее: ${replacement.title || replacement.videoUrl}`);
     return true;
   } catch (error) {
     await prisma.$transaction([
@@ -209,10 +372,10 @@ export async function updateVkAutoSourceVideoFromJob(factoryJobId: string, resul
   const failedJobs = runVideos.filter((item) => item.status === "FAILED").length;
   const failedCount = Math.max(0, run.pickedCount - run.createdJobCount) + failedJobs;
   await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { publishedCount, failedCount } });
-  if (result.status === "PUBLISHED") await notifyVkAutoSourceRun(run.id, `вњ… РћРїСѓР±Р»РёРєРѕРІР°РЅРѕ ${publishedCount}/${run.createdJobCount}: ${result.url}`);
+  if (result.status === "PUBLISHED") await notifyVkAutoSourceRun(run.id, `✅ Опубликовано ${publishedCount}/${run.createdJobCount}: ${result.url}`);
   const terminal = publishedCount + failedJobs;
   if (terminal >= run.createdJobCount) {
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: failedCount ? "DONE_WITH_ERRORS" : "DONE", finishedAt: new Date() } });
-    await notifyVkAutoSourceRun(run.id, `рџЏЃ РђРІС‚РѕР·Р°Р±РѕСЂ Р·Р°РІРµСЂС€С‘РЅ.\nРСЃС‚РѕС‡РЅРёРє: ${video.source.sourceTitle || video.source.sourceUrl}\nРЎРѕР·РґР°РЅРѕ Р·Р°РґР°С‡: ${run.createdJobCount}\nРћРїСѓР±Р»РёРєРѕРІР°РЅРѕ: ${publishedCount}\nРћС€РёР±РѕРє: ${failedCount}`);
+    await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${video.source.sourceTitle || video.source.sourceUrl}\nСоздано задач: ${run.createdJobCount}\nОпубликовано: ${publishedCount}\nОшибок: ${failedCount}`);
   }
 }

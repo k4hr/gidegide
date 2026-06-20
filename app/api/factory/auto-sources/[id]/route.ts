@@ -3,6 +3,23 @@ import { z } from "zod";
 
 import { prisma } from "@/lib/prisma";
 import { normalizeVkAutoSourceTimezone } from "@/lib/factory/vk-auto-source";
+
+export const runtime = "nodejs";
+type Context = { params: Promise<{ id: string }> };
+const patchSchema = z.object({
+  sourceTitle: z.string().trim().max(200).nullable().optional(),
+  isEnabled: z.boolean().optional(),
+  dailyLimit: z.coerce.number().int().min(1).max(20).optional(),
+  publishStartHour: z.coerce.number().int().min(0).max(23).optional(),
+  publishEndHour: z.coerce.number().int().min(1).max(24).optional(),
+  timezone: z.string().trim().min(1).max(80).optional(),
+});
+
+export async function PATCH(request: Request, context: Context) {
+  try {
+    const { id } = await context.params;
+    const data = patchSchema.parse(await request.json());
+    if (data.timezone !== undefined) data.timezone = normalizeVkAutoSourceTimezone(data.timezone);
     const current = await prisma.factoryVkAutoSource.findUnique({ where: { id } });
     if (!current) return NextResponse.json({ error: "Источник не найден" }, { status: 404 });
     const start = data.publishStartHour ?? current.publishStartHour;

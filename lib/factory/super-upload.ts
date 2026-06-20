@@ -1,4 +1,4 @@
-﻿import { google, type youtube_v3 } from "googleapis";
+import { google, type youtube_v3 } from "googleapis";
 import type { FactoryDonorKind } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -41,7 +41,7 @@ export type SuperUploadScheduleSlot = {
 
 const MAX_ANALYZE_VIDEOS = 100;
 const PAGE_SIZE = 50;
-const NEW_YORK_TIME_ZONE = "Europe/Moscow";
+const NEW_YORK_TIME_ZONE = "America/New_York";
 export const SUPER_UPLOAD_DONOR_KIND: FactoryDonorKind = "SUPER_UPLOAD";
 export const STORY_SHORTS_DONOR_KIND: FactoryDonorKind = "STORY_SHORTS";
 export const MOVIE_MOMENTS_DONOR_KIND: FactoryDonorKind = "MOVIE_MOMENTS";
@@ -375,7 +375,7 @@ async function getLatestYoutubeAccount() {
   );
 
   if (!account) {
-    throw new Error("YouTube-Р°РєРєР°СѓРЅС‚ РЅРµ РЅР°Р№РґРµРЅ. РџРѕРґРєР»СЋС‡Рё Amelia РЅР° /factory/accounts.");
+    throw new Error("YouTube-аккаунт не найден. Подключи Amelia на /factory/accounts.");
   }
 
   return account;
@@ -402,7 +402,7 @@ async function getChannelFromVideo(youtube: youtube_v3.Youtube, videoId: string)
   const channelId = item?.snippet?.channelId ?? null;
 
   if (!channelId) {
-    throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ РЅР°Р№С‚Рё РєР°РЅР°Р» РїРѕ СЌС‚РѕРјСѓ РІРёРґРµРѕ");
+    throw new Error("Не удалось найти канал по этому видео");
   }
 
   return channelId;
@@ -451,7 +451,7 @@ async function resolveChannel(input: {
     }
   }
 
-  throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ РѕРїСЂРµРґРµР»РёС‚СЊ YouTube-РєР°РЅР°Р». Р’СЃС‚Р°РІСЊ СЃСЃС‹Р»РєСѓ РЅР° РєР°РЅР°Р», РІРёРґРµРѕ РёР»Рё @handle.");
+  throw new Error("Не удалось определить YouTube-канал. Вставь ссылку на канал, видео или @handle.");
 }
 
 async function getUploadsPlaylistId(input: {
@@ -468,7 +468,7 @@ async function getUploadsPlaylistId(input: {
   const uploadsPlaylistId = channel?.contentDetails?.relatedPlaylists?.uploads ?? null;
 
   if (!channel || !uploadsPlaylistId) {
-    throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ РїРѕР»СѓС‡РёС‚СЊ uploads playlist РєР°РЅР°Р»Р°");
+    throw new Error("Не удалось получить uploads playlist канала");
   }
 
   return {
@@ -711,18 +711,18 @@ function buildSourceRecommendations(videos: Array<{
   const best = available[0];
 
   if (!best) {
-    return ["Р’СЃРµ РЅР°Р№РґРµРЅРЅС‹Рµ РІРёРґРµРѕ СѓР¶Рµ РѕС‚РјРµС‡РµРЅС‹ РёСЃРїРѕР»СЊР·РѕРІР°РЅРЅС‹РјРё. Р’РѕР·СЊРјРё РґСЂСѓРіРѕР№ РєР°РЅР°Р» РёР»Рё СЃРЅРёРјРё РѕС‚РјРµС‚РєСѓ СЃ РЅСѓР¶РЅРѕРіРѕ source video."];
+    return ["Все найденные видео уже отмечены использованными. Возьми другой канал или сними отметку с нужного source video."];
   }
 
   const result = [
-    `Р›СѓС‡С€РёР№ РєР°РЅРґРёРґР°С‚: "${best.title}" вЂ” С€Р°РЅСЃ ${best.viralChance}/100.`,
-    `Р РµРєРѕРјРµРЅРґР°С†РёСЏ: СЃРґРµР»Р°С‚СЊ ${best.suggestedClips} РєР»РёРїРѕРІ, hook mode ${best.suggestedHookMode}, Р·Р°Р»РёРІ С‡РµСЂРµР· РІРµС‡РµСЂ/РЅРѕС‡СЊ New York РїРѕ Р°РЅР°Р»РёС‚РёРєРµ СЃ РЅРѕСЂРјР°Р»СЊРЅС‹Рј РёРЅС‚РµСЂРІР°Р»РѕРј 45вЂ“60 РјРёРЅСѓС‚.`,
+    `Лучший кандидат: "${best.title}" — шанс ${best.viralChance}/100.`,
+    `Рекомендация: сделать ${best.suggestedClips} клипов, hook mode ${best.suggestedHookMode}, залив через вечер/ночь New York по аналитике с нормальным интервалом 45–60 минут.`,
   ];
 
   const hotCount = available.filter((video) => video.viralChance >= 75).length;
 
   if (hotCount > 0) {
-    result.push(`РЎРёР»СЊРЅС‹С… source videos РЅР°Р№РґРµРЅРѕ: ${hotCount}. РќР°С‡РёРЅР°Р№ СЃ РІРµСЂС…РЅРёС…, РїРѕРІС‚РѕСЂС‹ РЅРµ Р±РµСЂРё.`);
+    result.push(`Сильных source videos найдено: ${hotCount}. Начинай с верхних, повторы не бери.`);
   }
 
   return result;
@@ -863,7 +863,7 @@ export async function checkSuperUploadDonor(input: { donorId: string }) {
   );
 
   if (!donor) {
-    throw new Error("Donor channel РЅРµ РЅР°Р№РґРµРЅ");
+    throw new Error("Donor channel не найден");
   }
 
   try {
@@ -906,7 +906,7 @@ export async function checkSuperUploadDonor(input: { donorId: string }) {
         where: { id: donor.id },
         data: {
           lastCheckedAt: new Date(),
-          lastError: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РґРѕРЅРѕСЂР°",
+          lastError: error instanceof Error ? error.message : "Не удалось проверить донора",
         },
       }),
     );
@@ -935,7 +935,7 @@ export async function checkAllSuperUploadDonors(input: { donorKind?: FactoryDono
       errors.push({
         donorId: donor.id,
         channelTitle: donor.channelTitle,
-        message: error instanceof Error ? error.message : "РќРµ СѓРґР°Р»РѕСЃСЊ РїСЂРѕРІРµСЂРёС‚СЊ РґРѕРЅРѕСЂР°",
+        message: error instanceof Error ? error.message : "Не удалось проверить донора",
       });
     }
   }
