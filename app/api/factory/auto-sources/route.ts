@@ -24,7 +24,18 @@ export async function GET() {
     orderBy: { createdAt: "desc" },
     include: { chat: { select: { chatId: true, username: true } }, runs: { orderBy: { startedAt: "desc" }, take: 1 }, _count: { select: { videos: true } } },
   });
-  return NextResponse.json({ sources, downloader: getVkDownloadProviderConfig(), vkCookies });
+  return NextResponse.json({
+    sources,
+    downloader: getVkDownloadProviderConfig(),
+    vkCookies,
+    listing: {
+      provider: process.env.VK_LISTING_PROVIDER || "auto",
+      playwright: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true",
+      ytDlpFallback: process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true",
+      scrollPages: Number(process.env.VK_LISTING_SCROLL_PAGES || 6),
+      waitMs: Number(process.env.VK_LISTING_WAIT_MS || 6000),
+    },
+  });
 }
 
 export async function POST(request: Request) {

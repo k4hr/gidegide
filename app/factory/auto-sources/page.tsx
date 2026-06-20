@@ -29,6 +29,19 @@ type VkCookiesStatus = {
   cookieCount: number;
   domains: string[];
   authMode: string;
+  vkCom?: boolean;
+  vkVideo?: boolean;
+  hasRemixsid?: boolean;
+  hasRemixdsid?: boolean;
+  hasRemixstid?: boolean;
+};
+
+type ListingConfig = {
+  provider: string;
+  playwright: boolean;
+  ytDlpFallback: boolean;
+  scrollPages: number;
+  waitMs: number;
 };
 
 type CheckResult = {
@@ -57,6 +70,7 @@ export default function AutoSourcesPage() {
   const [message, setMessage] = useState("");
   const [downloader, setDownloader] = useState<DownloaderConfig | null>(null);
   const [vkCookies, setVkCookies] = useState<VkCookiesStatus | null>(null);
+  const [listing, setListing] = useState<ListingConfig | null>(null);
   const [checks, setChecks] = useState<Record<string, CheckResult>>({});
 
   const load = useCallback(async () => {
@@ -66,6 +80,7 @@ export default function AutoSourcesPage() {
     setSources(data.sources);
     setDownloader(data.downloader);
     setVkCookies(data.vkCookies);
+    setListing(data.listing);
   }, []);
 
   useEffect(() => {
@@ -165,11 +180,12 @@ export default function AutoSourcesPage() {
           <div className="factory-grid-cards">
             <div className="factory-stat-card"><span>Downloader</span><strong style={{ fontSize: 20 }}>{downloader?.provider || "vkvideodownload"}</strong></div>
             <div className="factory-stat-card"><span>Скачивание</span><strong style={{ fontSize: 20 }}>vkvideodownload.com</strong></div>
-            <div className="factory-stat-card"><span>Listing</span><strong style={{ fontSize: 18 }}>{vkCookies?.enabled ? "VK cookies + HTML parser" : "public VK/VKVideo HTML parser"}</strong></div>
+            <div className="factory-stat-card"><span>Listing</span><strong style={{ fontSize: 18 }}>{listing?.playwright ? "Playwright browser + cookies" : vkCookies?.enabled ? "VK cookies + HTML parser" : "public VK/VKVideo HTML parser"}</strong></div>
             <div className="factory-stat-card"><span>VK cookies</span><strong style={{ fontSize: 24 }}>{vkCookies?.enabled ? "ON" : "OFF"}</strong><small>{vkCookies?.enabled ? `${vkCookies.cookieCount} cookies · ${vkCookies.domains.join(", ")}` : "без авторизации"}</small></div>
             <div className="factory-stat-card"><span>Timezone</span><strong style={{ fontSize: 20 }}>Europe/Moscow</strong></div>
             <div className="factory-stat-card"><span>Качество</span><strong style={{ fontSize: 24 }}>{downloader?.preferredQuality || "720p"}</strong></div>
             <div className="factory-stat-card"><span>yt-dlp fallback</span><strong style={{ fontSize: 24 }}>{downloader?.allowYtDlpFallback ? "ON" : "OFF"}</strong></div>
+            <div className="factory-stat-card"><span>Playwright listing</span><strong style={{ fontSize: 24 }}>{listing?.playwright ? "ON" : "OFF"}</strong><small>{listing?.playwright ? `${listing.scrollPages} scroll · ${listing.waitMs}ms` : "браузерный режим выключен"}</small></div>
           </div>
         </section>
 
@@ -203,7 +219,7 @@ export default function AutoSourcesPage() {
                           {check ? (
                             <div>
                               <strong>{check.ok ? `Найдено: ${check.foundCount}` : "Не прочиталось"}</strong>
-                              {!check.ok && <p className="factory-error-text">Попробуй vk.com/video/@name, vk.com/videos-..., vk.com/video/playlist/-..._... или подключи VK_COOKIES_B64</p>}
+                              {!check.ok && <p className="factory-error-text">Проверь VK cookies, включи VK_LISTING_ENABLE_PLAYWRIGHT=true или попробуй vk.com/videos-...</p>}
                               {!!check.videos?.length && <small>{check.videos.slice(0, 2).map((video) => video.title || video.videoUrl).join(" · ")}</small>}
                             </div>
                           ) : <small>Не проверялось</small>}

@@ -93,7 +93,8 @@ https://vk.ru/video/playlist/-220018529_16
 /queue — очередь публикаций
 /run_today — запустить автозабор сейчас
 /help — помощь
-/cookies_help — как подключить VK cookies, если источник не читается`;
+/cookies_help — как подключить VK cookies, если источник не читается
+/cookies_status — статус cookies и browser listing`;
 }
 
 function mainMenuKeyboard(): TelegramReplyMarkup {
@@ -133,11 +134,30 @@ VK_AUTH_MODE=cookies
 VK_COOKIES_B64=<то, что скопировалось>
 6. Перезапусти web и worker.
 
+Если Railway пишет, что переменная слишком длинная, разбей base64 на части:
+VK_COOKIES_B64_1=первая часть
+VK_COOKIES_B64_2=вторая часть
+VK_COOKIES_B64_3=третья часть
+Бот сам склеит части по порядку.
+
 Важно:
 — не отправляй cookies в Telegram;
 — не публикуй cookies в GitHub;
 — cookies дают доступ к аккаунту, храни их как секрет;
 — если вышел из VK или сменил пароль, cookies могут устареть.`;
+}
+
+async function cookiesStatusText() {
+  const status = await getVkCookiesStatus();
+  return `🔐 VK cookies:
+Статус: ${status.enabled ? "ON" : "OFF"}
+vk.com/vk.ru: ${status.vkCom ? "yes" : "no"}
+vkvideo.ru: ${status.vkVideo ? "yes" : "no"}
+remixsid: ${status.hasRemixsid ? "yes" : "no"}
+remixdsid: ${status.hasRemixdsid ? "yes" : "no"}
+remixstid: ${status.hasRemixstid ? "yes" : "no"}
+Playwright listing: ${process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true" ? "ON" : "OFF"}
+yt-dlp listing fallback: ${process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true" ? "ON" : "OFF"}`;
 }
 
 function parseSettings(value: unknown): JobSettings {
@@ -381,32 +401,31 @@ async function checkSourceAndReply(chatId: string, sourceId: string, messageId?:
       return sendTelegramMessage(chatId, text, autoSourceActionKeyboard(source));
     }
 
-    const lastAttempt = result.attempts[result.attempts.length - 1];
     const vkCookies = await getVkCookiesStatus();
-    const authAdvice = vkCookies.enabled
-      ? "VK cookies подключены, но список всё равно не найден. Возможные причины: у аккаунта нет доступа, источник закрыт или VK изменил разметку."
-      : "Скорее всего VK скрывает список без авторизации. Подключи VK cookies в Railway. Инструкция: /cookies_help";
+    const htmlCount = result.attempts.filter((item) => item.provider?.includes("html")).reduce((sum, item) => sum + (item.foundCount || 0), 0);
+    const ytDlpAttempt = result.attempts.find((item) => item.provider === "yt-dlp");
+    const playwrightAttempts = result.attempts.filter((item) => item.provider === "playwright-browser");
+    const playwrightCount = playwrightAttempts.reduce((sum, item) => Math.max(sum, item.foundCount || 0), 0);
+    const playwrightError = playwrightAttempts.find((item) => item.error && item.error !== "disabled")?.error;
     const text = `❌ Список видео не прочитался.
 
 Источник:
 ${source.sourceUrl}
 
-Что попробовать:
-1) отправить ссылку именно на раздел видео:
-https://vk.com/video/@groupname
-2) отправить ссылку формата:
-https://vk.com/videos-123456789
-3) отправить плейлист:
-https://vk.com/video/playlist/-123456789_1
-4) отправить 1 отдельную ссылку на видео — она должна скачаться через vkvideodownload.com
-
-${authAdvice}
-
-Технически:
 VK cookies: ${vkCookies.enabled ? "ON" : "OFF"}
-последняя стратегия: ${lastAttempt?.provider || "нет"}
-проверено URL: ${result.attempts.length}
-найдено ссылок: 0`;
+HTML parser: ${htmlCount}
+yt-dlp listing: ${process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true" ? `ON, ${ytDlpAttempt?.foundCount || 0}${ytDlpAttempt?.error ? ` (${ytDlpAttempt.error})` : ""}` : "OFF"}
+Playwright listing: ${process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true" ? `ON, ${playwrightCount}${playwrightError ? ` (${playwrightError})` : ""}` : "OFF"}
+Проверено URL: ${result.attempts.length}
+Найдено ссылок: 0
+
+Что сделать:
+1) убедиться, что cookies от vk.com и vkvideo.ru актуальные;
+2) открыть этот источник в браузере под тем же аккаунтом;
+3) попробовать ссылку https://vk.com/videos-...;
+4) если даже браузерный режим не видит видео — VK не отдаёт список этому аккаунту.
+
+Статус cookies: /cookies_status`;
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastError: "Список видео не прочитался" } });
     if (messageId) return editTelegramMessage(chatId, messageId, text, autoSourceActionKeyboard(source));
     return sendTelegramMessage(chatId, text, autoSourceActionKeyboard(source));
@@ -445,6 +464,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   if (command === "/start" || command === "/menu") return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
   if (command === "/help") return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
   if (command === "/cookies_help") return sendTelegramMessage(chatId, cookiesHelpText());
+  if (command === "/cookies_status") return sendTelegramMessage(chatId, await cookiesStatusText());
   if (command === "/status") return showStatus(chat.id, chatId);
   if (command === "/queue") return showQueue(chat.id, chatId);
   if (command === "/sources" || command === "/source_status") return showSources(chat.id, chatId);

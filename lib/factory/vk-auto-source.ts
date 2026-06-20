@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
 import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
 import { runCommand } from "@/lib/factory/video";
-import { getVkCookieHeader, getVkCookiesFileForYtDlp, hasVkCookies } from "@/lib/factory/vk-cookies";
+import { getVkCookieHeader, getVkCookiesFileForYtDlp, getVkCookiesForPlaywright, hasVkCookies } from "@/lib/factory/vk-cookies";
+import { listVkVideosWithPlaywright } from "@/lib/factory/providers/vk-playwright-listing-provider";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -95,11 +96,12 @@ function sourceScreenName(sourceUrl: string) {
 
 
 export type VkListingAttempt = {
-  provider: "vk-api" | "vkvideo-html" | "vk-html" | "vk-mobile-html" | "yt-dlp";
+  provider: "vk-api" | "vkvideo-html" | "vk-html" | "vk-mobile-html" | "yt-dlp" | "playwright-browser";
   url: string;
   status?: number;
   foundCount?: number;
   error?: string;
+  debug?: unknown;
 };
 
 const VK_PUBLIC_HEADERS = {
@@ -221,8 +223,10 @@ ${percentDecoded}`;
   }
 
   const ownerIdPatterns: Array<{ pattern: RegExp; reversed?: boolean }> = [
-    { pattern: /["\']owner_id["\']\s*:\s*(-?\d+)[\s\S]{0,600}?["\']id["\']\s*:\s*(\d+)/gi },
-    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,600}?["\']owner_id["\']\s*:\s*(-?\d+)/gi, reversed: true },
+    { pattern: /["\']owner_id["\']\s*:\s*(-?\d+)[\s\S]{0,700}?["\']id["\']\s*:\s*(\d+)/gi },
+    { pattern: /["\']ownerId["\']\s*:\s*(-?\d+)[\s\S]{0,700}?["\']id["\']\s*:\s*(\d+)/gi },
+    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,700}?["\']owner_id["\']\s*:\s*(-?\d+)/gi, reversed: true },
+    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,700}?["\']ownerId["\']\s*:\s*(-?\d+)/gi, reversed: true },
   ];
   for (const { pattern, reversed } of ownerIdPatterns) {
     let match: RegExpExecArray | null;
@@ -449,6 +453,31 @@ async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVi
   return videos;
 }
 
+async function getViaPlaywright(sourceUrl: string, limit: number, attempts: VkListingAttempt[]): Promise<VkSourceVideo[]> {
+  const candidateUrls = buildVkSourceCandidateUrls(sourceUrl);
+  const cookies = await getVkCookiesForPlaywright();
+  const result = await listVkVideosWithPlaywright({ sourceUrl, candidateUrls, limit, cookies });
+  const foundCount = result.videos.length;
+  attempts.push({
+    provider: "playwright-browser",
+    url: sourceUrl,
+    foundCount,
+    error: result.debug.error,
+    debug: result.debug,
+  });
+  for (const candidate of result.debug.candidatesTried) {
+    attempts.push({
+      provider: "playwright-browser",
+      url: candidate.url,
+      status: candidate.status,
+      foundCount: candidate.foundCount,
+      error: candidate.error,
+    });
+  }
+  if (!foundCount && result.debug.error) throw new Error(result.debug.error);
+  return result.videos;
+}
+
 async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }) {
   const sourceUrl = normalizeVkSourceUrl(input.sourceUrl);
   const limit = Math.max(1, Math.min(200, input.limit));
@@ -496,6 +525,22 @@ async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }
     }
   }
 
+  if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true") {
+    try {
+      videos = await getViaPlaywright(sourceUrl, limit, attempts);
+      console.info("[VK_AUTO_SOURCE] strategy playwright-browser", { sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "playwright-browser", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy playwright-browser failed", { sourceUrl, reason });
+    }
+  }
+
+  if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() !== "true") {
+    attempts.push({ provider: "playwright-browser", url: sourceUrl, foundCount: 0, error: "disabled" });
+  }
+
   const unique = new Map<string, VkSourceVideo>();
   for (const video of videos) {
     if (video.durationSec !== undefined && video.durationSec < 15) continue;
@@ -538,6 +583,7 @@ export function humanizeVkAutoSourceError(error: unknown) {
   if (lower.includes("не получилось получить список видео из vk-источника")) return message;
   if (lower.includes("service_token") || lower.includes("access token")) return "VK_SERVICE_TOKEN не настроен или недействителен";
   if (lower.includes("yt-dlp")) return "yt-dlp не смог получить список";
+  if (lower.includes("playwright") || lower.includes("chromium")) return message.includes("Chromium") || message.includes("chromium") ? "Playwright listing включён, но Chromium не установлен. Нужно установить chromium через npx playwright install chromium." : message;
   if (lower.includes("ffmpeg")) return "ошибка ffmpeg";
   if (lower.includes("youtube") || lower.includes("r2") || lower.includes("720")) return humanizeFactoryError(error);
   if (lower.includes("http") || lower.includes("resolve") || lower.includes("не открывается")) return "VK источник не открывается";

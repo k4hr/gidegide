@@ -25,13 +25,18 @@ export async function POST(_request: Request, context: Context) {
       foundCount: result.videos.length,
       videos: result.videos.slice(0, 10),
       candidatesTried: result.attempts,
+      strategies: result.attempts.map((attempt) => ({ name: attempt.provider, enabled: attempt.error !== "disabled", foundCount: attempt.foundCount || 0, error: attempt.error })),
       vkCookies,
+      listing: {
+        playwright: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true",
+        ytDlpFallback: process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true",
+      },
       error: result.videos.length ? null : vkCookies.enabled ? "Список видео не найден даже с VK cookies" : "Список видео не найден на публичной странице. Возможно, нужны VK cookies.",
     });
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastError: reason } });
     const vkCookies = await getVkCookiesStatus();
-    return NextResponse.json({ ok: false, foundCount: 0, videos: [], candidatesTried: [], vkCookies, error: reason }, { status: 200 });
+    return NextResponse.json({ ok: false, foundCount: 0, videos: [], candidatesTried: [], strategies: [], vkCookies, listing: { playwright: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true", ytDlpFallback: process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true" }, error: reason }, { status: 200 });
   }
 }

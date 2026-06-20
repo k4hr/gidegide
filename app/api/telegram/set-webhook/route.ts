@@ -7,6 +7,7 @@ const TELEGRAM_COMMANDS = [
   { command: "menu", description: "Главное меню" },
   { command: "help", description: "Помощь" },
   { command: "cookies_help", description: "Как подключить VK cookies" },
+  { command: "cookies_status", description: "Статус VK cookies и Playwright" },
   { command: "sources", description: "VK-источники" },
   { command: "source_status", description: "Статус автозабора" },
   { command: "run_today", description: "Запустить автозабор сейчас" },

@@ -121,3 +121,33 @@ Preferred setup is `VK_COOKIES_B64`:
 5. Restart/redeploy web and worker.
 
 Never commit cookies to GitHub and never send cookies in Telegram. Treat them like account credentials.
+
+## VK Auto Sources: browser listing через Playwright
+
+Если обычный HTML parser даже с `VK_COOKIES_B64` показывает `найдено ссылок: 0`, включите browser listing. Он открывает VK/VKVideo как настоящий headless Chromium, подставляет cookies и собирает ссылки на видео из DOM и network responses. Скачивание самих роликов при этом остаётся через `vkvideodownload.com`.
+
+Railway variables для web и worker:
+
+```env
+VK_AUTH_MODE=cookies
+VK_COOKIES_B64=...
+# если строка длиннее лимита Railway, можно разбить:
+VK_COOKIES_B64_1=...
+VK_COOKIES_B64_2=...
+VK_COOKIES_B64_3=...
+VK_LISTING_PROVIDER=auto
+VK_LISTING_ENABLE_PLAYWRIGHT=true
+VK_LISTING_SCROLL_PAGES=6
+VK_LISTING_WAIT_MS=6000
+VK_LISTING_HEADLESS=true
+PLAYWRIGHT_BROWSERS_PATH=0
+```
+
+Для Dockerfile Chromium устанавливается командой `npx playwright install chromium`. Если Railway build падает с ошибкой Chromium, выполните/добавьте `npx playwright install chromium` на build stage.
+
+Telegram diagnostics:
+
+- `/cookies_status` — безопасно показывает, видит ли бот cookies, домены и включён ли Playwright.
+- `/sources` → `🔍 Проверить список` — показывает, какая стратегия нашла видео: HTML, yt-dlp или Playwright.
+
+Значения cookies никогда не логируются и не отправляются в Telegram.
