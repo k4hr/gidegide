@@ -751,8 +751,26 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
 
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: created ? "JOBS_CREATED" : "DONE", foundCount, pickedCount: picked.length, createdJobCount: created, failedCount: failed, ...(created ? {} : { finishedAt: new Date() }) } });
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: null } });
-    await notifyVkAutoSourceRun(run.id, `✅ Найдено и взято в работу: ${created} видео.\nСоздано задач: ${created}.\nПубликация: ${source.publishStartHour}:00–${source.publishEndHour}:00.${failed ? `\nОшибок создания: ${failed}.` : ""}`);
-    if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${source.sourceTitle || source.sourceUrl}\nСоздано задач: 0\nОпубликовано: 0\nОшибок: ${failed}`);
+    const skipped = Math.max(0, fetched.length - foundCount);
+    await notifyVkAutoSourceRun(run.id, `✅ Автозабор запущен: ${source.sourceTitle || source.sourceUrl}
+
+Найдено новых видео: ${foundCount}.
+Создано задач обработки: ${created}.
+Уже обработанные видео пропущены: ${skipped}.
+
+Публикации появятся после рендера.
+План публикаций: ${source.publishStartHour}:00–${source.publishEndHour}.
+
+Проверить:
+/queue — очередь обработки
+/status — последние задачи${failed ? `
+
+Ошибок создания: ${failed}.` : ""}`);
+    if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.
+Источник: ${source.sourceTitle || source.sourceUrl}
+Создано задач обработки: 0
+Опубликовано: 0
+Ошибок: ${failed}`);
     return run;
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);

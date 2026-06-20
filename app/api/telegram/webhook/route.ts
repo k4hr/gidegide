@@ -90,7 +90,7 @@ https://vk.ru/video/playlist/-220018529_16
 /menu — главное меню
 /sources — мои источники
 /status — задачи
-/queue — очередь публикаций
+/queue — очередь обработки и публикаций
 /run_today — запустить автозабор сейчас
 /help — помощь
 /cookies_help — как подключить VK cookies, если источник не читается
@@ -201,9 +201,13 @@ function autoSourceActionKeyboard(source: { id: string; isEnabled: boolean }): T
         { text: "🔍 Проверить список", callback_data: `tg:autosource:check:${source.id}` },
         { text: "▶️ Запустить", callback_data: `tg:autosource:run:${source.id}` },
       ],
+      [
+        { text: "📋 Очередь", callback_data: "tg:menu:queue" },
+        { text: "📊 Статус", callback_data: "tg:menu:status" },
+      ],
       [{ text: "⚙️ Настройки", callback_data: `tg:autosource:settings:${source.id}` }],
       [
-        { text: source.isEnabled ? "⏸ Пауза" : "▶️ Включить", callback_data: `tg:autosource:${source.isEnabled ? "pause" : "resume"}:${source.id}` },
+        { text: source.isEnabled ? "⏸ Выключить" : "▶️ Включить", callback_data: `tg:autosource:${source.isEnabled ? "pause" : "resume"}:${source.id}` },
         { text: "🗑 Удалить", callback_data: `tg:autosource:delete:${source.id}` },
       ],
       [{ text: "📡 Все источники", callback_data: "tg:menu:sources" }],
@@ -245,21 +249,98 @@ function settingsText(settings: JobSettings) {
   return `⚙️ Настройки задачи\n\nСколько роликов? ${settings.clips}\nДлина? ${settings.seconds} сек\nИнтервал? ${settings.interval} мин\nОкно? ${settings.start}:00–${settings.end}:00`;
 }
 
-function statusName(status: string) {
+function formatFactoryJobStatus(status?: string | null) {
   const names: Record<string, string> = {
-    QUEUED: "в очереди",
-    DOWNLOADING: "скачивание",
-    RENDERING: "рендер",
-    PUBLISHING: "публикация",
-    DONE: "готово",
-    FAILED: "ошибка",
-    CANCELED: "отменено",
-    CREATED: "ожидает запуска",
-    PROCESSING: "обрабатывается",
-    PUBLISHED: "опубликовано",
-    NEW: "новое",
+    QUEUED: "В очереди",
+    DOWNLOADING: "Скачивается",
+    RENDERING: "Рендерится",
+    PUBLISHING: "Публикуется",
+    DONE: "Готово",
+    FAILED: "Ошибка",
+    CANCELED: "Отменено",
+    CREATED: "Ожидает запуска",
+    PROCESSING: "Обрабатывается",
   };
-  return names[status] || status.toLowerCase();
+  return status ? names[status] || status : "—";
+}
+
+function formatFactoryPublishStatus(status?: string | null) {
+  const names: Record<string, string> = {
+    QUEUED: "В очереди",
+    UPLOADING: "Загружается",
+    PUBLISHED: "Опубликовано",
+    FAILED: "Ошибка",
+    SKIPPED: "Пропущено",
+    CANCELED: "Отменено",
+  };
+  return status ? names[status] || status : "—";
+}
+
+function truncateText(value: string | null | undefined, max = 72) {
+  const normalized = (value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return "—";
+  return normalized.length > max ? `${normalized.slice(0, max - 1)}…` : normalized;
+}
+
+function formatDateMsk(value: Date | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("ru-RU", {
+    dateStyle: "short",
+    timeStyle: "short",
+    timeZone: "Europe/Moscow",
+  }).format(value);
+}
+
+function limitTelegramText(text: string, max = 3900) {
+  if (text.length <= max) return text;
+  return `${text.slice(0, max - 32)}\n\n…сообщение обрезано`;
+}
+
+function cleanJobTitlePrefix(value: string | null | undefined) {
+  const title = (value || "").replace(/^VK_RU:/, "").replace(/\s+/g, " ").trim();
+  return title || null;
+}
+
+type TelegramVisibleJob = {
+  id: string;
+  sourceUrl: string | null;
+  sourceOriginalName: string | null;
+  titlePrefix: string;
+  status: string;
+  progress: number;
+  progressLabel: string | null;
+  error: string | null;
+  scheduledAt: Date | null;
+  createdAt: Date;
+  targets: Array<{ account: { name: string; platform: string } }>;
+  telegramJobs: Array<{ sourceUrl: string }>;
+  vkAutoSourceVideos: Array<{
+    title: string | null;
+    videoUrl: string;
+    error: string | null;
+    source: { sourceTitle: string | null; sourceUrl: string };
+  }>;
+};
+
+function formatJobTitle(job: TelegramVisibleJob) {
+  return truncateText(
+    job.sourceOriginalName ||
+      cleanJobTitlePrefix(job.titlePrefix) ||
+      job.vkAutoSourceVideos[0]?.title ||
+      job.vkAutoSourceVideos[0]?.source.sourceTitle ||
+      job.telegramJobs[0]?.sourceUrl ||
+      job.sourceUrl ||
+      job.vkAutoSourceVideos[0]?.videoUrl ||
+      job.id,
+  );
+}
+
+function formatJobAccount(job: TelegramVisibleJob) {
+  return job.targets[0]?.account?.name || "—";
+}
+
+function getJobError(job: TelegramVisibleJob) {
+  return job.error || job.vkAutoSourceVideos.find((video) => video.error)?.error || null;
 }
 
 async function getSourceStats(sourceId: string) {
@@ -344,44 +425,148 @@ async function showSources(chatDbId: string, telegramChatId: string, runButtons 
   return sendTelegramMessage(telegramChatId, `📡 Источники:\n\n${lines.join("\n\n")}`, keyboard);
 }
 
+function telegramJobOwnerWhere(chatDbId: string) {
+  return {
+    OR: [
+      { telegramJobs: { some: { chatId: chatDbId } } },
+      { vkAutoSourceVideos: { some: { source: { chatId: chatDbId } } } },
+    ],
+  };
+}
+
+const TELEGRAM_JOB_INCLUDE = {
+  targets: {
+    include: {
+      account: { select: { name: true, platform: true } },
+    },
+    take: 1,
+  },
+  telegramJobs: {
+    select: { sourceUrl: true },
+    take: 1,
+  },
+  vkAutoSourceVideos: {
+    select: {
+      title: true,
+      videoUrl: true,
+      error: true,
+      source: { select: { sourceTitle: true, sourceUrl: true } },
+    },
+    take: 1,
+  },
+} as const;
+
 async function showStatus(chatDbId: string, telegramChatId: string) {
-  const jobs = await prisma.factoryTelegramJob.findMany({
-    where: { chatId: chatDbId },
+  const jobs = await prisma.factoryJob.findMany({
+    where: telegramJobOwnerWhere(chatDbId),
     orderBy: { createdAt: "desc" },
-    take: 5,
-    include: { factoryJob: true },
+    take: 10,
+    include: TELEGRAM_JOB_INCLUDE,
   });
+
   if (!jobs.length) return sendTelegramMessage(telegramChatId, "Пока нет задач.");
+
   const base = appUrl("/factory");
-  const lines = jobs.map((item, index) => {
-    const job = item.factoryJob;
-    const source = item.sourceUrl.length > 55 ? `${item.sourceUrl.slice(0, 52)}…` : item.sourceUrl;
-    const status = statusName(job?.status || item.status);
-    const progress = job ? `${job.progress}%${job.progressLabel ? ` — ${job.progressLabel}` : ""}` : "—";
-    return `${index + 1}. ${source}\n${status} · ${progress}${base && job ? `\n${base}` : ""}`;
+  const lines = jobs.map((job, index) => {
+    const visibleJob = job as unknown as TelegramVisibleJob;
+    const error = getJobError(visibleJob);
+    const parts = [
+      `${index + 1}. ${formatJobTitle(visibleJob)}`,
+      `   Статус: ${formatFactoryJobStatus(visibleJob.status)}`,
+      `   Прогресс: ${visibleJob.progress}%`,
+      `   Этап: ${visibleJob.progressLabel || "—"}`,
+      `   Аккаунт: ${formatJobAccount(visibleJob)}`,
+      `   Создано: ${formatDateMsk(visibleJob.createdAt)}`,
+      `   Job ID: ${visibleJob.id.slice(-8)}`,
+    ];
+
+    if (visibleJob.status === "FAILED") {
+      parts.push(`   Причина: ${error || "Причина ошибки не записана, смотри worker logs"}`);
+    }
+
+    if (base) parts.push(`   Сайт: ${base}`);
+    return parts.join("\n");
   });
-  return sendTelegramMessage(telegramChatId, `📋 Последние задачи\n\n${lines.join("\n\n")}`);
+
+  return sendTelegramMessage(telegramChatId, limitTelegramText(`📋 Последние задачи\n\n${lines.join("\n\n")}`));
 }
 
 async function showQueue(chatDbId: string, telegramChatId: string) {
-  const items = await prisma.factoryTelegramJob.findMany({
-    where: { chatId: chatDbId, factoryJob: { status: { in: ["QUEUED", "DOWNLOADING", "RENDERING", "PUBLISHING"] } } },
+  const processingJobs = await prisma.factoryJob.findMany({
+    where: {
+      ...telegramJobOwnerWhere(chatDbId),
+      status: { in: ["QUEUED", "DOWNLOADING", "RENDERING", "PUBLISHING", "FAILED"] },
+    },
     orderBy: { createdAt: "asc" },
     take: 10,
-    include: { factoryJob: true },
+    include: TELEGRAM_JOB_INCLUDE,
   });
-  if (!items.length) return sendTelegramMessage(telegramChatId, "🗓 Очередь публикаций пуста.");
-  const lines = items.map((item, i) => {
-    const job = item.factoryJob!;
-    const when = job.scheduledAt ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: "Europe/Moscow" }).format(job.scheduledAt) : "после рендера";
-    return `${i + 1}. #${job.id.slice(-8)} — ${when} · ${statusName(job.status)}`;
+
+  const publications = await prisma.factoryPublish.findMany({
+    where: {
+      clip: { job: telegramJobOwnerWhere(chatDbId) },
+      status: { in: ["QUEUED", "UPLOADING", "FAILED"] },
+    },
+    orderBy: { createdAt: "asc" },
+    take: 10,
+    include: {
+      account: { select: { name: true } },
+      target: { include: { account: { select: { name: true } } } },
+      clip: {
+        select: {
+          title: true,
+          job: { select: { scheduledAt: true, sourceOriginalName: true, titlePrefix: true } },
+        },
+      },
+    },
   });
-  return sendTelegramMessage(telegramChatId, `🗓 Ближайшие публикации\n\n${lines.join("\n")}`);
+
+  if (!processingJobs.length && !publications.length) {
+    return sendTelegramMessage(telegramChatId, "📋 Очередь обработки пуста.\n\n📅 Очередь публикаций пуста.");
+  }
+
+  const processingLines = processingJobs.length
+    ? processingJobs
+        .map((job, index) => {
+          const visibleJob = job as unknown as TelegramVisibleJob;
+          const error = getJobError(visibleJob);
+          return [
+            `${index + 1}. ${formatJobTitle(visibleJob)}`,
+            `   Статус: ${formatFactoryJobStatus(visibleJob.status)}`,
+            `   Прогресс: ${visibleJob.progress}%`,
+            `   Этап: ${visibleJob.progressLabel || "—"}`,
+            `   Аккаунт: ${formatJobAccount(visibleJob)}`,
+            `   Создано: ${formatDateMsk(visibleJob.createdAt)}`,
+            `   Job ID: ${visibleJob.id.slice(-8)}`,
+            ...(visibleJob.status === "FAILED" ? [`   Причина: ${error || "Причина ошибки не записана, смотри worker logs"}`] : []),
+          ].join("\n");
+        })
+        .join("\n\n")
+    : "Активных задач обработки нет.";
+
+  const publishLines = publications.length
+    ? publications
+        .map((item, index) => {
+          const account = item.account?.name || item.target?.account?.name || "—";
+          const title = truncateText(item.title || item.clip.title || item.clip.job.sourceOriginalName || cleanJobTitlePrefix(item.clip.job.titlePrefix));
+          return [
+            `${index + 1}. ${title}`,
+            `   Платформа: ${item.platform}`,
+            `   Время: ${formatDateMsk(item.clip.job.scheduledAt)}`,
+            `   Статус: ${formatFactoryPublishStatus(item.status)}`,
+            `   Аккаунт: ${account}`,
+            ...(item.error ? [`   Причина: ${item.error}`] : []),
+          ].join("\n");
+        })
+        .join("\n\n")
+    : "Публикации появятся после успешного рендера.";
+
+  return sendTelegramMessage(telegramChatId, limitTelegramText(`📋 Очередь обработки\n\n🎬 Рендер / нарезка:\n${processingLines}\n\n📅 Очередь публикаций:\n${publishLines}`));
 }
 
 async function runSourceNow(chatId: string, sourceId: string, force = true) {
   void runVkAutoSourceDaily(sourceId, { force }).catch((error) => console.error("Manual VK auto-source run failed:", error));
-  return sendTelegramMessage(chatId, "📡 Автозабор запущен. Результаты придут отдельными сообщениями.");
+  return sendTelegramMessage(chatId, "📡 Автозабор запущен.\n\nПубликации появятся после рендера.\nПроверить:\n/queue — очередь обработки\n/status — последние задачи");
 }
 
 async function checkSourceAndReply(chatId: string, sourceId: string, messageId?: number) {
@@ -668,13 +853,29 @@ ${reason}`, autoSourceActionKeyboard(updated));
       }
       await answerCallbackQuery(query.id, "Запускаю…");
       void runVkAutoSourceDaily(source.id, { force: true }).catch((error) => console.error("Manual VK auto-source run failed:", error));
-      return editTelegramMessage(chatId, sourceMessageId, `📡 Автозабор запущен:\n${source.sourceUrl}\nИщу до ${source.dailyLimit} новых видео.`, autoSourceActionKeyboard(source));
+      return editTelegramMessage(chatId, sourceMessageId, `✅ Автозабор запущен: ${source.sourceUrl}
+
+Ищу до ${source.dailyLimit} новых видео.
+Публикации появятся после рендера.
+План публикаций: ${source.publishStartHour}:00–${source.publishEndHour}:00.
+
+Проверить:
+/queue — очередь обработки
+/status — последние задачи`, autoSourceActionKeyboard(source));
     }
 
     if (sourceAction === "force") {
       await answerCallbackQuery(query.id, "Запускаю повторно…");
       void runVkAutoSourceDaily(source.id, { force: true }).catch((error) => console.error("Forced VK auto-source run failed:", error));
-      return editTelegramMessage(chatId, sourceMessageId, "📡 Повторный автозабор запущен. Уже обработанные видео будут пропущены.", autoSourceActionKeyboard(source));
+      return editTelegramMessage(chatId, sourceMessageId, `✅ Повторный автозабор запущен: ${source.sourceUrl}
+
+Уже обработанные видео будут пропущены.
+Публикации появятся после рендера.
+План публикаций: ${source.publishStartHour}:00–${source.publishEndHour}:00.
+
+Проверить:
+/queue — очередь обработки
+/status — последние задачи`, autoSourceActionKeyboard(source));
     }
 
     if (sourceAction === "cancelrun") {
