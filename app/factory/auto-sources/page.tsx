@@ -192,7 +192,7 @@ export default function AutoSourcesPage() {
                           {check ? (
                             <div>
                               <strong>{check.ok ? `Найдено: ${check.foundCount}` : "Не прочиталось"}</strong>
-                              {!check.ok && <p className="factory-error-text">Попробуй vk.com/video/@name или vk.com/videos-...</p>}
+                              {!check.ok && <p className="factory-error-text">Попробуй vk.com/video/@name, vk.com/videos-... или vk.com/video/playlist/-..._...</p>}
                               {!!check.videos?.length && <small>{check.videos.slice(0, 2).map((video) => video.title || video.videoUrl).join(" · ")}</small>}
                             </div>
                           ) : <small>Не проверялось</small>}

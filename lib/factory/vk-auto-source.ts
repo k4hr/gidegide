@@ -30,14 +30,36 @@ export function vkAutoSourceTimezoneLabel(timezone?: string | null) {
   return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
+const VK_SOURCE_HOSTS = new Set(["vk.com", "vk.ru", "m.vk.com", "m.vk.ru", "vkvideo.ru"]);
+
+function cleanFirstUrl(value: string) {
+  return (value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim()).replace(/[),.!?]+$/, "");
+}
+
+function normalizeVkHost(host: string) {
+  const normalized = host.toLowerCase().replace(/^www\./, "");
+  if (normalized === "m.vk.com" || normalized === "m.vk.ru" || normalized === "vk.ru") return "vk.com";
+  return normalized;
+}
+
+function isSingleVkVideoPath(path: string, search = "") {
+  return /^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(search));
+}
+
+function parseVkPlaylistPath(path: string) {
+  const match = path.match(/^\/video\/playlist\/(-?\d+)_(\d+)/i);
+  if (!match) return null;
+  return { ownerId: Number(match[1]), playlistId: match[2], ownerIdText: match[1] };
+}
+
 export function isVkGroupOrVideoSourceUrl(text: string) {
   try {
-    const match = text.match(/https?:\/\/[^\s<>]+/i)?.[0] || text;
-    const url = new URL(match);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (!["vk.com", "m.vk.com", "vkvideo.ru"].includes(host)) return false;
+    const url = new URL(cleanFirstUrl(text));
+    const rawHost = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!VK_SOURCE_HOSTS.has(rawHost)) return false;
     const path = url.pathname.replace(/\/+$/, "");
-    if (/^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(url.search))) return false;
+    if (isSingleVkVideoPath(path, url.search)) return false;
+    if (parseVkPlaylistPath(path)) return true;
     return path.length > 1;
   } catch {
     return false;
@@ -45,25 +67,29 @@ export function isVkGroupOrVideoSourceUrl(text: string) {
 }
 
 export function normalizeVkSourceUrl(value: string) {
-  const raw = value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim();
-  const url = new URL(raw);
-  let host = url.hostname.toLowerCase().replace(/^www\./, "");
-  if (host === "m.vk.com") host = "vk.com";
+  const url = new URL(cleanFirstUrl(value));
+  let host = normalizeVkHost(url.hostname);
   if (!["vk.com", "vkvideo.ru"].includes(host)) throw new Error("VK источник не открывается");
   let path = url.pathname.replace(/\/+$/, "") || "/";
   if (host === "vk.com" && /^\/videos\/[-\d]+$/i.test(path)) path = path.replace("/videos/", "/videos");
+  if (host === "vk.com") {
+    const playlist = parseVkPlaylistPath(path);
+    if (playlist) path = `/video/playlist/${playlist.ownerIdText}_${playlist.playlistId}`;
+  }
   return `https://${host}${path}`;
 }
 
 function sourceScreenName(sourceUrl: string) {
-  const url = new URL(sourceUrl);
+  const url = new URL(normalizeVkSourceUrl(sourceUrl));
   const parts = url.pathname.split("/").filter(Boolean);
   const first = parts[0] || "";
+  const playlist = parseVkPlaylistPath(url.pathname);
+  if (playlist) return { ownerId: playlist.ownerId, screenName: null, playlistId: playlist.playlistId };
   const owner = first.match(/^videos(-?\d+)$/i)?.[1];
-  if (owner) return { ownerId: Number(owner), screenName: null };
-  if (first === "video" && parts[1]?.startsWith("@")) return { ownerId: null, screenName: parts[1].slice(1) };
-  if (first.startsWith("@")) return { ownerId: null, screenName: first.slice(1) };
-  return { ownerId: null, screenName: first };
+  if (owner) return { ownerId: Number(owner), screenName: null, playlistId: null };
+  if (first === "video" && parts[1]?.startsWith("@")) return { ownerId: null, screenName: parts[1].slice(1), playlistId: null };
+  if (first.startsWith("@")) return { ownerId: null, screenName: first.slice(1), playlistId: null };
+  return { ownerId: null, screenName: first, playlistId: null };
 }
 
 
@@ -153,8 +179,11 @@ export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"
   const normalizedHtml = decodeHtmlEntities(html).replace(/\\\//g, "/");
   const matches: Array<{ id: string; index: number }> = [];
   const patterns = [
-    /(?:https?:\/\/(?:m\.)?vk\.com)?\/video(-?\d+_\d+)/gi,
+    /(?:https?:\/\/(?:m\.)?vk\.(?:com|ru))?\/video(-?\d+_\d+)/gi,
     /(?:https?:\/\/vkvideo\.ru)?\/video(-?\d+_\d+)/gi,
+    /href=["'][^"']*video(-?\d+_\d+)/gi,
+    /url\\?"\s*:\s*\\?"[^"\\]*video(-?\d+_\d+)/gi,
+    /contentUrl\\?"\s*:\s*\\?"[^"\\]*video(-?\d+_\d+)/gi,
     /\bvideo(-?\d+_\d+)\b/gi,
     /"video_id"\s*:\s*"?(-?\d+_\d+)"?/gi,
     /"id"\s*:\s*"?video(-?\d+_\d+)"?/gi,
@@ -188,22 +217,34 @@ export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"
 }
 
 function getVkSourceIdentity(sourceUrl: string) {
-  const url = new URL(sourceUrl);
+  const url = new URL(normalizeVkSourceUrl(sourceUrl));
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   const parts = url.pathname.split("/").filter(Boolean);
   const first = parts[0] || "";
+  const playlist = parseVkPlaylistPath(url.pathname);
 
   const videoAtName = first === "video" && parts[1]?.startsWith("@") ? parts[1].slice(1) : null;
   const atName = first.startsWith("@") ? first.slice(1) : null;
   const videosOwner = first.match(/^videos(-?\d+)$/i)?.[1] || null;
   const clubId = first.match(/^club(\d+)$/i)?.[1] || null;
   const publicId = first.match(/^public(\d+)$/i)?.[1] || null;
+  const ownerId = playlist
+    ? playlist.ownerId
+    : videosOwner
+      ? Number(videosOwner)
+      : clubId
+        ? -Number(clubId)
+        : publicId
+          ? -Number(publicId)
+          : null;
 
   return {
     host,
     slug: videoAtName || atName || first,
-    screenName: videoAtName || atName || (!videosOwner && !clubId && !publicId ? first : null),
-    ownerId: videosOwner ? Number(videosOwner) : clubId ? -Number(clubId) : publicId ? -Number(publicId) : null,
+    screenName: videoAtName || atName || (!ownerId && !clubId && !publicId && first !== "video" ? first : null),
+    ownerId,
+    playlistId: playlist?.playlistId || null,
+    playlistOwnerIdText: playlist?.ownerIdText || null,
   };
 }
 
@@ -214,11 +255,21 @@ function buildVkSourceCandidateUrls(sourceUrl: string) {
   const add = (url: string) => urls.push(url);
 
   add(normalized);
+  if (normalized.includes("vk.com/")) add(normalized.replace("https://vk.com/", "https://vk.ru/"));
 
   if (identity.ownerId !== null) {
+    if (identity.playlistId) {
+      const playlistPath = `${identity.playlistOwnerIdText || identity.ownerId}_${identity.playlistId}`;
+      console.info("[VK_AUTO_SOURCE] playlist detected", { ownerId: identity.ownerId, playlistId: identity.playlistId });
+      add(`https://vk.com/video/playlist/${playlistPath}`);
+      add(`https://vk.ru/video/playlist/${playlistPath}`);
+      add(`https://m.vk.com/video/playlist/${playlistPath}`);
+      add(`https://m.vk.ru/video/playlist/${playlistPath}`);
+    }
     add(`https://vk.com/videos${identity.ownerId}`);
+    add(`https://vk.ru/videos${identity.ownerId}`);
     add(`https://m.vk.com/videos${identity.ownerId}`);
-    add(`https://vk.com/video/playlist/${identity.ownerId}`);
+    add(`https://m.vk.ru/videos${identity.ownerId}`);
     add(`https://vk.com/club${Math.abs(identity.ownerId)}?z=video`);
     add(`https://m.vk.com/club${Math.abs(identity.ownerId)}`);
   }
@@ -226,12 +277,15 @@ function buildVkSourceCandidateUrls(sourceUrl: string) {
   if (identity.screenName) {
     const name = identity.screenName.replace(/^@/, "");
     add(`https://vk.com/video/@${name}`);
+    add(`https://vk.ru/video/@${name}`);
     add(`https://vkvideo.ru/@${name}`);
     add(`https://vkvideo.ru/@${name}/videos`);
     add(`https://vkvideo.ru/@${name}/all`);
     add(`https://vk.com/${name}?z=video`);
     add(`https://vk.com/${name}?w=video`);
+    add(`https://vk.ru/${name}?z=video`);
     add(`https://m.vk.com/${name}`);
+    add(`https://m.vk.ru/${name}`);
     add(`https://m.vk.com/video/${name}`);
   }
 
@@ -241,7 +295,7 @@ function buildVkSourceCandidateUrls(sourceUrl: string) {
 function candidateProvider(url: string): VkListingAttempt["provider"] {
   const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
   if (host === "vkvideo.ru") return "vkvideo-html";
-  if (host === "m.vk.com") return "vk-mobile-html";
+  if (host === "m.vk.com" || host === "m.vk.ru") return "vk-mobile-html";
   return "vk-html";
 }
 
@@ -431,7 +485,7 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
 
   if (!result.videos.length) {
     throw new Error(
-      "Не получилось получить список видео из VK-источника. Попробуй отправить именно раздел видео: https://vk.com/videos-123456789 или https://vk.com/video/@groupname. Если VK закрывает страницу от гостей, список без авторизации не прочитается.",
+      "Не получилось получить список видео из VK-источника. Попробуй отправить раздел видео https://vk.com/videos-123456789, канал https://vk.com/video/@groupname или плейлист https://vk.com/video/playlist/-123456789_1. Если VK закрывает страницу от гостей, список без авторизации не прочитается.",
     );
   }
 

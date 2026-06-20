@@ -107,7 +107,7 @@ export function extractVkVideoUrl(text: string) {
       const url = new URL(cleaned);
       const host = url.hostname.toLowerCase().replace(/^www\./, "");
       if (host === "vkvideo.ru" || host.endsWith(".vkvideo.ru")) return url.toString();
-      if ((host === "vk.com" || host.endsWith(".vk.com")) && url.pathname.length > 1) {
+      if (["vk.com", "vk.ru", "m.vk.com", "m.vk.ru"].includes(host) && url.pathname.length > 1) {
         return url.toString();
       }
     } catch {

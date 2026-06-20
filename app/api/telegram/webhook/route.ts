@@ -77,6 +77,8 @@ https://vk.com/video-123456_789
 https://vkvideo.ru/@kinobro
 https://vk.com/video/@kinobro
 https://vk.com/videos-123456789
+https://vk.com/video/playlist/-220018529_16
+https://vk.ru/video/playlist/-220018529_16
 
 Автозабор:
 • каждый день до 10 новых видео
@@ -414,7 +416,22 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   }
 
   const sourceUrl = extractVkVideoUrl(text);
-  if (!sourceUrl) return sendTelegramMessage(chatId, "Не вижу VK/VKVideo ссылки. Пришли полную ссылку, начинающуюся с https://, или открой /menu.");
+  if (!sourceUrl) {
+    const hasVkLikeUrl = /https?:\/\/(?:www\.)?(?:m\.)?(?:vk\.com|vk\.ru|vkvideo\.ru)\//i.test(text);
+    if (hasVkLikeUrl) {
+      return sendTelegramMessage(chatId, `Вижу VK-ссылку, но этот формат пока не поддержан или ссылка обрезалась.
+
+Поддерживаемые форматы:
+• отдельное видео: https://vk.com/video-123456_789
+• VK Video канал: https://vkvideo.ru/@name
+• раздел видео: https://vk.com/videos-123456789
+• плейлист: https://vk.com/video/playlist/-123456789_1
+• плейлист vk.ru: https://vk.ru/video/playlist/-123456789_1
+
+Пришли полную ссылку, начинающуюся с https://, или открой /menu.`);
+    }
+    return sendTelegramMessage(chatId, "Не вижу VK/VKVideo ссылки. Пришли полную ссылку, начинающуюся с https://, или открой /menu.");
+  }
   const telegramJob = await prisma.factoryTelegramJob.create({ data: { chatId: chat.id, sourceUrl, settings: DEFAULT_SETTINGS } });
   const sent = await sendTelegramMessage(chatId, "🎬 Видео получено.\nСкачивание будет через vkvideodownload.com.\n\nЧто делаем?", previewKeyboard(telegramJob.id));
   await prisma.factoryTelegramJob.update({ where: { id: telegramJob.id }, data: { telegramMessageId: String(sent.message_id) } });
@@ -519,6 +536,8 @@ https://vk.com/videos-123456789
 https://vk.com/videos-123456789
 или
 https://vk.com/video/@groupname
+или плейлист:
+https://vk.com/video/playlist/-123456789_1
 
 Скачивание отдельных VK-видео через vkvideodownload.com подключено. Я попробую снова при ежедневном запуске.
 
