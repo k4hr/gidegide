@@ -159,9 +159,22 @@ export async function listVkVideosWithPlaywright(input: {
     cookiesEnabled: Boolean(input.cookies?.length),
   };
   const found = new Map<string, VkSourceVideo>();
+  const responseTasks = new Set<Promise<void>>();
   let browser: Awaited<ReturnType<typeof import("playwright")["chromium"]["launch"]>> | null = null;
 
+  const flushResponseTasks = async () => {
+    const tasks = Array.from(responseTasks);
+    responseTasks.clear();
+    if (tasks.length) await Promise.allSettled(tasks);
+  };
+
   try {
+    console.info("[VK_PLAYWRIGHT] launch", {
+      headless: process.env.VK_LISTING_HEADLESS !== "false",
+      candidateCount: input.candidateUrls.length,
+      limit: input.limit,
+    });
+
     const { chromium } = await import("playwright");
     browser = await chromium.launch({ headless: process.env.VK_LISTING_HEADLESS !== "false" });
     const context = await browser.newContext({
@@ -170,11 +183,17 @@ export async function listVkVideosWithPlaywright(input: {
       viewport: { width: 1365, height: 900 },
     });
 
+    console.info("[VK_PLAYWRIGHT] cookies", {
+      enabled: Boolean(input.cookies?.length),
+      count: input.cookies?.length || 0,
+      domains: Array.from(new Set((input.cookies || []).map((cookie) => cookie.domain.replace(/^\./, "")))),
+    });
+
     if (input.cookies?.length) await context.addCookies(input.cookies);
     const page = await context.newPage();
 
     page.on("response", (response) => {
-      void (async () => {
+      const task = (async () => {
         try {
           const headers = response.headers();
           if (!responseLooksReadable(headers["content-type"] || "", response.url())) return;
@@ -183,11 +202,18 @@ export async function listVkVideosWithPlaywright(input: {
           if (videos.length) {
             debug.networkMatches += videos.length;
             mergeVideos(found, videos);
+            console.info("[VK_PLAYWRIGHT] network extracted", {
+              url: response.url(),
+              found: videos.length,
+              totalFound: found.size,
+            });
           }
         } catch {
-          // Some VK responses are binary, compressed, streamed, or already consumed.
+          // Some VK responses are binary, compressed, streamed, CORS-protected, or already consumed.
         }
       })();
+      responseTasks.add(task);
+      task.finally(() => responseTasks.delete(task)).catch(() => undefined);
     });
 
     const waitMs = envInt("VK_LISTING_WAIT_MS", 6000);
@@ -197,13 +223,20 @@ export async function listVkVideosWithPlaywright(input: {
       const attempt = { url, status: undefined as number | undefined, foundCount: 0, error: undefined as string | undefined };
       debug.candidatesTried.push(attempt);
       try {
+        console.info("[VK_PLAYWRIGHT] goto", { url });
         const response = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
         attempt.status = response?.status();
+        console.info("[VK_PLAYWRIGHT] loaded", { url, status: attempt.status });
+
+        await page.waitForLoadState("networkidle", { timeout: waitMs }).catch(() => undefined);
         await page.waitForTimeout(waitMs);
+        await flushResponseTasks();
 
         for (let index = 0; index < scrollPages; index += 1) {
+          console.info("[VK_PLAYWRIGHT] scroll", { url, step: index + 1, total: scrollPages });
           await page.mouse.wheel(0, 2500);
           await page.waitForTimeout(1000);
+          await flushResponseTasks();
         }
 
         const html = await page.content();
@@ -216,28 +249,41 @@ export async function listVkVideosWithPlaywright(input: {
         mergeVideos(found, domVideos);
         attempt.foundCount = found.size;
 
-        console.info("[VK_PLAYWRIGHT_LISTING] candidate", { url, status: attempt.status, foundCount: attempt.foundCount });
+        console.info("[VK_PLAYWRIGHT] extracted", {
+          url,
+          domFound: domVideos.length,
+          networkFound: debug.networkMatches,
+          totalFound: found.size,
+        });
+
         if (found.size >= input.limit) break;
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error || "Unknown Playwright error");
         attempt.error = message.includes("Executable doesn't exist") || message.includes("browserType.launch")
           ? "Playwright listing включён, но Chromium не установлен. Нужно установить chromium через npx playwright install chromium."
           : message;
-        console.warn("[VK_PLAYWRIGHT_LISTING] candidate failed", { url, error: attempt.error });
+        console.warn("[VK_PLAYWRIGHT] candidate failed", { url, error: attempt.error });
       }
     }
 
+    await flushResponseTasks();
     await context.close().catch(() => undefined);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error || "Unknown Playwright error");
     debug.error = message.includes("Executable doesn't exist") || message.includes("browserType.launch")
       ? "Playwright listing включён, но Chromium не установлен. Нужно установить chromium через npx playwright install chromium."
       : message;
-    console.warn("[VK_PLAYWRIGHT_LISTING] failed", { error: debug.error });
+    console.warn("[VK_PLAYWRIGHT] failed", { error: debug.error });
   } finally {
     if (browser) await browser.close().catch(() => undefined);
   }
 
   const videos = Array.from(found.values()).slice(0, input.limit);
+  console.info("[VK_PLAYWRIGHT] done", {
+    totalFound: videos.length,
+    domMatches: debug.domMatches,
+    networkMatches: debug.networkMatches,
+    error: debug.error,
+  });
   return { videos, debug };
 }

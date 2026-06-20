@@ -479,26 +479,57 @@ async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVi
 async function getViaPlaywright(sourceUrl: string, limit: number, attempts: VkListingAttempt[]): Promise<VkSourceVideo[]> {
   const candidateUrls = buildVkSourceCandidateUrls(sourceUrl);
   const cookies = await getVkCookiesForPlaywright();
-  const result = await listVkVideosWithPlaywright({ sourceUrl, candidateUrls, limit, cookies });
-  const foundCount = result.videos.length;
-  attempts.push({
-    provider: "playwright-browser",
-    url: sourceUrl,
-    foundCount,
-    error: result.debug.error,
-    debug: result.debug,
+  const cookiesEnabled = cookies.length > 0;
+
+  console.info("[VK_AUTO_SOURCE] playwright config", {
+    enabled: process.env.VK_LISTING_ENABLE_PLAYWRIGHT,
+    provider: process.env.VK_LISTING_PROVIDER,
+    headless: process.env.VK_LISTING_HEADLESS,
+    candidateCount: candidateUrls.length,
+    cookiesEnabled,
   });
-  for (const candidate of result.debug.candidatesTried) {
+
+  console.info("[VK_AUTO_SOURCE] playwright start", {
+    sourceUrl,
+    candidateCount: candidateUrls.length,
+    limit,
+  });
+
+  try {
+    const result = await listVkVideosWithPlaywright({ sourceUrl, candidateUrls, limit, cookies });
+    const foundCount = result.videos.length;
+
     attempts.push({
       provider: "playwright-browser",
-      url: candidate.url,
-      status: candidate.status,
-      foundCount: candidate.foundCount,
-      error: candidate.error,
+      url: sourceUrl,
+      foundCount,
+      error: result.debug.error,
+      debug: result.debug,
     });
+
+    for (const candidate of result.debug.candidatesTried) {
+      attempts.push({
+        provider: "playwright-browser",
+        url: candidate.url,
+        status: candidate.status,
+        foundCount: candidate.foundCount,
+        error: candidate.error,
+      });
+    }
+
+    console.info("[VK_AUTO_SOURCE] playwright result", {
+      foundCount,
+      domMatches: result.debug.domMatches,
+      networkMatches: result.debug.networkMatches,
+      error: result.debug.error,
+    });
+
+    if (!foundCount && result.debug.error) throw new Error(result.debug.error);
+    return result.videos;
+  } catch (error) {
+    console.error("[VK_AUTO_SOURCE] playwright error", error);
+    throw error;
   }
-  if (!foundCount && result.debug.error) throw new Error(result.debug.error);
-  return result.videos;
 }
 
 async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }) {
@@ -548,6 +579,12 @@ async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }
     }
   }
 
+  console.info("[VK_AUTO_SOURCE] playwright enabled", {
+    enabled: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true",
+    raw: process.env.VK_LISTING_ENABLE_PLAYWRIGHT,
+    currentFoundCount: videos.length,
+  });
+
   if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true") {
     try {
       videos = await getViaPlaywright(sourceUrl, limit, attempts);
@@ -561,7 +598,7 @@ async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }
   }
 
   if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() !== "true") {
-    attempts.push({ provider: "playwright-browser", url: sourceUrl, foundCount: 0, error: "disabled" });
+    attempts.push({ provider: "playwright-browser", url: sourceUrl, foundCount: 0, error: "Playwright listing disabled" });
   }
 
   const unique = new Map<string, VkSourceVideo>();
