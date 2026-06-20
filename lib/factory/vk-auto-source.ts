@@ -4,7 +4,6 @@ import { prisma } from "@/lib/prisma";
 import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
 import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
 import { runCommand } from "@/lib/factory/video";
-import { getPublicVkSourceVideos } from "@/lib/factory/vk-super-upload";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -67,6 +66,238 @@ function sourceScreenName(sourceUrl: string) {
   return { ownerId: null, screenName: first };
 }
 
+
+type VkListingAttempt = {
+  provider: "vk-api" | "vkvideo-html" | "vk-html" | "vk-mobile-html" | "yt-dlp";
+  url: string;
+  status?: number;
+  foundCount?: number;
+  error?: string;
+};
+
+const VK_PUBLIC_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+};
+
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code: string) => String.fromCharCode(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function cleanListingText(value?: string | null) {
+  return decodeHtmlEntities(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\\\//g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeListingTitle(value?: string | null) {
+  const title = cleanListingText(value)
+    .replace(/^смотреть\s+/i, "")
+    .replace(/\s*[|—-]\s*(?:VK Видео|VK|ВКонтакте)\s*$/i, "")
+    .trim();
+
+  if (!title || title.length < 4) return undefined;
+  if (/^(vk|вк|vk video|vk видео|видео|video|без названия)$/i.test(title)) return undefined;
+  if (/^видео\s*-?\d+_\d+$/i.test(title)) return undefined;
+  return title.slice(0, 180);
+}
+
+function titleNear(html: string, position: number) {
+  const slice = html.slice(Math.max(0, position - 2200), Math.min(html.length, position + 3200));
+  const patterns = [
+    /"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"caption"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"description"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /data-title=["']([^"']{4,220})["']/i,
+    /aria-label=["']([^"']{4,220})["']/i,
+    /title=["']([^"']{4,220})["']/i,
+    /alt=["']([^"']{4,220})["']/i,
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{4,220})["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const title = normalizeListingTitle(slice.match(pattern)?.[1]);
+    if (title) return title;
+  }
+
+  return undefined;
+}
+
+function thumbnailNear(html: string, position: number) {
+  const slice = html.slice(Math.max(0, position - 1200), Math.min(html.length, position + 2400)).replace(/\\\//g, "/");
+  return slice.match(/https?:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/i)?.[0];
+}
+
+function normalizeProviderVideoId(value: string) {
+  return value.replace(/^video/i, "").replace(/^\//, "");
+}
+
+function normalizeFoundVkVideoUrl(providerVideoId: string) {
+  return `https://vk.com/video${normalizeProviderVideoId(providerVideoId)}`;
+}
+
+export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"): VkSourceVideo[] {
+  const normalizedHtml = decodeHtmlEntities(html).replace(/\\\//g, "/");
+  const matches: Array<{ id: string; index: number }> = [];
+  const patterns = [
+    /(?:https?:\/\/(?:m\.)?vk\.com)?\/video(-?\d+_\d+)/gi,
+    /(?:https?:\/\/vkvideo\.ru)?\/video(-?\d+_\d+)/gi,
+    /\bvideo(-?\d+_\d+)\b/gi,
+    /"video_id"\s*:\s*"?(-?\d+_\d+)"?/gi,
+    /"id"\s*:\s*"?video(-?\d+_\d+)"?/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(normalizedHtml))) {
+      if (!match[1]) continue;
+      matches.push({ id: normalizeProviderVideoId(match[1]), index: match.index });
+    }
+  }
+
+  const unique = new Map<string, VkSourceVideo>();
+  for (const match of matches) {
+    if (!/^-?\d+_\d+$/.test(match.id)) continue;
+    const current = unique.get(match.id);
+    const title = titleNear(normalizedHtml, match.index) || current?.title;
+    const thumbnailUrl = thumbnailNear(normalizedHtml, match.index) || current?.thumbnailUrl;
+    unique.set(match.id, {
+      providerVideoId: match.id,
+      videoUrl: normalizeFoundVkVideoUrl(match.id),
+      title,
+      thumbnailUrl,
+    });
+  }
+
+  const videos = Array.from(unique.values());
+  console.info("VK source HTML parsed", { baseUrl, foundCount: videos.length });
+  return videos;
+}
+
+function getVkSourceIdentity(sourceUrl: string) {
+  const url = new URL(sourceUrl);
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const parts = url.pathname.split("/").filter(Boolean);
+  const first = parts[0] || "";
+
+  const videoAtName = first === "video" && parts[1]?.startsWith("@") ? parts[1].slice(1) : null;
+  const atName = first.startsWith("@") ? first.slice(1) : null;
+  const videosOwner = first.match(/^videos(-?\d+)$/i)?.[1] || null;
+  const clubId = first.match(/^club(\d+)$/i)?.[1] || null;
+  const publicId = first.match(/^public(\d+)$/i)?.[1] || null;
+
+  return {
+    host,
+    slug: videoAtName || atName || first,
+    screenName: videoAtName || atName || (!videosOwner && !clubId && !publicId ? first : null),
+    ownerId: videosOwner ? Number(videosOwner) : clubId ? -Number(clubId) : publicId ? -Number(publicId) : null,
+  };
+}
+
+function buildVkSourceCandidateUrls(sourceUrl: string) {
+  const normalized = normalizeVkSourceUrl(sourceUrl);
+  const identity = getVkSourceIdentity(normalized);
+  const urls: string[] = [];
+  const add = (url: string) => urls.push(url);
+
+  add(normalized);
+
+  if (identity.ownerId !== null) {
+    add(`https://vk.com/videos${identity.ownerId}`);
+    add(`https://m.vk.com/videos${identity.ownerId}`);
+    add(`https://vk.com/video/playlist/${identity.ownerId}`);
+    add(`https://vk.com/club${Math.abs(identity.ownerId)}?z=video`);
+    add(`https://m.vk.com/club${Math.abs(identity.ownerId)}`);
+  }
+
+  if (identity.screenName) {
+    const name = identity.screenName.replace(/^@/, "");
+    add(`https://vk.com/video/@${name}`);
+    add(`https://vkvideo.ru/@${name}`);
+    add(`https://vkvideo.ru/@${name}/videos`);
+    add(`https://vkvideo.ru/@${name}/all`);
+    add(`https://vk.com/${name}?z=video`);
+    add(`https://vk.com/${name}?w=video`);
+    add(`https://m.vk.com/${name}`);
+    add(`https://m.vk.com/video/${name}`);
+  }
+
+  return Array.from(new Set(urls));
+}
+
+function candidateProvider(url: string): VkListingAttempt["provider"] {
+  const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  if (host === "vkvideo.ru") return "vkvideo-html";
+  if (host === "m.vk.com") return "vk-mobile-html";
+  return "vk-html";
+}
+
+async function fetchVkListingHtml(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url, {
+      headers: VK_PUBLIC_HEADERS,
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    const html = await response.text();
+    return { status: response.status, ok: response.ok, html };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkListingAttempt[]) {
+  const found = new Map<string, VkSourceVideo>();
+  const candidates = buildVkSourceCandidateUrls(sourceUrl);
+
+  console.info("VK auto-source public listing started", { sourceUrl, candidates });
+
+  for (const url of candidates) {
+    const attempt: VkListingAttempt = { provider: candidateProvider(url), url };
+    attempts.push(attempt);
+    try {
+      const response = await fetchVkListingHtml(url);
+      attempt.status = response.status;
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const videos = extractVkVideosFromHtml(response.html, url);
+      attempt.foundCount = videos.length;
+      for (const video of videos) {
+        const key = video.providerVideoId || video.videoUrl;
+        if (!found.has(key)) found.set(key, video);
+      }
+
+      if (found.size >= limit) break;
+    } catch (error) {
+      attempt.error = humanizeVkAutoSourceError(error);
+    }
+  }
+
+  const result = Array.from(found.values()).slice(0, limit);
+  console.info("VK auto-source public listing finished", {
+    sourceUrl,
+    foundCount: result.length,
+    attempts,
+  });
+  return result;
+}
+
 async function vkApi<T>(method: string, params: Record<string, string | number>, token: string) {
   const query = new URLSearchParams({ ...Object.fromEntries(Object.entries(params).map(([key, value]) => [key, String(value)])), access_token: token, v: VK_API_VERSION });
   const response = await fetch(`https://api.vk.com/method/${method}?${query}`, { cache: "no-store" });
@@ -126,27 +357,60 @@ export async function getVkSourceVideos(input: { sourceUrl: string; limit: numbe
   const sourceUrl = normalizeVkSourceUrl(input.sourceUrl);
   const limit = Math.max(1, Math.min(200, input.limit));
   const token = process.env.VK_SERVICE_TOKEN?.trim() || process.env.VK_ACCESS_TOKEN?.trim();
+  const attempts: VkListingAttempt[] = [];
   const errors: string[] = [];
   let videos: VkSourceVideo[] = [];
+
   if (token) {
-    try { videos = await getViaVkApi(sourceUrl, limit, token); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaVkApi(sourceUrl, limit, token);
+      attempts.push({ provider: "vk-api", url: sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      errors.push(humanizeVkAutoSourceError(error));
+      attempts.push({ provider: "vk-api", url: sourceUrl, error: humanizeVkAutoSourceError(error) });
+    }
   }
+
   if (!videos.length) {
-    try { videos = await getPublicVkSourceVideos({ sourceUrl, limit }); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaPublicHtml(sourceUrl, limit, attempts);
+    } catch (error) {
+      errors.push(humanizeVkAutoSourceError(error));
+    }
   }
+
   if (!videos.length && process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true") {
-    try { videos = await getViaYtDlp(sourceUrl, limit); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaYtDlp(sourceUrl, limit);
+      attempts.push({ provider: "yt-dlp", url: sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      errors.push(humanizeVkAutoSourceError(error));
+      attempts.push({ provider: "yt-dlp", url: sourceUrl, error: humanizeVkAutoSourceError(error) });
+    }
   }
+
   const unique = new Map<string, VkSourceVideo>();
   for (const video of videos) {
     if (video.durationSec !== undefined && video.durationSec < 15) continue;
-    const normalizedVideoUrl = video.providerVideoId ? `https://vk.com/video${video.providerVideoId}` : video.videoUrl.split(/[?#]/)[0];
-    const key = video.providerVideoId || normalizedVideoUrl;
-    if (!unique.has(key)) unique.set(key, { ...video, videoUrl: normalizedVideoUrl });
+    const providerVideoId = video.providerVideoId || video.videoUrl.match(/video(-?\d+_\d+)/i)?.[1];
+    const normalizedVideoUrl = providerVideoId ? normalizeFoundVkVideoUrl(providerVideoId) : video.videoUrl.split(/[?#]/)[0];
+    const key = providerVideoId || normalizedVideoUrl;
+    if (!unique.has(key)) unique.set(key, { ...video, providerVideoId, videoUrl: normalizedVideoUrl });
   }
+
+  console.info("VK auto-source listing result", {
+    sourceUrl,
+    foundCount: unique.size,
+    attempts,
+    errors,
+  });
+
   if (!unique.size) {
-    throw new Error("Не получилось получить список видео из VK-источника. Скачивание отдельных видео через vkvideodownload.com работает, но для группы нужен доступный публичный список видео.");
+    throw new Error(
+      "Не получилось получить список видео из VK-источника. Попробуй отправить именно раздел видео: https://vk.com/videos-123456789 или https://vk.com/video/@groupname. Если VK закрывает страницу от гостей, список без авторизации не прочитается.",
+    );
   }
+
   return Array.from(unique.values()).slice(0, limit);
 }
 
