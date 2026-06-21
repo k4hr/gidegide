@@ -191,3 +191,28 @@ MOVIE_SMART_SKIP_OUTRO_SECONDS=240
 ```
 
 Результат: для 10 shorts система выбирает 10 разнесённых по фильму моментов, а не 10 скучных соседних минут подряд. В статусе задачи видно прогресс вида `Movie Smart 2.0: анализирую момент 17/90 (00:42:30)` и затем `Movie Smart 2.0: выбрано сильных моментов 10/10`.
+
+## REDFILM global overlay
+
+The factory includes a global REDFILM overlay file at `public/factory/overlays/redfilm-overlay.mov`.
+When `FACTORY_GLOBAL_OVERLAY_ENABLED=true`, every rendered clip gets one final ffmpeg pass after the normal render step:
+
+1. render the regular vertical 1080x1920 clip;
+2. loop `redfilm-overlay.mov` if the clip is longer than the overlay;
+3. place the overlay fullscreen over the final clip;
+4. export the final MP4 that is uploaded/published.
+
+Environment variables:
+
+```env
+FACTORY_GLOBAL_OVERLAY_ENABLED=true
+FACTORY_GLOBAL_OVERLAY_PATH=public/factory/overlays/redfilm-overlay.mov
+FACTORY_GLOBAL_OVERLAY_LOOP=true
+FACTORY_GLOBAL_OVERLAY_TRANSPARENCY=black-key
+FACTORY_GLOBAL_OVERLAY_SOFT_FAIL=true
+FACTORY_GLOBAL_OVERLAY_CRF=22
+```
+
+`FACTORY_GLOBAL_OVERLAY_TRANSPARENCY=black-key` is the default because many HEVC Alpha MOV exports are decoded by Linux ffmpeg as regular `yuv420p` without an alpha channel. Black-key mode removes near-black pixels and keeps the red REDFILM overlay visible. If the overlay is later exported as ProRes 4444 / WebM VP9 with alpha and ffmpeg reads alpha correctly, set `FACTORY_GLOBAL_OVERLAY_TRANSPARENCY=alpha`.
+
+If the overlay file is missing or ffmpeg cannot apply it, `FACTORY_GLOBAL_OVERLAY_SOFT_FAIL=true` lets the worker continue with the normal rendered video instead of killing the whole job.

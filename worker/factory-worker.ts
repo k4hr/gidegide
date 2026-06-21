@@ -762,6 +762,7 @@ async function processOneJob() {
               startSec,
               clipSeconds: job.clipSeconds,
               isCanceled: () => isJobCanceled(job.id),
+              onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
             })
           : await renderFactoryClip({
               jobId: job.id,
@@ -772,6 +773,7 @@ async function processOneJob() {
               clipSeconds: job.clipSeconds,
               template: getTargetTemplate(target),
               isCanceled: () => isJobCanceled(job.id),
+              onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
             });
 
         await notifyTelegramJob(job.id, `🎬 Рендер: ${clipIndex}/${clipStarts.length}`);

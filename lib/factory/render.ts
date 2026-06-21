@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { nanoid } from "nanoid";
 
 import {
@@ -11,6 +11,7 @@ import {
 import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloader";
 import { downloadViaVkVideo, isVkVideoUrl } from "@/lib/factory/vk-downloader";
 import { getVideoDurationSeconds, runCommand } from "@/lib/factory/video";
+import { applyGlobalOverlayToVideo, isGlobalOverlayEnabled } from "@/lib/factory/video-overlay";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -199,6 +200,7 @@ type RenderFactoryClipInput = {
   clipSeconds: number;
   template: FactoryRenderTemplate;
   isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
 };
 
 export async function renderFactoryClip(input: RenderFactoryClipInput) {
@@ -211,6 +213,9 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
     FACTORY_OUTPUT_DIR,
     `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
   );
+  const baseOutputPath = isGlobalOverlayEnabled()
+    ? path.join(tempDir, `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.base.mp4`)
+    : outputPath;
 
   await mkdir(tempDir, { recursive: true });
 
@@ -258,13 +263,26 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
         "-ac",
         "2",
         "-shortest",
-        outputPath,
+        baseOutputPath,
       ],
       {
         logPrefix: `ffmpeg-${input.clipIndex}`,
         isCanceled: input.isCanceled,
       },
     );
+
+    if (baseOutputPath !== outputPath) {
+      const applied = await applyGlobalOverlayToVideo({
+        inputPath: baseOutputPath,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (!applied) {
+        await copyFile(baseOutputPath, outputPath);
+      }
+    }
 
     return outputPath;
   } finally {
@@ -282,6 +300,9 @@ export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput
     FACTORY_OUTPUT_DIR,
     `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
   );
+  const baseOutputPath = isGlobalOverlayEnabled()
+    ? path.join(tempDir, `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.movie.base.mp4`)
+    : outputPath;
 
   await mkdir(tempDir, { recursive: true });
 
@@ -319,13 +340,26 @@ export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput
         "-ac",
         "2",
         "-shortest",
-        outputPath,
+        baseOutputPath,
       ],
       {
         logPrefix: `ffmpeg-movie-${input.clipIndex}`,
         isCanceled: input.isCanceled,
       },
     );
+
+    if (baseOutputPath !== outputPath) {
+      const applied = await applyGlobalOverlayToVideo({
+        inputPath: baseOutputPath,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (!applied) {
+        await copyFile(baseOutputPath, outputPath);
+      }
+    }
 
     return outputPath;
   } finally {
