@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { cancelFactoryJob } from "@/lib/factory/cancel-job";
@@ -26,6 +27,10 @@ import {
 import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
+
+function toPrismaJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 type TelegramUser = { username?: string; first_name?: string };
 type TelegramUpdate = {
@@ -849,7 +854,7 @@ async function createBatchDraft(chatDbId: string, urls: string[] = []) {
       chatId: chatDbId,
       sourceUrl: `telegram-batch:${batchId}`,
       status: "BATCH_DRAFT",
-      settings: { ...DEFAULT_SETTINGS, startMode: "TIME", startHour: 18, endHour: 23, batchId, urls },
+      settings: toPrismaJson({ ...DEFAULT_SETTINGS, startMode: "TIME", startHour: 18, endHour: 23, batchId, urls }),
     },
   });
 }
@@ -931,7 +936,7 @@ async function createBatchJobs(input: {
         sourceUrl: url,
         status: "QUEUED",
         factoryJobId: job.id,
-        settings: childSettings,
+        settings: toPrismaJson(childSettings),
       },
     });
     created.push({ id: job.id, sourceUrl: url, startAt: publishWindow.startAt, endAt: publishWindow.endAt });
@@ -985,7 +990,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   if (openDraft && videoUrls.length) {
     const settings = parseSettings(openDraft.settings);
     const merged = Array.from(new Set([...(settings.urls || []), ...videoUrls])).slice(0, 30);
-    const updated = await prisma.factoryTelegramJob.update({ where: { id: openDraft.id }, data: { settings: { ...settings, urls: merged } } });
+    const updated = await prisma.factoryTelegramJob.update({ where: { id: openDraft.id }, data: { settings: toPrismaJson({ ...settings, urls: merged }) } });
     return showBatchDraft(chatId, updated, Number(openDraft.telegramMessageId) || undefined);
   }
 
@@ -1033,7 +1038,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
     }
     return sendTelegramMessage(chatId, "Не вижу VK/VKVideo ссылки. Пришли полную ссылку, начинающуюся с https://, или открой /menu.");
   }
-  const telegramJob = await prisma.factoryTelegramJob.create({ data: { chatId: chat.id, sourceUrl, settings: DEFAULT_SETTINGS } });
+  const telegramJob = await prisma.factoryTelegramJob.create({ data: { chatId: chat.id, sourceUrl, settings: toPrismaJson(DEFAULT_SETTINGS) } });
   const sent = await sendTelegramMessage(chatId, `🎬 Видео получено.
 Скачивание будет через vkvideodownload.com.
 
@@ -1259,7 +1264,7 @@ ${reason}`, autoSourceActionKeyboard(updated));
       settings.startHour = value;
       settings.endHour = 23;
     }
-    await prisma.factoryTelegramJob.update({ where: { id }, data: { settings } });
+    await prisma.factoryTelegramJob.update({ where: { id }, data: { settings: toPrismaJson(settings) } });
     await answerCallbackQuery(query.id, "Сохранено");
     return editTelegramMessage(chatId, messageId, settingsText(settings, urlsCount), settingsKeyboard(id, isBatch));
   }
