@@ -34,13 +34,17 @@ VK_DOWNLOAD_PROVIDER=vkvideodownload
 VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK=false
 VK_DOWNLOAD_PREFERRED_QUALITY=720p
 VK_DOWNLOAD_RESOLVER_DELAY_MS=4000
+VK_DOWNLOAD_ALLOW_QUALITY_FALLBACK=true
+VK_DOWNLOAD_REQUIRE_AUDIO=true
+VK_DOWNLOAD_BROWSER_FALLBACK=true
+VK_DOWNLOAD_TIMEOUT_MS=1800000
 ```
 
 Worker раз в пять минут проверяет разрешённые и включённые источники. По умолчанию запуск происходит после 13:00 в часовом поясе источника и только один раз за локальный день.
 
 `VK_SERVICE_TOKEN` и `VK_ACCESS_TOKEN` необязательны. Для списка видео система сначала использует VK API при наличии токена, затем публичный HTML-раздел VK. `yt-dlp --flat-playlist` используется только при явно включённом `VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK=true`.
 
-Конкретные VK-видео скачиваются через `vkvideodownload.com`: worker получает прямую MP4-ссылку, предпочитает 720p со звуком, скачивает файл и передаёт его в существующий Movie Smart Cut pipeline. `yt-dlp` для одиночного видео также выключен по умолчанию и является только опциональным fallback.
+Конкретные VK-видео скачиваются через `vkvideodownload.com`: worker получает все MP4-кандидаты 240p/360p/480p/720p/1080p, сначала пробует 720p, проверяет скачанный файл через `ffprobe` на видео и звук, а если выбранный вариант не прошёл проверку — пробует следующий MP4. `yt-dlp` для одиночного видео также выключен по умолчанию и является только опциональным fallback.
 
 Публичные или закрытые VK-группы, которые не отдают список видео гостям, невозможно автоматически перечислить без VK API-токена. Это не мешает скачиванию уже известной ссылки на публичное отдельное видео через `vkvideodownload.com`.
 

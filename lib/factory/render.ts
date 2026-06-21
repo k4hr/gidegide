@@ -163,9 +163,8 @@ export async function downloadSourceFromUrl(input: {
       return await downloadViaVkVideo(input);
     } catch (error) {
       console.error("VK downloader failed", error);
-      throw new Error(
-        "Не получилось скачать это VK-видео со звуком. Выбери другое видео или загрузи MP4 вручную.",
-      );
+      const reason = error instanceof Error ? error.message : "неизвестная ошибка";
+      throw new Error(`Не получилось скачать это VK-видео со звуком: ${reason}`);
     }
   }
 

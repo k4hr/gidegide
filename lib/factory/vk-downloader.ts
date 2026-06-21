@@ -35,12 +35,12 @@ export async function downloadViaVkVideo(input: DownloadVkVideoInput) {
   const outputPath = path.join(FACTORY_SOURCE_DIR, `${input.jobId}.mp4`);
   const preferredQuality = process.env.VK_DOWNLOAD_PREFERRED_QUALITY?.toLowerCase() === "best" ? "best" : "720p";
 
-  await input.onProgress?.(3, "Получаю прямую MP4-ссылку через vkvideodownload.com");
   try {
     const result = await downloadVkVideoToFile({
       videoUrl: input.sourceUrl,
       outputPath,
       preferredQuality,
+      onProgress: input.onProgress,
     });
     await assertNotCanceled(input.isCanceled);
     await input.onProgress?.(24, `MP4 ${result.resolved.quality || "лучшего качества"} скачан, проверяю звук`);
