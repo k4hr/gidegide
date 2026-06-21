@@ -1,6 +1,9 @@
+import { normalizeMovieTitleFromSource, sanitizeMovieClipTitle } from "@/lib/factory/movie-title-normalizer";
+
 const KINOPOISK_SEARCH_V21 = "https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword";
 const KINOPOISK_SEARCH_V22 = "https://kinopoiskapiunofficial.tech/api/v2.2/films";
 const KINOPOISK_FILM_V22 = "https://kinopoiskapiunofficial.tech/api/v2.2/films";
+
 const OPENAI_CHAT_COMPLETIONS_URL = "https://api.openai.com/v1/chat/completions";
 
 export type MovieAiTitlePack = {
@@ -162,24 +165,28 @@ function formatCountries(movie?: KinopoiskMovie | null) {
 }
 
 async function resolveMovieContext(sourceTitle?: string | null) {
-  const query = extractMovieSearchQuery(sourceTitle);
-  const found = await searchKinopoisk(query).catch((error) => {
-    console.warn("Kinopoisk search failed", error);
-    return null;
-  });
+  const normalized = normalizeMovieTitleFromSource(sourceTitle);
+  const query = normalized.searchQuery || extractMovieSearchQuery(sourceTitle);
+  const found = query
+    ? await searchKinopoisk(query).catch((error) => {
+        console.warn("Kinopoisk search failed", error);
+        return null;
+      })
+    : null;
   const movie = await getKinopoiskMovieDetails(found).catch((error) => {
     console.warn("Kinopoisk details failed", error);
     return found;
   });
 
   const movieTitle =
+    cleanText(normalized.movieTitle) ||
     cleanText(movie?.nameRu) ||
     cleanText(movie?.nameOriginal) ||
     cleanText(movie?.nameEn) ||
     query ||
     cleanText(sourceTitle) ||
     "фильм";
-  const movieYear = movie?.year ? String(movie.year) : null;
+  const movieYear = normalized.movieYear || (movie?.year ? String(movie.year) : null);
   const movieDescription =
     cleanText(movie?.description) ||
     cleanText(movie?.shortDescription) ||
@@ -342,37 +349,18 @@ function ensureDescriptionCount(input: {
   movieDescription: string;
   sourceTitle?: string | null;
 }) {
-  const result: string[] = [];
-
-  for (let index = 0; index < input.totalClips; index += 1) {
-    const raw = cleanText(input.descriptions?.[index]);
-    const fallback = buildMovieClipRedfilmDescription({
+  // Описания не доверяем AI целиком: AI иногда подмешивает чужие фильмы.
+  // Поэтому каждое описание собирается детерминированно из подтверждённого названия скачанного фильма.
+  return Array.from({ length: input.totalClips }, (_, index) =>
+    buildMovieClipRedfilmDescription({
       movieTitle: input.movieTitle,
       movieYear: input.movieYear,
       movieDescription: input.movieDescription,
       clipTitle: input.titles[index],
       clipIndex: index + 1,
       sourceTitle: input.sourceTitle,
-    });
-
-    const titleLine = movieTitleLine({ movieTitle: input.movieTitle, movieYear: input.movieYear });
-    const hasMovieTitle = raw.toLowerCase().includes(cleanText(input.movieTitle).toLowerCase());
-    const hasRedfilm = /переходи\s+смотреть\s+на\s+redfilm/i.test(raw);
-
-    if (!raw) {
-      result.push(fallback);
-      continue;
-    }
-
-    const lines = [raw];
-    if (!hasMovieTitle) lines.push(`Фильм: ${titleLine}.`);
-    if (!hasRedfilm) lines.push("", "переходи смотреть на REDFILM");
-    lines.push("", "#кино #фильмы #shorts #redfilm");
-
-    result.push(lines.join("\n").slice(0, 4500).trim());
-  }
-
-  return result;
+    }),
+  );
 }
 
 function buildFallbackPack(input: {
@@ -488,6 +476,8 @@ async function callOpenAiForTitles(input: {
     "- не повторять одинаковую структуру подряд;",
     "- не писать название фильма в начале каждого title;",
     "- title должен звучать как отдельный сюжетный конфликт.",
+    "- категорически запрещено придумывать другой фильм, франшизу, персонажей или вселенную;",
+    "- если нет точного понимания сцены, делай нейтральный конфликт без имён персонажей;",
     "- descriptions должны быть отдельными для каждого ролика;",
     "- в каждом description обязательно должно быть название фильма/проекта;",
     "- в каждом description обязательно должна быть точная фраза: переходи смотреть на REDFILM;",
@@ -503,7 +493,7 @@ async function callOpenAiForTitles(input: {
     "",
     "Контекст:",
     `Исходное название VK-видео: ${cleanText(input.sourceTitle) || "не указано"}`,
-    `Фильм/проект: ${input.movieTitle}${input.movieYear ? ` (${input.movieYear})` : ""}`,
+    `Фильм/проект, который НЕЛЬЗЯ менять и НЕЛЬЗЯ подменять: ${input.movieTitle}${input.movieYear ? ` (${input.movieYear})` : ""}`,
     `Жанры: ${input.genres || "неизвестно"}`,
     `Страны: ${input.countries || "неизвестно"}`,
     `Описание из Кинопоиска: ${input.movieDescription}`,
@@ -628,7 +618,20 @@ export async function generateMovieAiTitlePack(input: {
     return fallback;
   }
 
-  const titles = ensureTitleCount(ai.titles, totalClips, fallback.titles);
+  const cleanedAiTitles = ai.titles.map((title, index) =>
+    sanitizeMovieClipTitle({
+      title,
+      fallback: fallback.titles[index % fallback.titles.length] || `Сцена стала напряжённой слишком быстро ${index + 1}`,
+      movieTitle: context.movieTitle,
+    }),
+  );
+  const titles = ensureTitleCount(cleanedAiTitles, totalClips, fallback.titles).map((title, index) =>
+    sanitizeMovieClipTitle({
+      title,
+      fallback: fallback.titles[index % fallback.titles.length] || `Сцена стала напряжённой слишком быстро ${index + 1}`,
+      movieTitle: context.movieTitle,
+    }),
+  );
   const descriptions = ensureDescriptionCount({
     descriptions: ai.descriptions,
     titles,

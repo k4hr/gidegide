@@ -565,6 +565,22 @@ async function processOneJob() {
 
     sourcePath = await ensureLocalSourceFile(job);
 
+    const refreshedJobMeta = await db(() =>
+      prisma.factoryJob.findUnique({
+        where: { id: job.id },
+        select: {
+          sourceOriginalName: true,
+          titlePrefix: true,
+          longVideoDescription: true,
+        },
+      }),
+    );
+    const effectiveSourceOriginalName =
+      refreshedJobMeta?.sourceOriginalName ?? job.sourceOriginalName;
+    const effectiveTitlePrefix = refreshedJobMeta?.titlePrefix ?? job.titlePrefix;
+    const effectiveLongVideoDescription =
+      refreshedJobMeta?.longVideoDescription ?? job.longVideoDescription;
+
     await notifyTelegramJob(job.id, "⬇️ Исходник скачан");
 
     await assertNotCanceled(job.id);
@@ -645,8 +661,8 @@ async function processOneJob() {
 
     const movieAiTitles = movieSmartJob
       ? await generateMovieAiTitlePack({
-          sourceTitle: job.sourceOriginalName ?? job.titlePrefix,
-          userDescription: job.longVideoDescription,
+          sourceTitle: effectiveSourceOriginalName ?? effectiveTitlePrefix,
+          userDescription: effectiveLongVideoDescription,
           totalClips: clipStarts.length,
           clipSeconds: job.clipSeconds,
           clipStarts,
@@ -679,8 +695,8 @@ async function processOneJob() {
         buildClipTitle({
           game: job.game,
           clipIndex,
-          customPrefix: job.titlePrefix,
-          sourceTitle: job.sourceOriginalName,
+          customPrefix: effectiveTitlePrefix,
+          sourceTitle: effectiveSourceOriginalName,
         });
 
       const clip = await db(() =>
@@ -698,7 +714,9 @@ async function processOneJob() {
       for (const target of targets) {
         await assertNotCanceled(job.id);
 
-        const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
+        const titlePrefixForTarget = target.titlePrefix && !/^VK_RU:VK фильм/i.test(target.titlePrefix)
+          ? target.titlePrefix
+          : effectiveTitlePrefix;
 
         const title =
           movieAiTitles?.titles[i] ??
@@ -706,25 +724,25 @@ async function processOneJob() {
             game: job.game,
             clipIndex,
             customPrefix: titlePrefixForTarget,
-            sourceTitle: job.sourceOriginalName,
+            sourceTitle: effectiveSourceOriginalName,
           });
 
         const description = movieSmartJob
           ? movieAiTitles?.descriptions[i] ??
             buildMovieClipRedfilmDescription({
-              movieTitle: movieAiTitles?.movieTitle ?? job.sourceOriginalName ?? "VK фильм",
+              movieTitle: movieAiTitles?.movieTitle ?? effectiveSourceOriginalName ?? "VK фильм",
               movieYear: movieAiTitles?.movieYear ?? null,
-              movieDescription: movieAiTitles?.movieDescription ?? job.longVideoDescription ?? job.sourceOriginalName,
+              movieDescription: movieAiTitles?.movieDescription ?? effectiveLongVideoDescription ?? effectiveSourceOriginalName,
               clipTitle: title,
               clipIndex,
-              sourceTitle: job.sourceOriginalName,
+              sourceTitle: effectiveSourceOriginalName,
             })
-          : job.longVideoDescription?.trim() ||
+          : effectiveLongVideoDescription?.trim() ||
             buildClipDescription({
               game: job.game,
               customPrefix: titlePrefixForTarget,
               title,
-              sourceTitle: job.sourceOriginalName,
+              sourceTitle: effectiveSourceOriginalName,
             });
 
         const renderProgress =

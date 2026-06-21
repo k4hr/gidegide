@@ -38,13 +38,14 @@ VK_DOWNLOAD_ALLOW_QUALITY_FALLBACK=true
 VK_DOWNLOAD_REQUIRE_AUDIO=true
 VK_DOWNLOAD_BROWSER_FALLBACK=true
 VK_DOWNLOAD_TIMEOUT_MS=1800000
+VK_DOWNLOAD_NO_DATA_TIMEOUT_MS=60000
 ```
 
 Worker раз в пять минут проверяет разрешённые и включённые источники. По умолчанию запуск происходит после 13:00 в часовом поясе источника и только один раз за локальный день.
 
 `VK_SERVICE_TOKEN` и `VK_ACCESS_TOKEN` необязательны. Для списка видео система сначала использует VK API при наличии токена, затем публичный HTML-раздел VK. `yt-dlp --flat-playlist` используется только при явно включённом `VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK=true`.
 
-Конкретные VK-видео скачиваются через `vkvideodownload.com`: worker получает все MP4-кандидаты 240p/360p/480p/720p/1080p, сначала пробует 720p, проверяет скачанный файл через `ffprobe` на видео и звук, а если выбранный вариант не прошёл проверку — пробует следующий MP4. `yt-dlp` для одиночного видео также выключен по умолчанию и является только опциональным fallback.
+Конкретные VK-видео скачиваются через `vkvideodownload.com`: worker получает все MP4-кандидаты 240p/360p/480p/720p/1080p, сначала пробует 720p, проверяет скачанный файл через `ffprobe` на видео и звук, показывает прогресс скачивания по байтам, обрывает зависший поток через `VK_DOWNLOAD_NO_DATA_TIMEOUT_MS`, а если выбранный вариант не прошёл проверку — пробует следующий MP4. `yt-dlp` для одиночного видео также выключен по умолчанию и является только опциональным fallback.
 
 Публичные или закрытые VK-группы, которые не отдают список видео гостям, невозможно автоматически перечислить без VK API-токена. Это не мешает скачиванию уже известной ссылки на публичное отдельное видео через `vkvideodownload.com`.
 
@@ -165,3 +166,28 @@ For VK Movie Smart jobs the worker now generates a separate description for ever
 - movie/shorts hashtags.
 
 If OpenAI is available, it can return per-clip descriptions together with titles. If OpenAI is unavailable or returns incomplete descriptions, the worker falls back to deterministic REDFILM descriptions so every upload still contains the movie title and REDFILM CTA.
+
+## Movie Smart 2.0: AI Moment Finder без тупой последовательной нарезки
+
+`MOVIE_SMART` больше не выбирает один 10-минутный участок и не режет его подряд. Worker теперь сканирует весь безопасный диапазон фильма, пропуская интро и финальные титры, оценивает десятки кандидатов и выбирает отдельные сильные моменты.
+
+Оценка кандидата строится по нескольким сигналам ffmpeg:
+
+- громкость и пики аудио;
+- количество смен сцен / визуальная динамика;
+- качество первого кадра, чтобы не начинать клип с черного экрана;
+- штраф за тихие и статичные куски;
+- бонус за сочетание динамики и эмоционального звука.
+
+Основные переменные:
+
+```env
+MOVIE_SMART_MAX_CANDIDATES=90
+MOVIE_SMART_CANDIDATE_STEP_SECONDS=45
+MOVIE_SMART_MIN_SCORE=48
+MOVIE_SMART_MIN_GAP_SECONDS=600
+MOVIE_SMART_SKIP_INTRO_SECONDS=240
+MOVIE_SMART_SKIP_OUTRO_SECONDS=240
+```
+
+Результат: для 10 shorts система выбирает 10 разнесённых по фильму моментов, а не 10 скучных соседних минут подряд. В статусе задачи видно прогресс вида `Movie Smart 2.0: анализирую момент 17/90 (00:42:30)` и затем `Movie Smart 2.0: выбрано сильных моментов 10/10`.

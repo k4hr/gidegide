@@ -87,7 +87,8 @@ function calculateHash(videoUrl: string) {
 }
 
 function parseDuration(value: string | number | null | undefined) {
-  if (typeof value === "number") return Number.isFinite(value) ? Math.round(value) : undefined;
+  if (typeof value === "number")
+    return Number.isFinite(value) ? Math.round(value) : undefined;
   if (!value) return undefined;
   if (/^\d+$/.test(value)) return Number(value);
   const parts = value.split(":").map(Number);
@@ -113,37 +114,86 @@ function normalizeUrl(value: string) {
 function parseQuality(...values: Array<string | number | null | undefined>) {
   for (const value of values) {
     const text = String(value ?? "");
-    const match = text.match(/(?:^|[^\d])([1-9]\d{2,3})\s*p(?:[^\d]|$)/i) || text.match(/(?:^|[^\d])([1-9]\d{2,3})(?:[^\d]|$)/);
+    const match =
+      text.match(/(?:^|[^\d])([1-9]\d{2,3})\s*p(?:[^\d]|$)/i) ||
+      text.match(/(?:^|[^\d])([1-9]\d{2,3})(?:[^\d]|$)/);
     const quality = Number(match?.[1] || 0);
-    if (Number.isFinite(quality) && quality >= 144 && quality <= 4320) return quality;
+    if (
+      Number.isFinite(quality) &&
+      [240, 360, 480, 720, 1080, 1440, 2160].includes(quality)
+    )
+      return quality;
   }
 
   return undefined;
 }
 
-function inferExt(url: string, ...values: Array<string | number | null | undefined>) {
-  const combined = `${url} ${values.map((value) => String(value ?? "")).join(" ")}`.toLowerCase();
+function inferExt(
+  url: string,
+  ...values: Array<string | number | null | undefined>
+) {
+  const combined =
+    `${url} ${values.map((value) => String(value ?? "")).join(" ")}`.toLowerCase();
   if (combined.includes(".mp4") || /\bmp4\b/.test(combined)) return "mp4";
-  return String(values.find((value) => /mp4/i.test(String(value ?? ""))) ?? "mp4").toLowerCase();
+  const explicitExt = values.find((value) => /mp4/i.test(String(value ?? "")));
+  return explicitExt ? String(explicitExt).toLowerCase() : undefined;
 }
 
 function looksLikeDownloadableVideoUrl(url: string, ext?: string) {
   const lower = url.toLowerCase();
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (!/^https?:$/.test(parsed.protocol)) return false;
+  if (
+    host === "vkvideodownload.com" &&
+    (parsed.pathname === "/" || parsed.pathname === "")
+  )
+    return false;
+  if (
+    /\.(png|jpe?g|webp|gif|svg|ico|css|js|woff2?)(?:$|[?#])/i.test(
+      parsed.pathname,
+    )
+  )
+    return false;
   if ((ext || "").toLowerCase() === "mp4") return true;
-  if (lower.includes(".mp4")) return true;
-  if (lower.includes("video") && lower.startsWith("http")) return true;
-  if (lower.includes("download") && lower.startsWith("http")) return true;
+  if (/\.mp4(?:$|[?#])/i.test(lower)) return true;
+  if (/^vkvd\d*\.okcdn\.ru$/i.test(host)) return true;
+  if (/\bokcdn\.ru$/i.test(host) && /(?:type=|video|download|mp4)/i.test(lower))
+    return true;
+  if (/\b(video|download)\b/i.test(lower) && /\bmp4\b/i.test(lower))
+    return true;
   return false;
 }
 
+function previewCandidateUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return `${parsed.hostname}${parsed.pathname}`.slice(0, 110);
+  } catch {
+    return "invalid-url";
+  }
+}
+
 function getSetCookieHeaders(headers: Headers) {
-  const withGetSetCookie = headers as Headers & { getSetCookie?: () => string[] };
-  if (typeof withGetSetCookie.getSetCookie === "function") return withGetSetCookie.getSetCookie();
+  const withGetSetCookie = headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+  if (typeof withGetSetCookie.getSetCookie === "function")
+    return withGetSetCookie.getSetCookie();
   const single = headers.get("set-cookie");
   return single ? [single] : [];
 }
 
-function mergeCookieHeader(existing: string | undefined, setCookieHeaders: string[]) {
+function mergeCookieHeader(
+  existing: string | undefined,
+  setCookieHeaders: string[],
+) {
   const cookieMap = new Map<string, string>();
 
   for (const part of (existing || "").split(";")) {
@@ -157,7 +207,9 @@ function mergeCookieHeader(existing: string | undefined, setCookieHeaders: strin
     if (name && valueParts.length) cookieMap.set(name, valueParts.join("="));
   }
 
-  return [...cookieMap.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+  return [...cookieMap.entries()]
+    .map(([name, value]) => `${name}=${value}`)
+    .join("; ");
 }
 
 function baseHeaders(cookieHeader?: string): Record<string, string> {
@@ -183,7 +235,11 @@ function addCandidate(input: {
   const url = normalizeUrl(input.url);
   if (!url) return;
 
-  const label = [input.label, input.quality, input.sizeText].filter(Boolean).join(" ").trim() || undefined;
+  const label =
+    [input.label, input.quality, input.sizeText]
+      .filter(Boolean)
+      .join(" ")
+      .trim() || undefined;
   const ext = inferExt(url, input.ext, input.label, input.quality);
 
   if (!looksLikeDownloadableVideoUrl(url, ext)) return;
@@ -211,22 +267,40 @@ function extractCandidatesFromUnknown(input: {
   if (depth > 8 || input.value == null) return;
 
   if (Array.isArray(input.value)) {
-    input.value.forEach((item) => extractCandidatesFromUnknown({ ...input, value: item, depth: depth + 1 }));
+    input.value.forEach((item) =>
+      extractCandidatesFromUnknown({ ...input, value: item, depth: depth + 1 }),
+    );
     return;
   }
 
   if (typeof input.value === "object") {
     const record = input.value as Record<string, unknown>;
-    const urlValue = record.url || record.href || record.link || record.downloadUrl || record.download_url || record.src;
+    const urlValue =
+      record.url ||
+      record.href ||
+      record.link ||
+      record.downloadUrl ||
+      record.download_url ||
+      record.src;
 
     if (typeof urlValue === "string") {
       addCandidate({
         target: input.target,
         url: urlValue,
         quality: record.quality as string | number | null | undefined,
-        label: (record.label || record.name || record.text || record.title || input.contextLabel) as string | number | null | undefined,
-        ext: (record.extension || record.ext || record.format || record.type) as string | null | undefined,
-        sizeText: (record.formattedSize || record.sizeText || record.size || record.filesize) as string | number | null | undefined,
+        label: (record.label ||
+          record.name ||
+          record.text ||
+          record.title ||
+          input.contextLabel) as string | number | null | undefined,
+        ext: (record.extension ||
+          record.ext ||
+          record.format ||
+          record.type) as string | null | undefined,
+        sizeText: (record.formattedSize ||
+          record.sizeText ||
+          record.size ||
+          record.filesize) as string | number | null | undefined,
         source: input.source,
         cookieHeader: input.cookieHeader,
       });
@@ -236,7 +310,9 @@ function extractCandidatesFromUnknown(input: {
       extractCandidatesFromUnknown({
         ...input,
         value,
-        contextLabel: /quality|label|title|name/i.test(key) ? String(value ?? input.contextLabel ?? "") : input.contextLabel,
+        contextLabel: /quality|label|title|name/i.test(key)
+          ? String(value ?? input.contextLabel ?? "")
+          : input.contextLabel,
         depth: depth + 1,
       });
     }
@@ -258,10 +334,15 @@ function extractCandidatesFromUnknown(input: {
   }
 }
 
-function extractCandidatesFromHtml(html: string, cookieHeader?: string, source: VkVideoDownloadCandidate["source"] = "html") {
+function extractCandidatesFromHtml(
+  html: string,
+  cookieHeader?: string,
+  source: VkVideoDownloadCandidate["source"] = "html",
+) {
   const candidates: VkVideoDownloadCandidate[] = [];
 
-  const anchorRegex = /<a\b[^>]*(?:href|data-url|data-href)=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  const anchorRegex =
+    /<a\b[^>]*(?:href|data-url|data-href)=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
   for (const match of html.matchAll(anchorRegex)) {
     const tagAndText = `${match[0]} ${match[2].replace(/<[^>]+>/g, " ")}`;
     addCandidate({
@@ -276,9 +357,13 @@ function extractCandidatesFromHtml(html: string, cookieHeader?: string, source: 
     });
   }
 
-  const attrRegex = /(?:href|data-url|data-href|url|src)["']?\s*[:=]\s*["']([^"']+(?:mp4|download|video)[^"']*)["']/gi;
+  const attrRegex =
+    /(?:href|data-url|data-href|url|src)["']?\s*[:=]\s*["']([^"']+(?:mp4|download|video)[^"']*)["']/gi;
   for (const match of html.matchAll(attrRegex)) {
-    const before = html.slice(Math.max(0, match.index - 180), Math.min(html.length, match.index + 360));
+    const before = html.slice(
+      Math.max(0, match.index - 180),
+      Math.min(html.length, match.index + 360),
+    );
     addCandidate({
       target: candidates,
       url: match[1],
@@ -291,7 +376,12 @@ function extractCandidatesFromHtml(html: string, cookieHeader?: string, source: 
     });
   }
 
-  extractCandidatesFromUnknown({ value: html, target: candidates, source, cookieHeader });
+  extractCandidatesFromUnknown({
+    value: html,
+    target: candidates,
+    source,
+    cookieHeader,
+  });
 
   return candidates;
 }
@@ -322,7 +412,9 @@ function dedupeCandidates(candidates: VkVideoDownloadCandidate[]) {
 
 function targetQuality(preferredQuality: "720p" | "best") {
   if (preferredQuality === "best") return null;
-  return Number(process.env.VK_DOWNLOAD_PREFERRED_QUALITY?.match(/(\d{3,4})/)?.[1] || 720);
+  return Number(
+    process.env.VK_DOWNLOAD_PREFERRED_QUALITY?.match(/(\d{3,4})/)?.[1] || 720,
+  );
 }
 
 export function rankVkVideoDownloadCandidates(
@@ -330,15 +422,25 @@ export function rankVkVideoDownloadCandidates(
   preferredQuality: "720p" | "best" = "720p",
 ) {
   const preferred = targetQuality(preferredQuality);
-  const order = preferred ? [preferred, 1080, 480, 360, 240] : [2160, 1440, 1080, 720, 480, 360, 240];
+  const order = preferred
+    ? [preferred, 1080, 480, 360, 240]
+    : [2160, 1440, 1080, 720, 480, 360, 240];
 
   return [...candidates].sort((a, b) => {
     const aQuality = a.quality || 0;
     const bQuality = b.quality || 0;
-    const aMp4 = (a.ext || "").toLowerCase().includes("mp4") || a.url.toLowerCase().includes(".mp4");
-    const bMp4 = (b.ext || "").toLowerCase().includes("mp4") || b.url.toLowerCase().includes(".mp4");
-    const aOrder = order.includes(aQuality) ? order.indexOf(aQuality) : order.length;
-    const bOrder = order.includes(bQuality) ? order.indexOf(bQuality) : order.length;
+    const aMp4 =
+      (a.ext || "").toLowerCase().includes("mp4") ||
+      a.url.toLowerCase().includes(".mp4");
+    const bMp4 =
+      (b.ext || "").toLowerCase().includes("mp4") ||
+      b.url.toLowerCase().includes(".mp4");
+    const aOrder = order.includes(aQuality)
+      ? order.indexOf(aQuality)
+      : order.length;
+    const bOrder = order.includes(bQuality)
+      ? order.indexOf(bQuality)
+      : order.length;
     const aScore = (aMp4 ? 100000 : 0) - aOrder * 1000 + aQuality;
     const bScore = (bMp4 ? 100000 : 0) - bOrder * 1000 + bQuality;
     return bScore - aScore;
@@ -358,7 +460,11 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
   try {
     console.log("[VKVD] open");
     page = await fetch(`${SITE_URL}/`, {
-      headers: { "user-agent": USER_AGENT, accept: "text/html,*/*", ...(cookieHeader ? { cookie: cookieHeader } : {}) },
+      headers: {
+        "user-agent": USER_AGENT,
+        accept: "text/html,*/*",
+        ...(cookieHeader ? { cookie: cookieHeader } : {}),
+      },
       cache: "no-store",
       signal: getTimeout.signal,
     });
@@ -366,19 +472,33 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
     getTimeout.clear();
   }
 
-  result.cookieHeader = mergeCookieHeader(cookieHeader, getSetCookieHeaders(page.headers));
+  result.cookieHeader = mergeCookieHeader(
+    cookieHeader,
+    getSetCookieHeaders(page.headers),
+  );
   if (!page.ok) throw new Error("vkvideodownload.com временно недоступен");
 
   const html = await page.text();
-  const token = html.match(/<input[^>]+id=["']token["'][^>]+value=["']([^"']+)["']/i)?.[1]
-    || html.match(/<input[^>]+name=["']token["'][^>]+value=["']([^"']+)["']/i)?.[1]
-    || html.match(/["']token["']\s*[:=]\s*["']([^"']+)["']/i)?.[1];
+  const token =
+    html.match(
+      /<input[^>]+id=["']token["'][^>]+value=["']([^"']+)["']/i,
+    )?.[1] ||
+    html.match(
+      /<input[^>]+name=["']token["'][^>]+value=["']([^"']+)["']/i,
+    )?.[1] ||
+    html.match(/["']token["']\s*[:=]\s*["']([^"']+)["']/i)?.[1];
   if (!token) throw new Error("vkvideodownload.com не вернул token");
 
-  result.candidates.push(...extractCandidatesFromHtml(html, result.cookieHeader));
+  result.candidates.push(
+    ...extractCandidatesFromHtml(html, result.cookieHeader),
+  );
 
   console.log("[VKVD] api request");
-  const body = new URLSearchParams({ url: videoUrl, token, hash: calculateHash(videoUrl) });
+  const body = new URLSearchParams({
+    url: videoUrl,
+    token,
+    hash: calculateHash(videoUrl),
+  });
   const postTimeout = timeoutSignal(60000);
   let response: Response;
   try {
@@ -399,9 +519,13 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
     postTimeout.clear();
   }
 
-  result.cookieHeader = mergeCookieHeader(result.cookieHeader, getSetCookieHeaders(response.headers));
+  result.cookieHeader = mergeCookieHeader(
+    result.cookieHeader,
+    getSetCookieHeaders(response.headers),
+  );
   if (!response.ok) {
-    if ([401, 403].includes(response.status)) throw new Error("VK-видео не открывается без авторизации");
+    if ([401, 403].includes(response.status))
+      throw new Error("VK-видео не открывается без авторизации");
     throw new Error("vkvideodownload.com временно недоступен");
   }
 
@@ -411,12 +535,18 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
     apiResult = JSON.parse(rawText) as ApiResult;
   } catch {
     apiResult = {};
-    result.candidates.push(...extractCandidatesFromHtml(rawText, result.cookieHeader));
+    result.candidates.push(
+      ...extractCandidatesFromHtml(rawText, result.cookieHeader),
+    );
   }
 
   if (apiResult.error) {
     const lower = apiResult.error.toLowerCase();
-    if (lower.includes("private") || lower.includes("login") || lower.includes("author")) {
+    if (
+      lower.includes("private") ||
+      lower.includes("login") ||
+      lower.includes("author")
+    ) {
       throw new Error("VK-видео не открывается без авторизации");
     }
     throw new Error(apiResult.error);
@@ -426,7 +556,12 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
   result.durationSec = parseDuration(apiResult.duration);
 
   const apiCandidates: VkVideoDownloadCandidate[] = [];
-  extractCandidatesFromUnknown({ value: apiResult, target: apiCandidates, source: "api", cookieHeader: result.cookieHeader });
+  extractCandidatesFromUnknown({
+    value: apiResult,
+    target: apiCandidates,
+    source: "api",
+    cookieHeader: result.cookieHeader,
+  });
 
   if (apiResult.medias?.length) {
     for (const media of apiResult.medias) {
@@ -451,38 +586,62 @@ async function resolveViaApi(videoUrl: string, cookieHeader?: string) {
 async function resolveViaPlaywright(videoUrl: string) {
   const candidates: VkVideoDownloadCandidate[] = [];
   const responseUrls: string[] = [];
-  const browserFallback = process.env.VK_DOWNLOAD_BROWSER_FALLBACK?.toLowerCase() !== "false";
+  const browserFallback =
+    process.env.VK_DOWNLOAD_BROWSER_FALLBACK?.toLowerCase() !== "false";
   if (!browserFallback) return candidates;
 
   let chromium: typeof import("playwright").chromium;
   try {
     chromium = (await import("playwright")).chromium;
   } catch (error) {
-    throw new Error(`Playwright fallback недоступен: ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+    throw new Error(
+      `Playwright fallback недоступен: ${error instanceof Error ? error.message : "неизвестная ошибка"}`,
+    );
   }
 
   console.log("[VKVD] playwright submit");
-  const browser = await chromium.launch({ headless: process.env.VK_LISTING_HEADLESS?.toLowerCase() !== "false" });
+  const browser = await chromium.launch({
+    headless: process.env.VK_LISTING_HEADLESS?.toLowerCase() !== "false",
+  });
   try {
-    const context = await browser.newContext({ userAgent: USER_AGENT, acceptDownloads: false });
+    const context = await browser.newContext({
+      userAgent: USER_AGENT,
+      acceptDownloads: false,
+    });
     const page = await context.newPage();
 
     page.on("request", (request) => {
       const url = request.url();
       responseUrls.push(url);
-      addCandidate({ target: candidates, url, label: url, source: "playwright" });
+      addCandidate({
+        target: candidates,
+        url,
+        label: url,
+        source: "playwright",
+      });
     });
     page.on("response", async (response) => {
       const url = response.url();
       responseUrls.push(url);
-      addCandidate({ target: candidates, url, label: url, source: "playwright" });
+      addCandidate({
+        target: candidates,
+        url,
+        label: url,
+        source: "playwright",
+      });
       const contentType = response.headers()["content-type"] || "";
       if (/json|html|text|javascript/i.test(contentType)) {
         try {
           const text = await response.text();
-          candidates.push(...extractCandidatesFromHtml(text, undefined, "playwright"));
+          candidates.push(
+            ...extractCandidatesFromHtml(text, undefined, "playwright"),
+          );
           try {
-            extractCandidatesFromUnknown({ value: JSON.parse(text) as unknown, target: candidates, source: "playwright" });
+            extractCandidatesFromUnknown({
+              value: JSON.parse(text) as unknown,
+              target: candidates,
+              source: "playwright",
+            });
           } catch {
             // response was not JSON
           }
@@ -492,12 +651,23 @@ async function resolveViaPlaywright(videoUrl: string) {
       }
     });
 
-    await page.goto(`${SITE_URL}/`, { waitUntil: "domcontentloaded", timeout: 45000 });
-    const input = page.locator('input[type="url"], input[name="url"], input#url, textarea').first();
+    await page.goto(`${SITE_URL}/`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45000,
+    });
+    const input = page
+      .locator('input[type="url"], input[name="url"], input#url, textarea')
+      .first();
     await input.fill(videoUrl, { timeout: 15000 });
-    const button = page.locator('button:has-text("Скачать"), button:has-text("Download"), input[type="submit"], button[type="submit"], .btn').first();
+    const button = page
+      .locator(
+        'button:has-text("Скачать"), button:has-text("Download"), input[type="submit"], button[type="submit"], .btn',
+      )
+      .first();
     await button.click({ timeout: 15000 });
-    await page.waitForTimeout(Math.max(3000, Number(process.env.VK_DOWNLOAD_RESOLVER_DELAY_MS || 4000)));
+    await page.waitForTimeout(
+      Math.max(3000, Number(process.env.VK_DOWNLOAD_RESOLVER_DELAY_MS || 4000)),
+    );
 
     for (let step = 0; step < 4; step += 1) {
       await page.mouse.wheel(0, 900);
@@ -505,12 +675,17 @@ async function resolveViaPlaywright(videoUrl: string) {
     }
 
     const html = await page.content();
-    candidates.push(...extractCandidatesFromHtml(html, undefined, "playwright"));
+    candidates.push(
+      ...extractCandidatesFromHtml(html, undefined, "playwright"),
+    );
   } finally {
     await browser.close().catch(() => undefined);
   }
 
-  console.log("[VKVD] playwright candidates", { count: candidates.length, networkUrls: responseUrls.length });
+  console.log("[VKVD] playwright candidates", {
+    count: candidates.length,
+    networkUrls: responseUrls.length,
+  });
   return candidates;
 }
 
@@ -541,18 +716,25 @@ export async function resolveVkVideoDownloadCandidates(input: {
     cookieHeader = apiResult.cookieHeader;
     candidates.push(...apiResult.candidates);
   } catch (error) {
-    debug.errors.push(`api/html: ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+    debug.errors.push(
+      `api/html: ${error instanceof Error ? error.message : "неизвестная ошибка"}`,
+    );
   }
 
   let uniqueCandidates = dedupeCandidates(candidates);
-  console.log("[VKVD] html candidates", { count: uniqueCandidates.filter((candidate) => candidate.source === "html").length });
+  console.log("[VKVD] html candidates", {
+    count: uniqueCandidates.filter((candidate) => candidate.source === "html")
+      .length,
+  });
 
   if (!uniqueCandidates.length) {
     try {
       debug.playwrightTried = true;
-      candidates.push(...await resolveViaPlaywright(input.sourceUrl));
+      candidates.push(...(await resolveViaPlaywright(input.sourceUrl)));
     } catch (error) {
-      debug.errors.push(`playwright: ${error instanceof Error ? error.message : "неизвестная ошибка"}`);
+      debug.errors.push(
+        `playwright: ${error instanceof Error ? error.message : "неизвестная ошибка"}`,
+      );
     }
   }
 
@@ -569,7 +751,7 @@ export async function resolveVkVideoDownloadCandidates(input: {
       label: candidate.label,
       sizeText: candidate.sizeText,
       source: candidate.source,
-      urlPreview: candidate.url.slice(0, 110),
+      urlPreview: previewCandidateUrl(candidate.url),
     })),
   );
 
@@ -588,8 +770,13 @@ export async function resolveWithVkVideoDownload(
   let lastError: unknown;
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
-      const result = await resolveVkVideoDownloadCandidates({ sourceUrl: videoUrl });
-      const selected = rankVkVideoDownloadCandidates(result.candidates, preferredQuality)[0];
+      const result = await resolveVkVideoDownloadCandidates({
+        sourceUrl: videoUrl,
+      });
+      const selected = rankVkVideoDownloadCandidates(
+        result.candidates,
+        preferredQuality,
+      )[0];
       if (!selected) throw new Error("vkvideodownload не вернул MP4-кандидаты");
       return {
         sourceUrl: videoUrl,
@@ -603,7 +790,8 @@ export async function resolveWithVkVideoDownload(
       } satisfies VkVideoDownloadResolved;
     } catch (error) {
       lastError = error;
-      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (attempt < 2)
+        await new Promise((resolve) => setTimeout(resolve, 1200));
     }
   }
   if (lastError instanceof Error) throw lastError;
