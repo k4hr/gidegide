@@ -99,22 +99,38 @@ export async function upsertTelegramChat(update: TelegramChatUpdate) {
   });
 }
 
-export function extractVkVideoUrl(text: string) {
+export function extractVkVideoUrls(text: string) {
   const matches = text.match(/https?:\/\/[^\s<>]+/gi) || [];
+  const urls: string[] = [];
+  const seen = new Set<string>();
+
   for (const raw of matches) {
     const cleaned = raw.replace(/[),.!?]+$/, "");
     try {
       const url = new URL(cleaned);
       const host = url.hostname.toLowerCase().replace(/^www\./, "");
-      if (host === "vkvideo.ru" || host.endsWith(".vkvideo.ru")) return url.toString();
-      if (["vk.com", "vk.ru", "m.vk.com", "m.vk.ru"].includes(host) && url.pathname.length > 1) {
-        return url.toString();
+      const path = url.pathname.replace(/\/+$/, "");
+      const isVkVideoHost = host === "vkvideo.ru" || host.endsWith(".vkvideo.ru");
+      const isVkHost = ["vk.com", "vk.ru", "m.vk.com", "m.vk.ru"].includes(host);
+      const isSingleVideo = /^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(url.search));
+
+      if ((isVkVideoHost && isSingleVideo) || (isVkHost && isSingleVideo)) {
+        const normalized = url.toString();
+        if (!seen.has(normalized)) {
+          seen.add(normalized);
+          urls.push(normalized);
+        }
       }
     } catch {
       // Не URL — продолжаем искать следующую ссылку.
     }
   }
-  return null;
+
+  return urls;
+}
+
+export function extractVkVideoUrl(text: string) {
+  return extractVkVideoUrls(text)[0] || null;
 }
 
 export function humanizeFactoryError(error: unknown) {

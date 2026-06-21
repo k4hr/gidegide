@@ -38,11 +38,14 @@ function sleep(ms: number) {
 }
 
 type UploadScheduleConfig = {
-  type?: string;
+  type?: "WINDOW_INTERVAL" | "WINDOW_EVEN" | string;
   startHour: number;
   endHour: number;
   intervalMinutes: number;
   timeZone: string;
+  startAt?: string;
+  endAt?: string;
+  clipCount?: number;
 };
 
 function parseUploadSchedule(
@@ -56,19 +59,22 @@ function parseUploadSchedule(
     };
     const schedule = parsed.uploadSchedule;
 
-    if (!schedule || schedule.type !== "WINDOW_INTERVAL") {
+    if (!schedule || !["WINDOW_INTERVAL", "WINDOW_EVEN"].includes(String(schedule.type))) {
       return null;
     }
 
     return {
-      type: "WINDOW_INTERVAL",
+      type: schedule.type,
       startHour: Math.max(0, Math.min(23, Number(schedule.startHour) || 14)),
       endHour: Math.max(1, Math.min(24, Number(schedule.endHour) || 23)),
       intervalMinutes: Math.max(
-        15,
+        1,
         Math.min(180, Number(schedule.intervalMinutes) || 60),
       ),
       timeZone: schedule.timeZone || "Europe/Moscow",
+      startAt: typeof schedule.startAt === "string" ? schedule.startAt : undefined,
+      endAt: typeof schedule.endAt === "string" ? schedule.endAt : undefined,
+      clipCount: Math.max(1, Math.min(40, Number(schedule.clipCount) || 1)),
     };
   } catch {
     return null;
@@ -160,6 +166,17 @@ function getScheduledUploadAt(input: {
   now?: Date;
 }) {
   if (!input.schedule) return null;
+
+  if (input.schedule.type === "WINDOW_EVEN" && input.schedule.startAt && input.schedule.endAt) {
+    const startAt = new Date(input.schedule.startAt);
+    const endAt = new Date(input.schedule.endAt);
+    if (Number.isFinite(startAt.getTime()) && Number.isFinite(endAt.getTime())) {
+      const totalClips = Math.max(1, input.schedule.clipCount || 1);
+      const windowMs = Math.max(0, endAt.getTime() - startAt.getTime());
+      const stepMs = totalClips <= 1 ? 0 : Math.floor(windowMs / totalClips);
+      return new Date(startAt.getTime() + stepMs * Math.max(0, input.clipIndex - 1));
+    }
+  }
 
   const now = input.now ?? new Date();
   const parts = getTimeZoneParts(now, input.schedule.timeZone);
