@@ -44,22 +44,22 @@ export function isGlobalOverlayEnabled() {
 }
 
 function buildOverlayFilter(transparencyMode: OverlayTransparencyMode) {
-  const overlayPrep = [
-    "[1:v]fps=30",
-    "scale=1080:1920:force_original_aspect_ratio=increase",
-    "crop=1080:1920",
-    "setsar=1",
-    "format=rgba",
-    transparencyMode === "black-key" ? "colorkey=0x000000:0.10:0.04" : null,
-    "[ov]",
-  ]
-    .filter(Boolean)
-    .join(",");
+  // Keep this as explicit ffmpeg filter strings, not an array join.
+  // A previous dynamic join could produce an empty filter segment on Linux ffmpeg
+  // and fail with: No such filter: ''.
+  const overlayBase =
+    "[1:v]fps=30," +
+    "scale=1080:1920:force_original_aspect_ratio=increase," +
+    "crop=1080:1920," +
+    "setsar=1," +
+    "format=rgba";
 
-  return [
-    overlayPrep,
-    "[0:v][ov]overlay=0:0:format=auto:shortest=1,format=yuv420p[v]",
-  ].join(";");
+  const overlayPrep =
+    transparencyMode === "black-key"
+      ? `${overlayBase},colorkey=0x000000:0.10:0.04[ov]`
+      : `${overlayBase}[ov]`;
+
+  return `${overlayPrep};[0:v][ov]overlay=0:0:shortest=1:format=auto,format=yuv420p[v]`;
 }
 
 export async function applyGlobalOverlayToVideo(input: {
@@ -112,6 +112,9 @@ export async function applyGlobalOverlayToVideo(input: {
   });
 
   const overlayInputArgs = config.loop ? ["-stream_loop", "-1"] : [];
+  const filterComplex = buildOverlayFilter(config.transparencyMode);
+
+  console.log("[OVERLAY] filter", { filterComplex });
 
   try {
     await runCommand(
@@ -124,7 +127,7 @@ export async function applyGlobalOverlayToVideo(input: {
         "-i",
         config.overlayPath,
         "-filter_complex",
-        buildOverlayFilter(config.transparencyMode),
+        filterComplex,
         "-map",
         "[v]",
         "-map",
