@@ -3,7 +3,7 @@ import {
   STORY_SHORTS_DONOR_KIND,
   SUPER_UPLOAD_DONOR_KIND,
   MOVIE_MOMENTS_DONOR_KIND,
-} from "@/lib/factory/super-upload";
+} from "../lib/factory/super-upload";
 
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 const CHECK_INTERVAL_MS = Number(

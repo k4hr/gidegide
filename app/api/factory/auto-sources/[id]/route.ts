@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { normalizeVkAutoSourceTimezone } from "@/lib/factory/vk-auto-source";
+import { prisma } from "../../../../../lib/prisma";
+import { normalizeVkAutoSourceTimezone } from "../../../../../lib/factory/vk-auto-source";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };

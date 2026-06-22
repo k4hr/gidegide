@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
-import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
-import { runCommand } from "@/lib/factory/video";
+import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
+import { runCommand } from "./video";
 
 type CancelCheck = () => Promise<boolean>;
 type ProgressCallback = (progress: number, label: string) => Promise<void>;

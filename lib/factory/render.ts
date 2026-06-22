@@ -7,22 +7,22 @@ import {
   FACTORY_SOURCE_DIR,
   FACTORY_TEMP_DIR,
   ensureFactoryDirs,
-} from "@/lib/factory/paths";
+} from "./paths";
 import {
   downloadViaRipYoutube,
   isYoutubeUrl,
-} from "@/lib/factory/rip-downloader";
-import { downloadViaVkVideo, isVkVideoUrl } from "@/lib/factory/vk-downloader";
-import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
+} from "./rip-downloader";
+import { downloadViaVkVideo, isVkVideoUrl } from "./vk-downloader";
+import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
 import {
   areMovieSubtitlesEnabled,
   burnMovieSubtitles,
-} from "@/lib/factory/movie-subtitles";
-import { getVideoDurationSeconds, runCommand } from "@/lib/factory/video";
+} from "./movie-subtitles";
+import { getVideoDurationSeconds, runCommand } from "./video";
 import {
   applyGlobalOverlayToVideo,
   isGlobalOverlayEnabled,
-} from "@/lib/factory/video-overlay";
+} from "./video-overlay";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;

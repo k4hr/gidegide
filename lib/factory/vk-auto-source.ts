@@ -1,11 +1,11 @@
 import { Prisma } from "@prisma/client";
 
-import { prisma } from "@/lib/prisma";
-import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
-import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
-import { runCommand } from "@/lib/factory/video";
-import { getVkCookieHeader, getVkCookiesFileForYtDlp, getVkCookiesForPlaywright, hasVkCookies } from "@/lib/factory/vk-cookies";
-import { listVkVideosWithPlaywright } from "@/lib/factory/providers/vk-playwright-listing-provider";
+import { prisma } from "../prisma";
+import { createVkMovieJob } from "./create-vk-movie-job";
+import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "./telegram";
+import { runCommand } from "./video";
+import { getVkCookieHeader, getVkCookiesFileForYtDlp, getVkCookiesForPlaywright, hasVkCookies } from "./vk-cookies";
+import { listVkVideosWithPlaywright } from "./providers/vk-playwright-listing-provider";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -32,8 +32,6 @@ export function vkAutoSourceTimezoneLabel(timezone?: string | null) {
   return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
-<<<<<<< HEAD
-=======
 const VK_SOURCE_HOSTS = new Set(["vk.com", "vk.ru", "m.vk.com", "m.vk.ru", "vkvideo.ru"]);
 
 function cleanFirstUrl(value: string) {
@@ -56,7 +54,6 @@ function parseVkPlaylistPath(path: string) {
   return { ownerId: Number(match[1]), playlistId: match[2], ownerIdText: match[1] };
 }
 
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
 export function isVkGroupOrVideoSourceUrl(text: string) {
   try {
     const url = new URL(cleanFirstUrl(text));
@@ -743,11 +740,7 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
         const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({ where: { id: video.id, status: "NEW", factoryJobId: null }, data: { status: "PROCESSING", pickedAt: new Date(), error: null } });
         if (!claimed.count) continue;
         const clipSeconds = Math.max(15, Math.min(60, video.durationSec || 60));
-<<<<<<< HEAD
-        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
-=======
         const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: buildAutoSourceMovieTitle({ videoTitle: video.title, sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl }), clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
         await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: "QUEUED", factoryJobId: job.id } });
         created += 1;
       } catch (error) {
@@ -758,10 +751,6 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
 
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: created ? "JOBS_CREATED" : "DONE", foundCount, pickedCount: picked.length, createdJobCount: created, failedCount: failed, ...(created ? {} : { finishedAt: new Date() }) } });
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: null } });
-<<<<<<< HEAD
-    await notifyVkAutoSourceRun(run.id, `✅ Найдено и взято в работу: ${created} видео.\nСоздано задач: ${created}.\nПубликация: ${source.publishStartHour}:00–${source.publishEndHour}:00.${failed ? `\nОшибок создания: ${failed}.` : ""}`);
-    if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${source.sourceTitle || source.sourceUrl}\nСоздано задач: 0\nОпубликовано: 0\nОшибок: ${failed}`);
-=======
     const skipped = Math.max(0, fetched.length - foundCount);
     await notifyVkAutoSourceRun(run.id, `✅ Автозабор запущен: ${source.sourceTitle || source.sourceUrl}
 
@@ -782,7 +771,6 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
 Создано задач обработки: 0
 Опубликовано: 0
 Ошибок: ${failed}`);
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
     return run;
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);

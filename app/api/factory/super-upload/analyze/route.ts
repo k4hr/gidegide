@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { analyzeYoutubeSource } from "@/lib/factory/super-upload";
+import { analyzeYoutubeSource } from "../../../../../lib/factory/super-upload";
 
 export const runtime = "nodejs";
 

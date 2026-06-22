@@ -2,10 +2,10 @@ import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
-import { buildSuperUploadSchedule, buildTodayCandidates, listSuperUploadDonors, STORY_SHORTS_DONOR_KIND } from "@/lib/factory/super-upload";
-import { getViralBrainContext, selectBestFormulaForSource } from "@/lib/factory/viral-lab";
+import { prisma } from "../../../../lib/prisma";
+import { withDbRetry } from "../../../../lib/factory/db-retry";
+import { buildSuperUploadSchedule, buildTodayCandidates, listSuperUploadDonors, STORY_SHORTS_DONOR_KIND } from "../../../../lib/factory/super-upload";
+import { getViralBrainContext, selectBestFormulaForSource } from "../../../../lib/factory/viral-lab";
 
 export const runtime = "nodejs";
 

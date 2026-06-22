@@ -1,7 +1,7 @@
 import { chromium, type Page } from "playwright";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../prisma";
+import { withDbRetry } from "./db-retry";
 
 type ParsedVkVideo = {
   sourceVideoId: string;

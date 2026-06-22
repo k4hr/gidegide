@@ -1,5 +1,5 @@
-import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
-import { readCommand } from "@/lib/factory/video";
+import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
+import { readCommand } from "./video";
 
 export type FactoryCutMode =
   | "SEQUENTIAL"

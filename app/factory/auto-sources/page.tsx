@@ -23,8 +23,6 @@ type DownloaderConfig = {
   preferredQuality: string;
 };
 
-<<<<<<< HEAD
-=======
 type VkCookiesStatus = {
   enabled: boolean;
   source: string | null;
@@ -54,7 +52,6 @@ type CheckResult = {
   error?: string | null;
 };
 
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
 const DEFAULT_AUTO_SOURCE_TIMEZONE = "Europe/Moscow";
 
 function normalizeTimezone(timezone: string) {
@@ -95,15 +92,11 @@ export default function AutoSourcesPage() {
     setBusy("add");
     setMessage("");
     try {
-<<<<<<< HEAD
-      const response = await fetch("/api/factory/auto-sources", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sourceUrl }) });
-=======
       const response = await fetch("/api/factory/auto-sources", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ sourceUrl, timezone: DEFAULT_AUTO_SOURCE_TIMEZONE }),
       });
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Не удалось добавить источник");
       setSourceUrl("");
@@ -165,28 +158,6 @@ export default function AutoSourcesPage() {
   }
 
   return (
-<<<<<<< HEAD
-    <main className="page"><div className="shell">
-      <nav className="nav"><Link href="/factory">Завод</Link><Link href="/factory/super-upload">Супер залив</Link><Link href="/factory/auto-sources">VK автозабор</Link><Link href="/factory/accounts">Аккаунты</Link></nav>
-      <section className="factory-hero-card"><div><p className="factory-eyebrow">Content Factory</p><h1>VK автозабор</h1><p>Ежедневно находит новые видео, создаёт по одной публикации на видео и распределяет их по окну.</p></div></section>
-      <section className="factory-panel"><h2>Downloader</h2><div className="factory-grid-cards"><div className="factory-stat-card"><span>Provider</span><strong style={{ fontSize: 20 }}>{downloader?.provider || "vkvideodownload"}</strong></div><div className="factory-stat-card"><span>Основной сервис</span><strong style={{ fontSize: 20 }}>vkvideodownload.com</strong></div><div className="factory-stat-card"><span>Качество</span><strong style={{ fontSize: 24 }}>{downloader?.preferredQuality || "720p"}</strong></div><div className="factory-stat-card"><span>yt-dlp fallback</span><strong style={{ fontSize: 24 }}>{downloader?.allowYtDlpFallback ? "ON" : "OFF"}</strong></div></div></section>
-      <section className="factory-panel">
-        <h2>Добавить источник</h2>
-        <form className="inline-actions" onSubmit={add}><input required type="url" value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://vk.com/videos-123456789"/><button disabled={busy === "add"}>Добавить</button></form>
-        {message && <p className={message.includes("Ошибка") || message.includes("не ") ? "factory-error-text" : "factory-success-text"}>{message}</p>}
-      </section>
-      <section className="factory-panel"><h2>Источники</h2>
-        {!sources.length ? <div className="empty-state"><strong>Источников пока нет</strong><span>Добавьте VK-группу или VK Video канал.</span></div> :
-          <div className="factory-table-wrap"><table className="factory-table"><thead><tr><th>Источник</th><th>Настройки</th><th>Состояние</th><th>Действия</th></tr></thead><tbody>
-            {sources.map((source) => <tr key={source.id}>
-              <td><strong>{source.sourceTitle || source.sourceUrl}</strong><small>{source._count.videos} сохранённых видео</small></td>
-              <td>{source.dailyLimit} в день<br/>{source.publishStartHour}:00–{source.publishEndHour}:00 МСК<br/><small>{timezoneLabel(source.timezone)}</small></td>
-              <td><span className={source.isEnabled ? "factory-status-ok" : "factory-status-warn"}>{source.isEnabled ? "Включён" : "Пауза"}</span><br/><small>{source.lastRunAt ? `Запуск: ${new Date(source.lastRunAt).toLocaleString("ru-RU", { timeZone: normalizeTimezone(source.timezone) })}` : "Ещё не запускался"}</small>{source.lastError && <p className="factory-error-text">{source.lastError}</p>}</td>
-              <td><div className="factory-row-actions"><button disabled={busy === source.id} onClick={() => action(source.id, "RUN")}>Запустить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => configure(source)}>Настроить</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "PATCH", { isEnabled: !source.isEnabled })}>{source.isEnabled ? "Пауза" : "Включить"}</button><button className="secondary-button" disabled={busy === source.id} onClick={() => action(source.id, "DELETE")}>Удалить</button></div></td>
-            </tr>)}</tbody></table></div>}
-      </section>
-    </div></main>
-=======
     <main className="page">
       <div className="shell">
         <nav className="nav">
@@ -272,6 +243,5 @@ export default function AutoSourcesPage() {
         </section>
       </div>
     </main>
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   );
 }

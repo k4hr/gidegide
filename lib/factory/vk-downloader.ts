@@ -1,11 +1,11 @@
 import path from "node:path";
 import { rm } from "node:fs/promises";
 
-import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { prisma } from "@/lib/prisma";
-import { downloadVkVideoToFile } from "@/lib/factory/vk-download-provider";
-import { buildVkRuTitlePrefix, normalizeMovieTitleFromSource } from "@/lib/factory/movie-title-normalizer";
-import { assertVideoHasAudio, hasAudioStream } from "@/lib/factory/video";
+import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "./paths";
+import { prisma } from "../prisma";
+import { downloadVkVideoToFile } from "./vk-download-provider";
+import { buildVkRuTitlePrefix, normalizeMovieTitleFromSource } from "./movie-title-normalizer";
+import { assertVideoHasAudio, hasAudioStream } from "./video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;

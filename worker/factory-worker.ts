@@ -2,42 +2,42 @@ import fs from "node:fs";
 import path from "node:path";
 import { mkdir, rm } from "node:fs/promises";
 
-import { prisma } from "@/lib/prisma";
-import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "@/lib/factory/paths";
+import { prisma } from "../lib/prisma";
+import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "../lib/factory/paths";
 import {
   downloadSourceFromUrl,
   getSourceDuration,
   renderCenteredMovieClip,
   renderFactoryClip,
   type FactoryRenderTemplate,
-} from "@/lib/factory/render";
-import { uploadYoutubeShort } from "@/lib/factory/youtube";
-import { uploadTikTokDraft } from "@/lib/factory/tiktok";
+} from "../lib/factory/render";
+import { uploadYoutubeShort } from "../lib/factory/youtube";
+import { uploadTikTokDraft } from "../lib/factory/tiktok";
 import {
   downloadR2ObjectToFile,
   getR2Prefix,
   isR2Enabled,
   uploadFileToR2,
-} from "@/lib/factory/r2";
-import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
-import { withDbRetry } from "@/lib/factory/db-retry";
+} from "../lib/factory/r2";
+import { buildClipDescription, buildClipTitle } from "../lib/factory/games";
+import { withDbRetry } from "../lib/factory/db-retry";
 import {
   buildMovieClipRedfilmDescription,
   generateMovieAiTitlePack,
-} from "@/lib/factory/movie-ai-titles";
+} from "../lib/factory/movie-ai-titles";
 import {
   buildMovieSmartClipStarts,
   buildSequentialClipStarts,
   buildSmartClipStarts,
-} from "@/lib/factory/smart-cut";
+} from "../lib/factory/smart-cut";
 import {
   humanizeFactoryError,
   notifyTelegramJob,
-} from "@/lib/factory/telegram";
+} from "../lib/factory/telegram";
 import {
   processDueVkAutoSources,
   updateVkAutoSourceVideoFromJob,
-} from "@/lib/factory/vk-auto-source";
+} from "../lib/factory/vk-auto-source";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));

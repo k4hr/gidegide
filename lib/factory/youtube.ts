@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { google } from "googleapis";
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../prisma";
 
 type UploadYoutubeShortInput = {
   accountId: string;

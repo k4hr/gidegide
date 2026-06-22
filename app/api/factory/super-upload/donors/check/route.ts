@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { checkAllSuperUploadDonors } from "@/lib/factory/super-upload";
+import { checkAllSuperUploadDonors } from "../../../../../../lib/factory/super-upload";
 
 export const runtime = "nodejs";
 

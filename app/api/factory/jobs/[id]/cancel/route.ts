@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { cancelFactoryJob } from "@/lib/factory/cancel-job";
+import { cancelFactoryJob } from "../../../../../../lib/factory/cancel-job";
 
 export const runtime = "nodejs";
 

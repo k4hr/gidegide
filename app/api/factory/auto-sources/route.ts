@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { normalizeVkAutoSourceTimezone, normalizeVkSourceUrl } from "@/lib/factory/vk-auto-source";
-import { getVkDownloadProviderConfig } from "@/lib/factory/vk-download-provider";
-import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
+import { prisma } from "../../../../lib/prisma";
+import { normalizeVkAutoSourceTimezone, normalizeVkSourceUrl } from "../../../../lib/factory/vk-auto-source";
+import { getVkDownloadProviderConfig } from "../../../../lib/factory/vk-download-provider";
+import { getVkCookiesStatus } from "../../../../lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 
@@ -19,10 +19,7 @@ const createSchema = z.object({
 });
 
 export async function GET() {
-<<<<<<< HEAD
-=======
   const vkCookies = await getVkCookiesStatus();
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   const sources = await prisma.factoryVkAutoSource.findMany({
     orderBy: { createdAt: "desc" },
     include: { chat: { select: { chatId: true, username: true } }, runs: { orderBy: { startedAt: "desc" }, take: 1 }, _count: { select: { videos: true } } },

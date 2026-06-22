@@ -3,9 +3,9 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import type { FactoryGame } from "@prisma/client";
 
-import { FACTORY_TEMP_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { readCommand, runCommand, safeFileName } from "@/lib/factory/video";
-import { buildSmartClipCandidates } from "@/lib/factory/smart-cut";
+import { FACTORY_TEMP_DIR, ensureFactoryDirs } from "./paths";
+import { readCommand, runCommand, safeFileName } from "./video";
+import { buildSmartClipCandidates } from "./smart-cut";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;

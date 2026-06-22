@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { scanAllVkGroups } from "@/lib/factory/vk-super-upload";
+import { scanAllVkGroups } from "../../../../../../lib/factory/vk-super-upload";
 
 export const runtime = "nodejs";
 

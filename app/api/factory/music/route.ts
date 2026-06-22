@@ -3,11 +3,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { ensureFactoryDirs, FACTORY_TEMP_DIR } from "@/lib/factory/paths";
-import { getR2Prefix, uploadBufferToR2, deleteR2Object } from "@/lib/factory/r2";
-import { extFromName, safeFileName } from "@/lib/factory/video";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../lib/prisma";
+import { ensureFactoryDirs, FACTORY_TEMP_DIR } from "../../../../lib/factory/paths";
+import { getR2Prefix, uploadBufferToR2, deleteR2Object } from "../../../../lib/factory/r2";
+import { extFromName, safeFileName } from "../../../../lib/factory/video";
+import { withDbRetry } from "../../../../lib/factory/db-retry";
 
 import {
   COPYRIGHT_STATUSES,
@@ -15,7 +15,7 @@ import {
   MUSIC_MOODS,
   MUSIC_SOURCES,
   riskScoreForMusicCopyrightStatus,
-} from "@/lib/factory/music-library";
+} from "../../../../lib/factory/music-library";
 
 export const runtime = "nodejs";
 

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { encodeMovieMomentsPrefix } from "@/lib/factory/movie-moments";
-import { MOVIE_MOMENTS_DONOR_KIND } from "@/lib/factory/super-upload";
+import { prisma } from "../../../../../lib/prisma";
+import { encodeMovieMomentsPrefix } from "../../../../../lib/factory/movie-moments";
+import { MOVIE_MOMENTS_DONOR_KIND } from "../../../../../lib/factory/super-upload";
 
 export const runtime = "nodejs";
 

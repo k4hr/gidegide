@@ -3,10 +3,10 @@ import { writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { FACTORY_LANA_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { extFromName, safeFileName } from "@/lib/factory/video";
-import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
+import { prisma } from "../../../../lib/prisma";
+import { FACTORY_LANA_DIR, ensureFactoryDirs } from "../../../../lib/factory/paths";
+import { extFromName, safeFileName } from "../../../../lib/factory/video";
+import { getR2Prefix, uploadBufferToR2 } from "../../../../lib/factory/r2";
 
 export const runtime = "nodejs";
 

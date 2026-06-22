@@ -1,4 +1,4 @@
-import { normalizeMovieTitleFromSource, sanitizeMovieClipTitle } from "@/lib/factory/movie-title-normalizer";
+import { normalizeMovieTitleFromSource, sanitizeMovieClipTitle } from "./movie-title-normalizer";
 
 const KINOPOISK_SEARCH_V21 = "https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword";
 const KINOPOISK_SEARCH_V22 = "https://kinopoiskapiunofficial.tech/api/v2.2/films";

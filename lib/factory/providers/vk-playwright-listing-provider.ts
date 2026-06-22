@@ -1,5 +1,5 @@
-import type { VkPlaywrightCookie } from "@/lib/factory/vk-cookies";
-import type { VkSourceVideo } from "@/lib/factory/vk-auto-source";
+import type { VkPlaywrightCookie } from "../vk-cookies";
+import type { VkSourceVideo } from "../vk-auto-source";
 
 export type VkPlaywrightListingDebug = {
   enabled: boolean;

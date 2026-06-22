@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../prisma";
 
 export async function cancelFactoryJob(id: string) {
   const job = await prisma.factoryJob.findUnique({ where: { id } });

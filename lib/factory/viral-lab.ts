@@ -3,10 +3,10 @@ import path from "node:path";
 import { nanoid } from "nanoid";
 import type { Prisma } from "@prisma/client";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
-import { FACTORY_ASSETS_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { readCommand, runCommand, safeFileName } from "@/lib/factory/video";
+import { prisma } from "../prisma";
+import { withDbRetry } from "./db-retry";
+import { FACTORY_ASSETS_DIR, ensureFactoryDirs } from "./paths";
+import { readCommand, runCommand, safeFileName } from "./video";
 
 export const VIRAL_LAB_DIR = path.join(FACTORY_ASSETS_DIR, "viral-lab");
 export const VIRAL_REFERENCE_DIR = path.join(VIRAL_LAB_DIR, "references");

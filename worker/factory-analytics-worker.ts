@@ -1,9 +1,9 @@
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../lib/prisma";
+import { withDbRetry } from "../lib/factory/db-retry";
 import {
   fetchYoutubeBasicVideoStats,
   fetchYoutubeDeepVideoStats,
-} from "@/lib/factory/youtube-analytics";
+} from "../lib/factory/youtube-analytics";
 
 const CHECK_INTERVAL_MS = Number(
   process.env.FACTORY_ANALYTICS_INTERVAL_MS ?? 1000 * 60 * 30,

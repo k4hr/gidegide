@@ -1,9 +1,9 @@
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { deleteR2Object } from "@/lib/factory/r2";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../../lib/prisma";
+import { deleteR2Object } from "../../../../../lib/factory/r2";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
 
 export const runtime = "nodejs";
 

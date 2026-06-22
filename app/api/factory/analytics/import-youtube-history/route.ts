@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { google, youtube_v3 } from "googleapis";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
-import { getYoutubeOAuthClient } from "@/lib/factory/youtube-analytics";
+import { prisma } from "../../../../../lib/prisma";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
+import { getYoutubeOAuthClient } from "../../../../../lib/factory/youtube-analytics";
 
 export const runtime = "nodejs";
 

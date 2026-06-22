@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { checkVkSourceVideos, humanizeVkAutoSourceError } from "@/lib/factory/vk-auto-source";
-import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
+import { prisma } from "../../../../../../lib/prisma";
+import { checkVkSourceVideos, humanizeVkAutoSourceError } from "../../../../../../lib/factory/vk-auto-source";
+import { getVkCookiesStatus } from "../../../../../../lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };

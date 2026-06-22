@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../../lib/prisma";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
 import {
   addSuperUploadDonor,
   buildTodayCandidates,
   listSuperUploadDonors,
   MOVIE_MOMENTS_DONOR_KIND,
-} from "@/lib/factory/super-upload";
+} from "../../../../../lib/factory/super-upload";
 
 export const runtime = "nodejs";
 

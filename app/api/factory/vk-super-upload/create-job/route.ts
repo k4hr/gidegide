@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
+import { prisma } from "../../../../../lib/prisma";
+import { createVkMovieJob } from "../../../../../lib/factory/create-vk-movie-job";
 
 export const runtime = "nodejs";
 

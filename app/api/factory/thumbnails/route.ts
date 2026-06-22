@@ -3,11 +3,11 @@ import { writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { FACTORY_THUMBNAILS_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
-import { extFromName, safeFileName } from "@/lib/factory/video";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../lib/prisma";
+import { FACTORY_THUMBNAILS_DIR, ensureFactoryDirs } from "../../../../lib/factory/paths";
+import { getR2Prefix, uploadBufferToR2 } from "../../../../lib/factory/r2";
+import { extFromName, safeFileName } from "../../../../lib/factory/video";
+import { withDbRetry } from "../../../../lib/factory/db-retry";
 
 export const runtime = "nodejs";
 

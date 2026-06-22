@@ -2,15 +2,15 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { getR2Prefix, listR2Objects } from "@/lib/factory/r2";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../../lib/prisma";
+import { getR2Prefix, listR2Objects } from "../../../../../lib/factory/r2";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
 import {
   COPYRIGHT_STATUSES,
   MUSIC_LICENSE_TYPES,
   MUSIC_SOURCES,
   riskScoreForMusicCopyrightStatus,
-} from "@/lib/factory/music-library";
+} from "../../../../../lib/factory/music-library";
 
 export const runtime = "nodejs";
 

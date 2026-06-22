@@ -3,12 +3,12 @@ import { writeFile } from "node:fs/promises";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
-import { prisma } from "@/lib/prisma";
-import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { extFromName, safeFileName } from "@/lib/factory/video";
-import { getR2Prefix, uploadBufferToR2 } from "@/lib/factory/r2";
-import { getGameMeta } from "@/lib/factory/games";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../lib/prisma";
+import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "../../../../lib/factory/paths";
+import { extFromName, safeFileName } from "../../../../lib/factory/video";
+import { getR2Prefix, uploadBufferToR2 } from "../../../../lib/factory/r2";
+import { getGameMeta } from "../../../../lib/factory/games";
+import { withDbRetry } from "../../../../lib/factory/db-retry";
 
 export const runtime = "nodejs";
 

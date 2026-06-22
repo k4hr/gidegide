@@ -1,5 +1,5 @@
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../prisma";
+import { withDbRetry } from "./db-retry";
 
 export type CreateVkMovieJobInput = {
   sourceUrl: string;

@@ -1,4 +1,4 @@
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../prisma";
 
 export type TelegramReplyMarkup = {
   inline_keyboard: Array<Array<{ text: string; callback_data?: string; url?: string }>>;

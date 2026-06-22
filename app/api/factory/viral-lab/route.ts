@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import path from "node:path";
 import { mkdir, readdir, rename, writeFile } from "node:fs/promises";
 import { nanoid } from "nanoid";
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../lib/prisma";
+import { withDbRetry } from "../../../../lib/factory/db-retry";
 import {
   analyzeViralReference,
   createViralThumbnail,
@@ -13,10 +13,10 @@ import {
   rebuildViralBrainSnapshot,
   saveUploadedViralFile,
   VIRAL_REFERENCE_DIR,
-} from "@/lib/factory/viral-lab";
-import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloader";
-import { FACTORY_TEMP_DIR } from "@/lib/factory/paths";
-import { runCommand, safeFileName } from "@/lib/factory/video";
+} from "../../../../lib/factory/viral-lab";
+import { downloadViaRipYoutube, isYoutubeUrl } from "../../../../lib/factory/rip-downloader";
+import { FACTORY_TEMP_DIR } from "../../../../lib/factory/paths";
+import { runCommand, safeFileName } from "../../../../lib/factory/video";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

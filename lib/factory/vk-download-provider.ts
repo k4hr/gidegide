@@ -8,14 +8,14 @@ import {
   resolveWithVkVideoDownload,
   type VkVideoDownloadCandidate,
   type VkVideoDownloadResolved,
-} from "@/lib/factory/providers/vkvideodownload-provider";
+} from "./providers/vkvideodownload-provider";
 import {
   getVideoDurationSeconds,
   hasAudioStream,
   hasVideoStream,
   runCommand,
-} from "@/lib/factory/video";
-import { getVkCookiesFileForYtDlp } from "@/lib/factory/vk-cookies";
+} from "./video";
+import { getVkCookiesFileForYtDlp } from "./vk-cookies";
 
 export type VkResolvedVideo = VkVideoDownloadResolved;
 export type VkDownloadProvider = "vkvideodownload" | "yt-dlp" | "auto";

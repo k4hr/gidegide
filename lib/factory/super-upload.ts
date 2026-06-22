@@ -1,9 +1,9 @@
 import { google, type youtube_v3 } from "googleapis";
 import type { FactoryDonorKind } from "@prisma/client";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
-import { getYoutubeOAuthClient } from "@/lib/factory/youtube-analytics";
+import { prisma } from "../prisma";
+import { withDbRetry } from "./db-retry";
+import { getYoutubeOAuthClient } from "./youtube-analytics";
 
 export type SuperUploadVideo = {
   sourceVideoId: string;

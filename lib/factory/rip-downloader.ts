@@ -2,8 +2,8 @@ import path from "node:path";
 import { readFile, rm, stat } from "node:fs/promises";
 import { chromium, type Locator, type Page } from "playwright";
 
-import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "@/lib/factory/paths";
-import { hasAudioStream, hasVideoStream, runCommand } from "@/lib/factory/video";
+import { FACTORY_SOURCE_DIR, ensureFactoryDirs } from "./paths";
+import { hasAudioStream, hasVideoStream, runCommand } from "./video";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;

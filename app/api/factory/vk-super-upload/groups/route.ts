@@ -6,7 +6,7 @@ import {
   buildVkDailyCandidates,
   listVkGroups,
   setVkGroupActive,
-} from "@/lib/factory/vk-super-upload";
+} from "../../../../../lib/factory/vk-super-upload";
 
 export const runtime = "nodejs";
 

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
+import { prisma } from "../../../../../lib/prisma";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
 
 export const runtime = "nodejs";
 

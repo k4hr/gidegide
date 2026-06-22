@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../../../../../lib/prisma";
 
 export const runtime = "nodejs";
 

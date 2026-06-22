@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runVkAutoSourceDaily } from "@/lib/factory/vk-auto-source";
+import { runVkAutoSourceDaily } from "../../../../../../lib/factory/vk-auto-source";
 
 export const runtime = "nodejs";
 type Context = { params: Promise<{ id: string }> };

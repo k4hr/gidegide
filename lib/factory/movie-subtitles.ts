@@ -3,9 +3,9 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { nanoid } from "nanoid";
 
-import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
-import { FACTORY_TEMP_DIR } from "@/lib/factory/paths";
-import { runCommand } from "@/lib/factory/video";
+import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
+import { FACTORY_TEMP_DIR } from "./paths";
+import { runCommand } from "./video";
 
 type CancelCheck = () => Promise<boolean>;
 type ProgressCallback = (progress: number, label: string) => Promise<void>;

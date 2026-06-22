@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { withDbRetry } from "@/lib/factory/db-retry";
-import { analyzeViralReference, rebuildViralBrainSnapshot } from "@/lib/factory/viral-lab";
+import { prisma } from "../../../../../lib/prisma";
+import { withDbRetry } from "../../../../../lib/factory/db-retry";
+import { analyzeViralReference, rebuildViralBrainSnapshot } from "../../../../../lib/factory/viral-lab";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

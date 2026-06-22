@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { prisma } from "@/lib/prisma";
-import { getTikTokDisplayName, exchangeTikTokCode } from "@/lib/factory/tiktok";
+import { prisma } from "../../../../../lib/prisma";
+import { getTikTokDisplayName, exchangeTikTokCode } from "../../../../../lib/factory/tiktok";
 
 export const runtime = "nodejs";
 

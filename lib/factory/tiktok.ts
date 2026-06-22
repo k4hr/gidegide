@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 
-import { prisma } from "@/lib/prisma";
+import { prisma } from "../prisma";
 
 type TikTokTokenResponse = {
   access_token?: string;

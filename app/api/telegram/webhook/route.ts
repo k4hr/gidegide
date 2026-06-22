@@ -1,15 +1,11 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 
-import { prisma } from "@/lib/prisma";
-import { cancelFactoryJob } from "@/lib/factory/cancel-job";
-import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
+import { prisma } from "../../../../lib/prisma";
+import { cancelFactoryJob } from "../../../../lib/factory/cancel-job";
+import { createVkMovieJob } from "../../../../lib/factory/create-vk-movie-job";
 import {
-<<<<<<< HEAD
-  DEFAULT_VK_AUTO_SOURCE_TIMEZONE,
-=======
   checkVkSourceVideos,
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   getSourceRunDate,
   humanizeVkAutoSourceError,
   isVkGroupOrVideoSourceUrl,
@@ -17,7 +13,7 @@ import {
   normalizeVkSourceUrl,
   runVkAutoSourceDaily,
   vkAutoSourceTimezoneLabel,
-} from "@/lib/factory/vk-auto-source";
+} from "../../../../lib/factory/vk-auto-source";
 import {
   answerCallbackQuery,
   editTelegramMessage,
@@ -27,8 +23,8 @@ import {
   sendTelegramMessage,
   upsertTelegramChat,
   type TelegramReplyMarkup,
-} from "@/lib/factory/telegram";
-import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
+} from "../../../../lib/factory/telegram";
+import { getVkCookiesStatus } from "../../../../lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 
@@ -385,38 +381,6 @@ function autoSourceActionKeyboard(source: { id: string; isEnabled: boolean }): T
 }
 
 function autoSourceSettingsKeyboard(id: string): TelegramReplyMarkup {
-<<<<<<< HEAD
-  return { inline_keyboard: [
-    [5, 10, 20].map((value) => ({ text: `${value} видео`, callback_data: `tg:autosource:set:${id}:limit:${value}` })),
-    [
-      { text: "15–23", callback_data: `tg:autosource:set:${id}:window:15` },
-      { text: "18–23", callback_data: `tg:autosource:set:${id}:window:18` },
-    ],
-    [{ text: "✅ Добавить", callback_data: `tg:autosource:add:${id}` }],
-  ] };
-}
-
-async function showSources(chatDbId: string, telegramChatId: string, runButtons = false) {
-  const sources = await prisma.factoryVkAutoSource.findMany({ where: { chatId: chatDbId }, orderBy: { createdAt: "asc" } });
-  if (!sources.length) return sendTelegramMessage(telegramChatId, "📡 Источников пока нет. Пришли ссылку на VK-группу или VK Video канал.");
-  const lines = sources.map((source, index) => `${index + 1}. ${source.sourceTitle || source.sourceUrl}
-Статус: ${source.isEnabled ? "включён" : "пауза"}
-Каждый день: ${source.dailyLimit} видео
-Публикация: ${source.publishStartHour}:00–${source.publishEndHour}:00 МСК
-Часовой пояс: ${sourceTimeZoneLabel(source)}
-Последний запуск: ${source.lastRunAt ? new Intl.DateTimeFormat("ru-RU", { dateStyle: "short", timeStyle: "short", timeZone: sourceTimeZone(source) }).format(source.lastRunAt) : "ещё не запускался"}${source.lastError ? `
-Ошибка: ${source.lastError}` : ""}`);
-  const keyboard: TelegramReplyMarkup = {
-    inline_keyboard: sources.flatMap((source) =>
-      runButtons
-        ? [[{ text: `▶️ ${source.sourceTitle || source.sourceUrl.slice(0, 24)}`, callback_data: `tg:autosource:run:${source.id}` }]]
-        : [[
-            { text: "▶️ Запустить", callback_data: `tg:autosource:run:${source.id}` },
-            { text: source.isEnabled ? "⏸ Пауза" : "▶️ Включить", callback_data: `tg:autosource:${source.isEnabled ? "pause" : "resume"}:${source.id}` },
-            { text: "🗑 Удалить", callback_data: `tg:autosource:delete:${source.id}` },
-          ]],
-    ),
-=======
   return {
     inline_keyboard: [
       [5, 10, 20].map((value) => ({ text: `${value} видео`, callback_data: `tg:autosource:set:${id}:limit:${value}` })),
@@ -427,7 +391,6 @@ async function showSources(chatDbId: string, telegramChatId: string, runButtons 
       [{ text: "🔍 Проверить список", callback_data: `tg:autosource:check:${id}` }],
       [{ text: "📡 Назад к источникам", callback_data: "tg:menu:sources" }],
     ],
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   };
 }
 
@@ -1040,12 +1003,6 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
     const sourceUrl = normalizeVkSourceUrl(text);
     const source = await prisma.factoryVkAutoSource.upsert({
       where: { chatId_sourceUrl: { chatId: chat.id, sourceUrl } },
-<<<<<<< HEAD
-      create: { chatId: chat.id, sourceUrl, isEnabled: false },
-      update: {},
-    });
-    if (source.isEnabled) return sendTelegramMessage(chatId, "📡 Этот источник уже добавлен в ежедневный автозабор.");
-=======
       create: { chatId: chat.id, sourceUrl, isEnabled: false, timezone: "Europe/Moscow" },
       update: { timezone: "Europe/Moscow" },
     });
@@ -1054,7 +1011,6 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
       return sendTelegramMessage(chatId, `📡 Этот источник уже добавлен.\n\n${await sourceCardText(source)}\n\nЧто сделать?`, autoSourceActionKeyboard(source));
     }
 
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
     return sendTelegramMessage(chatId, `📡 Похоже, это VK-источник.
 
 Добавить его в ежедневный автозабор?
@@ -1062,11 +1018,7 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
 Настройки:
 • ${source.dailyLimit} видео в день
 • публикация с ${source.publishStartHour}:00 до ${source.publishEndHour}:00 МСК
-<<<<<<< HEAD
-• часовой пояс: ${sourceTimeZoneLabel(source)}`, autoSourceKeyboard(source.id));
-=======
 • часовой пояс: ${sourceTimeZoneLabel(source)}`, autoSourcePendingKeyboard(source.id));
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   }
 
   const sourceUrl = extractVkVideoUrl(text);
@@ -1172,17 +1124,6 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
       await answerCallbackQuery(query.id, "Добавляю источник…");
       const updated = await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, timezone: "Europe/Moscow" } });
       try {
-<<<<<<< HEAD
-        const videos = await getVkSourceVideos({ sourceUrl: source.sourceUrl, limit: 3 });
-        if (sourceAction === "check") return editTelegramMessage(chatId, sourceMessageId, `👀 Источник доступен. Найдено видео: ${videos.length}.`, autoSourceKeyboard(source.id));
-        await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: null } });
-        return editTelegramMessage(chatId, sourceMessageId, `✅ Источник добавлен.\nСписок видео получаю из публичного VK-раздела.\nСкачивание видео: через vkvideodownload.com.\nКаждый день беру до ${source.dailyLimit} новых видео и публикую с ${source.publishStartHour}:00 до ${source.publishEndHour}:00 МСК.\n\nСейчас найдено: ${videos.length}.`);
-      } catch (error) {
-        const reason = humanizeFactoryError(error);
-        if (sourceAction === "add") {
-          await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { isEnabled: true, lastError: reason } });
-          return editTelegramMessage(chatId, sourceMessageId, `⚠️ Источник добавлен, но список видео сейчас не прочитался.\nСкачивание отдельных VK-видео через vkvideodownload.com подключено, но для автозабора из группы нужен доступный публичный список видео.\nЯ попробую снова при ежедневном запуске.\n\n${reason}`);
-=======
         const result = await checkVkSourceVideos({ sourceUrl: updated.sourceUrl, limit: 10 });
         if (result.videos.length) {
           await prisma.factoryVkAutoSource.update({ where: { id: updated.id }, data: { lastError: null } });
@@ -1191,7 +1132,6 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
 Скачивание видео: vkvideodownload.com.
 Найдено видео: ${result.videos.length}.
 Каждый день беру до ${updated.dailyLimit} новых видео и публикую с ${updated.publishStartHour}:00 до ${updated.publishEndHour}:00 МСК.`, autoSourceActionKeyboard(updated));
->>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
         }
         await prisma.factoryVkAutoSource.update({ where: { id: updated.id }, data: { lastError: "Список видео не прочитался" } });
         return editTelegramMessage(chatId, sourceMessageId, `⚠️ Источник добавлен, но список видео сейчас не прочитался.
