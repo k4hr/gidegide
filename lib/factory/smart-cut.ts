@@ -1,3 +1,4 @@
+import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
 import { readCommand } from "@/lib/factory/video";
 
 export type FactoryCutMode =
@@ -59,7 +60,12 @@ function clampScore(value: number) {
   return Math.max(0, Math.min(100, Math.round(value)));
 }
 
-function getEnvNumber(name: string, fallback: number, min: number, max: number) {
+function getEnvNumber(
+  name: string,
+  fallback: number,
+  min: number,
+  max: number,
+) {
   const value = Number(process.env[name]);
 
   if (!Number.isFinite(value)) {
@@ -455,7 +461,11 @@ async function analyzeMovieWindow(input: {
   const sampleDuration = Math.max(20, Math.min(60, input.clipSeconds));
   const sampleStarts = [
     input.startSec,
-    input.startSec + Math.max(0, Math.floor(input.windowSeconds / 2) - Math.floor(sampleDuration / 2)),
+    input.startSec +
+      Math.max(
+        0,
+        Math.floor(input.windowSeconds / 2) - Math.floor(sampleDuration / 2),
+      ),
     input.startSec + Math.max(0, input.windowSeconds - sampleDuration - 2),
   ];
 
@@ -491,7 +501,8 @@ function overlapsMovieWindow(
     const left = Math.max(candidate.startSec, item.startSec);
     const right = Math.min(candidate.endSec, item.endSec);
     const overlaps = left < right;
-    const tooClose = Math.abs(candidate.startSec - item.startSec) < minGapSeconds;
+    const tooClose =
+      Math.abs(candidate.startSec - item.startSec) < minGapSeconds;
     return overlaps || tooClose;
   });
 }
@@ -503,10 +514,17 @@ function buildMovieCandidateStarts(input: {
   stepSeconds: number;
   maxCandidates: number;
 }) {
-  const lastStart = Math.max(input.safeStart, input.safeEnd - input.clipSeconds);
+  const lastStart = Math.max(
+    input.safeStart,
+    input.safeEnd - input.clipSeconds,
+  );
   const starts: number[] = [];
 
-  for (let startSec = input.safeStart; startSec <= lastStart; startSec += input.stepSeconds) {
+  for (
+    let startSec = input.safeStart;
+    startSec <= lastStart;
+    startSec += input.stepSeconds
+  ) {
     starts.push(Math.round(startSec));
   }
 
@@ -518,7 +536,9 @@ function buildMovieCandidateStarts(input: {
   const lastIndex = starts.length - 1;
 
   for (let index = 0; index < input.maxCandidates; index += 1) {
-    const sourceIndex = Math.round((index / Math.max(1, input.maxCandidates - 1)) * lastIndex);
+    const sourceIndex = Math.round(
+      (index / Math.max(1, input.maxCandidates - 1)) * lastIndex,
+    );
     const value = starts[sourceIndex];
 
     if (!sampled.includes(value)) {
@@ -557,7 +577,10 @@ function tuneMovieMomentCandidate(candidate: SmartCutCandidate) {
     reasons.push("старт кадра чистый");
   }
 
-  if (candidate.audioScore >= 58 && (candidate.motionScore >= 58 || candidate.sceneScore >= 58)) {
+  if (
+    candidate.audioScore >= 58 &&
+    (candidate.motionScore >= 58 || candidate.sceneScore >= 58)
+  ) {
     score += 8;
     reasons.push("есть и звук, и визуальный конфликт");
   }
@@ -569,26 +592,55 @@ function tuneMovieMomentCandidate(candidate: SmartCutCandidate) {
   } satisfies SmartCutCandidate;
 }
 
+function getTenMinuteRegion(startSec: number) {
+  return Math.floor(Math.max(0, startSec) / 600);
+}
+
+function getRegionCount(
+  selected: SmartCutCandidate[],
+  candidate: SmartCutCandidate,
+) {
+  const region = getTenMinuteRegion(candidate.startSec);
+  return selected.filter((item) => getTenMinuteRegion(item.startSec) === region)
+    .length;
+}
+
 function selectMovieMomentCandidates(input: {
   candidates: SmartCutCandidate[];
   maxClips: number;
-  minGapSeconds: number;
-  relaxedGapSeconds: number;
 }) {
-  const sorted = [...input.candidates].sort((a, b) => b.finalScore - a.finalScore);
-  const selected: SmartCutCandidate[] = [];
+  const sorted = [...input.candidates].sort(
+    (a, b) => b.finalScore - a.finalScore,
+  );
+  const maxPerRegion = Math.max(
+    1,
+    MOVIE_SMART_CONFIG.maxClipsPerTenMinuteRegion,
+  );
+  let selected: SmartCutCandidate[] = [];
 
-  for (const candidate of sorted) {
-    if (selected.length >= input.maxClips) break;
-    if (hasStrongOverlap(candidate, selected, input.minGapSeconds)) continue;
-    selected.push({ ...candidate, selected: true });
+  for (const gapSeconds of MOVIE_SMART_CONFIG.minGapFallbacksSeconds) {
+    selected = [];
+
+    for (const candidate of sorted) {
+      if (selected.length >= input.maxClips) break;
+      if (hasStrongOverlap(candidate, selected, gapSeconds)) continue;
+      if (getRegionCount(selected, candidate) >= maxPerRegion) continue;
+      selected.push({ ...candidate, selected: true });
+    }
+
+    if (selected.length >= input.maxClips) {
+      break;
+    }
   }
 
   if (selected.length < input.maxClips) {
+    const minimumGap = MOVIE_SMART_CONFIG.minGapFallbacksSeconds.at(-1) ?? 300;
+
     for (const candidate of sorted) {
       if (selected.length >= input.maxClips) break;
-      if (selected.some((item) => item.startSec === candidate.startSec)) continue;
-      if (hasStrongOverlap(candidate, selected, input.relaxedGapSeconds)) continue;
+      if (selected.some((item) => item.startSec === candidate.startSec))
+        continue;
+      if (hasStrongOverlap(candidate, selected, minimumGap)) continue;
       selected.push({ ...candidate, selected: true });
     }
   }
@@ -603,45 +655,106 @@ function selectMovieMomentCandidates(input: {
     .sort((a, b) => a.startSec - b.startSec);
 }
 
-export async function buildMovieSmartClipCandidates(input: MovieSmartCutInput) {
-  const clipSeconds = Math.max(15, Math.min(90, input.clipSeconds ?? 60));
-  const maxClips = Math.max(1, input.maxClips);
+function getMovieSmartSafeWindow(input: {
+  duration: number;
+  clipSeconds: number;
+}) {
+  const shortVideo =
+    input.duration < MOVIE_SMART_CONFIG.shortVideoThresholdSeconds;
+  const skipSeconds = shortVideo
+    ? MOVIE_SMART_CONFIG.shortVideoSkipSeconds
+    : MOVIE_SMART_CONFIG.skipIntroSeconds;
+  const skipOutroSeconds = shortVideo
+    ? MOVIE_SMART_CONFIG.shortVideoSkipSeconds
+    : MOVIE_SMART_CONFIG.skipOutroSeconds;
 
-  const skipIntroSeconds = Math.min(
-    Math.max(60, input.skipIntroSeconds ?? getEnvNumber("MOVIE_SMART_SKIP_INTRO_SECONDS", 240, 0, 1800)),
-    Math.floor(input.duration * 0.12),
-  );
-  const skipOutroSeconds = Math.min(
-    Math.max(60, input.skipOutroSeconds ?? getEnvNumber("MOVIE_SMART_SKIP_OUTRO_SECONDS", 240, 0, 1800)),
-    Math.floor(input.duration * 0.12),
-  );
-
-  let safeStart = Math.max(0, skipIntroSeconds);
+  let safeStart = Math.max(0, skipSeconds);
   let safeEnd = Math.max(0, input.duration - skipOutroSeconds);
 
-  if (safeEnd - safeStart < clipSeconds * 3) {
+  if (safeEnd - safeStart < input.clipSeconds * 3) {
+    const fallbackSkip = Math.min(
+      MOVIE_SMART_CONFIG.shortVideoSkipSeconds,
+      Math.floor(input.duration * 0.08),
+    );
+    safeStart = fallbackSkip;
+    safeEnd = Math.max(
+      fallbackSkip + input.clipSeconds,
+      input.duration - fallbackSkip,
+    );
+  }
+
+  if (safeEnd - safeStart < input.clipSeconds) {
     safeStart = 0;
     safeEnd = input.duration;
   }
 
-  const stepSeconds = getEnvNumber(
-    "MOVIE_SMART_CANDIDATE_STEP_SECONDS",
-    Math.max(20, Math.min(60, input.windowStepSeconds ?? Math.floor(clipSeconds / 2))),
-    10,
-    180,
+  return {
+    safeStart: Math.round(safeStart),
+    safeEnd: Math.round(safeEnd),
+    skipIntroSeconds: Math.round(safeStart),
+    skipOutroSeconds: Math.round(Math.max(0, input.duration - safeEnd)),
+    shortVideo,
+  };
+}
+
+function buildFallbackMovieStarts(input: {
+  duration: number;
+  clipSeconds: number;
+  maxClips: number;
+}) {
+  const window = getMovieSmartSafeWindow(input);
+  const available = Math.max(
+    input.clipSeconds,
+    window.safeEnd - window.safeStart - input.clipSeconds,
   );
-  const maxCandidates = getEnvNumber(
-    "MOVIE_SMART_MAX_CANDIDATES",
-    Math.max(maxClips * 12, 90),
-    Math.max(maxClips * 3, 20),
-    220,
+  const count = Math.max(1, input.maxClips);
+  const step = count <= 1 ? 0 : Math.floor(available / count);
+  const starts: number[] = [];
+
+  for (let index = 0; index < count; index += 1) {
+    const startSec = Math.min(
+      Math.max(
+        window.safeStart,
+        window.safeStart + index * Math.max(input.clipSeconds, step),
+      ),
+      Math.max(window.safeStart, window.safeEnd - input.clipSeconds),
+    );
+
+    if (!starts.includes(startSec)) {
+      starts.push(startSec);
+    }
+  }
+
+  return starts;
+}
+
+export async function buildMovieSmartClipCandidates(input: MovieSmartCutInput) {
+  const clipSeconds = Math.max(15, Math.min(90, input.clipSeconds ?? 60));
+  const maxClips = Math.max(1, input.maxClips);
+
+  const safeWindow = getMovieSmartSafeWindow({
+    duration: input.duration,
+    clipSeconds,
+  });
+  const safeStart = safeWindow.safeStart;
+  const safeEnd = safeWindow.safeEnd;
+  const stepSeconds = MOVIE_SMART_CONFIG.candidateStepSeconds;
+  const maxCandidates = Math.max(
+    maxClips * 3,
+    MOVIE_SMART_CONFIG.maxCandidates,
   );
-  const minScore = getEnvNumber("MOVIE_SMART_MIN_SCORE", 48, 0, 100);
-  const minGapSeconds = Math.max(
-    clipSeconds * 2,
-    input.minGapBetweenWindowsSeconds ?? getEnvNumber("MOVIE_SMART_MIN_GAP_SECONDS", 420, clipSeconds, 1800),
+  const minScore = MOVIE_SMART_CONFIG.minScore;
+
+  await input.onProgress?.(
+    30,
+    safeWindow.shortVideo
+      ? "Movie Smart: пропускаю первые 5 мин и последние 5 мин"
+      : "Movie Smart: пропускаю первые 15 мин и последние 15 мин",
   );
-  const relaxedGapSeconds = Math.max(clipSeconds, Math.floor(minGapSeconds / 2));
+  await input.onProgress?.(
+    31,
+    `Movie Smart: анализирую окно ${formatTimestamp(safeStart)}–${formatTimestamp(safeEnd)}`,
+  );
 
   const starts = buildMovieCandidateStarts({
     safeStart,
@@ -659,8 +772,12 @@ export async function buildMovieSmartClipCandidates(input: MovieSmartCutInput) {
     const startSec = starts[index];
 
     await input.onProgress?.(
-      31 + Math.min(24, Math.round(((index + 1) / Math.max(1, starts.length)) * 24)),
-      `Movie Smart 2.0: анализирую момент ${index + 1}/${starts.length} (${formatTimestamp(startSec)})`,
+      31 +
+        Math.min(
+          24,
+          Math.round(((index + 1) / Math.max(1, starts.length)) * 24),
+        ),
+      `Movie Smart: анализирую сильные моменты ${index + 1}/${starts.length} (${formatTimestamp(startSec)})`,
     );
 
     const candidate = tuneMovieMomentCandidate(
@@ -674,8 +791,11 @@ export async function buildMovieSmartClipCandidates(input: MovieSmartCutInput) {
     candidates.push(candidate);
   }
 
-  const strongCandidates = candidates.filter((candidate) => candidate.finalScore >= minScore);
-  const sourceCandidates = strongCandidates.length >= maxClips ? strongCandidates : candidates;
+  const strongCandidates = candidates.filter(
+    (candidate) => candidate.finalScore >= minScore,
+  );
+  const sourceCandidates =
+    strongCandidates.length >= maxClips ? strongCandidates : candidates;
 
   if (sourceCandidates.length === 0) {
     return [];
@@ -684,8 +804,6 @@ export async function buildMovieSmartClipCandidates(input: MovieSmartCutInput) {
   return selectMovieMomentCandidates({
     candidates: sourceCandidates,
     maxClips,
-    minGapSeconds,
-    relaxedGapSeconds,
   });
 }
 
@@ -700,16 +818,22 @@ export async function buildMovieSmartClipStarts(input: MovieSmartCutInput) {
   if (selectedStarts.length > 0) {
     await input.onProgress?.(
       55,
-      `Movie Smart 2.0: выбрано сильных моментов ${selectedStarts.length}/${input.maxClips}`,
+      `Movie Smart: выбрано ${selectedStarts.length} разных моментов по всему фильму`,
     );
 
     return selectedStarts;
   }
 
-  return buildSequentialClipStarts({
+  const fallbackStarts = buildFallbackMovieStarts({
     duration: input.duration,
     clipSeconds: Math.max(15, Math.min(90, input.clipSeconds ?? 60)),
     maxClips: input.maxClips,
-    clipStartIndex: 0,
   });
+
+  await input.onProgress?.(
+    55,
+    `Movie Smart: сильных моментов не хватило, беру ${fallbackStarts.length} разнесённых фрагментов из безопасного окна`,
+  );
+
+  return fallbackStarts;
 }

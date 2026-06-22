@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 
+import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
 import { runCommand } from "@/lib/factory/video";
 
 type CancelCheck = () => Promise<boolean>;
@@ -15,22 +16,8 @@ export type GlobalOverlayConfig = {
   loop: boolean;
   transparencyMode: OverlayTransparencyMode;
   softFail: boolean;
+  crf: number;
 };
-
-function envFlag(name: string, defaultValue: boolean) {
-  const value = process.env[name];
-
-  if (value == null || value.trim() === "") {
-    return defaultValue;
-  }
-
-  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
-}
-
-function envString(name: string, defaultValue: string) {
-  const value = process.env[name];
-  return value == null || value.trim() === "" ? defaultValue : value.trim();
-}
 
 function resolveProjectPath(filePath: string) {
   if (path.isAbsolute(filePath)) {
@@ -41,34 +28,19 @@ function resolveProjectPath(filePath: string) {
 }
 
 export function getGlobalOverlayConfig(): GlobalOverlayConfig {
-  const overlayPath = resolveProjectPath(
-    envString(
-      "FACTORY_GLOBAL_OVERLAY_PATH",
-      "public/factory/overlays/redfilm-overlay.mov",
-    ),
-  );
-
-  const configuredTransparencyMode = envString(
-    "FACTORY_GLOBAL_OVERLAY_TRANSPARENCY",
-    "black-key",
-  ).toLowerCase();
-
-  const transparencyMode: OverlayTransparencyMode =
-    configuredTransparencyMode === "alpha" ? "alpha" : "black-key";
-
   return {
-    enabled: envFlag("FACTORY_GLOBAL_OVERLAY_ENABLED", existsSync(overlayPath)),
-    overlayPath,
+    enabled: MOVIE_SMART_CONFIG.overlayEnabled,
+    overlayPath: resolveProjectPath(MOVIE_SMART_CONFIG.overlayPath),
     mode: "fullscreen",
-    loop: envFlag("FACTORY_GLOBAL_OVERLAY_LOOP", true),
-    transparencyMode,
-    softFail: envFlag("FACTORY_GLOBAL_OVERLAY_SOFT_FAIL", true),
+    loop: MOVIE_SMART_CONFIG.overlayLoop,
+    transparencyMode: MOVIE_SMART_CONFIG.overlayTransparency,
+    softFail: MOVIE_SMART_CONFIG.overlaySoftFail,
+    crf: MOVIE_SMART_CONFIG.overlayCrf,
   };
 }
 
 export function isGlobalOverlayEnabled() {
-  const config = getGlobalOverlayConfig();
-  return config.enabled && existsSync(config.overlayPath);
+  return getGlobalOverlayConfig().enabled;
 }
 
 function buildOverlayFilter(transparencyMode: OverlayTransparencyMode) {
@@ -98,15 +70,33 @@ export async function applyGlobalOverlayToVideo(input: {
 }) {
   const config = getGlobalOverlayConfig();
 
+  console.log("[OVERLAY] enabled", { enabled: config.enabled });
+
   if (!config.enabled) {
     return false;
   }
 
-  if (!existsSync(config.overlayPath)) {
-    const message = `Overlay включён, но файл не найден: ${config.overlayPath}`;
+  const inputExists = existsSync(input.inputPath);
+  const overlayExists = existsSync(config.overlayPath);
+
+  console.log("[OVERLAY] input exists", {
+    inputPath: input.inputPath,
+    exists: inputExists,
+  });
+  console.log("[OVERLAY] overlay exists", {
+    overlayPath: config.overlayPath,
+    exists: overlayExists,
+  });
+
+  if (!inputExists) {
+    throw new Error(`Input video file not found for REDFILM overlay: ${input.inputPath}`);
+  }
+
+  if (!overlayExists) {
+    const message = `REDFILM overlay file not found: ${MOVIE_SMART_CONFIG.overlayPath}`;
 
     if (config.softFail) {
-      console.warn(`[FACTORY_OVERLAY] ${message}`);
+      console.warn(`[OVERLAY] ${message}`);
       return false;
     }
 
@@ -115,12 +105,10 @@ export async function applyGlobalOverlayToVideo(input: {
 
   await input.onProgress?.(72, "Накладываю REDFILM overlay");
 
-  console.log("[FACTORY_OVERLAY] applying", {
-    overlayPath: config.overlayPath,
-    inputPath: input.inputPath,
-    outputPath: input.outputPath,
+  console.log("[OVERLAY] ffmpeg start", {
     transparencyMode: config.transparencyMode,
     loop: config.loop,
+    crf: config.crf,
   });
 
   const overlayInputArgs = config.loop ? ["-stream_loop", "-1"] : [];
@@ -148,7 +136,7 @@ export async function applyGlobalOverlayToVideo(input: {
         "-preset",
         "veryfast",
         "-crf",
-        envString("FACTORY_GLOBAL_OVERLAY_CRF", "22"),
+        String(config.crf),
         "-c:a",
         "aac",
         "-ar",
@@ -168,14 +156,25 @@ export async function applyGlobalOverlayToVideo(input: {
       },
     );
 
-    await input.onProgress?.(74, "REDFILM overlay добавлен");
+    const outputExists = existsSync(input.outputPath);
+    console.log("[OVERLAY] ffmpeg done", { outputPath: input.outputPath });
+    console.log("[OVERLAY] output exists", {
+      outputPath: input.outputPath,
+      exists: outputExists,
+    });
+
+    if (!outputExists) {
+      throw new Error(`REDFILM overlay output was not created: ${input.outputPath}`);
+    }
+
+    await input.onProgress?.(74, "Overlay добавлен");
     return true;
   } catch (error) {
     if (!config.softFail) {
       throw error;
     }
 
-    console.error("[FACTORY_OVERLAY] failed, using video without overlay", error);
+    console.error("[OVERLAY] failed, using video without overlay", error);
     return false;
   }
 }
