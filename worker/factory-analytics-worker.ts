@@ -202,7 +202,7 @@ async function recomputeAnalysis(publishId: string) {
           },
         },
         account: true,
-        videoMetrics: {
+        metrics: {
           orderBy: {
             checkedAt: "asc",
           },
@@ -211,18 +211,18 @@ async function recomputeAnalysis(publishId: string) {
     }),
   );
 
-  if (!publish || publish.videoMetrics.length === 0 || !publish.platformPostId) {
+  if (!publish || publish.metrics.length === 0 || !publish.platformPostId) {
     return;
   }
 
   const platformVideoId = publish.platformPostId;
-  const latest = publish.videoMetrics[publish.videoMetrics.length - 1];
+  const latest = publish.metrics[publish.metrics.length - 1];
 
-  const metric1h = pickClosestMetric(publish.videoMetrics, 60);
-  const metric3h = pickClosestMetric(publish.videoMetrics, 180);
-  const metric6h = pickClosestMetric(publish.videoMetrics, 360);
-  const metric24h = pickClosestMetric(publish.videoMetrics, 1440);
-  const metric48h = pickClosestMetric(publish.videoMetrics, 2880);
+  const metric1h = pickClosestMetric(publish.metrics, 60);
+  const metric3h = pickClosestMetric(publish.metrics, 180);
+  const metric6h = pickClosestMetric(publish.metrics, 360);
+  const metric24h = pickClosestMetric(publish.metrics, 1440);
+  const metric48h = pickClosestMetric(publish.metrics, 2880);
 
   const views1h = metric1h?.views ?? 0;
   const views3h = metric3h?.views ?? 0;
