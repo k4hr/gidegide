@@ -8,6 +8,7 @@ import {
   type VkVideoDownloadResolved,
 } from "@/lib/factory/providers/vkvideodownload-provider";
 import { runCommand } from "@/lib/factory/video";
+import { getVkCookiesFileForYtDlp } from "@/lib/factory/vk-cookies";
 
 export type VkResolvedVideo = VkVideoDownloadResolved;
 export type VkDownloadProvider = "vkvideodownload" | "yt-dlp" | "auto";
@@ -25,16 +26,19 @@ export function getVkDownloadProviderConfig() {
 
 async function resolveWithYtDlp(videoUrl: string): Promise<VkResolvedVideo> {
   let output = "";
+  const cookiesFile = await getVkCookiesFileForYtDlp();
+  const args = [
+    "--no-playlist",
+    "--no-warnings",
+    "-g",
+    "-f",
+    "b[height=720][ext=mp4]/b[height<=720][ext=mp4]/best[ext=mp4]/best",
+  ];
+  if (cookiesFile) args.push("--cookies", cookiesFile);
+  args.push(videoUrl);
   await runCommand(
     "yt-dlp",
-    [
-      "--no-playlist",
-      "--no-warnings",
-      "-g",
-      "-f",
-      "b[height=720][ext=mp4]/b[height<=720][ext=mp4]/best[ext=mp4]/best",
-      videoUrl,
-    ],
+    args,
     { onOutput: (text) => { output += text; } },
   );
   const directUrl = output.split(/\r?\n/).map((line) => line.trim()).find((line) => /^https?:\/\//i.test(line));

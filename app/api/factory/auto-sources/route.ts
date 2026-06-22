@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { normalizeVkAutoSourceTimezone, normalizeVkSourceUrl } from "@/lib/factory/vk-auto-source";
 import { getVkDownloadProviderConfig } from "@/lib/factory/vk-download-provider";
+import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
 
@@ -18,11 +19,26 @@ const createSchema = z.object({
 });
 
 export async function GET() {
+<<<<<<< HEAD
+=======
+  const vkCookies = await getVkCookiesStatus();
+>>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
   const sources = await prisma.factoryVkAutoSource.findMany({
     orderBy: { createdAt: "desc" },
     include: { chat: { select: { chatId: true, username: true } }, runs: { orderBy: { startedAt: "desc" }, take: 1 }, _count: { select: { videos: true } } },
   });
-  return NextResponse.json({ sources, downloader: getVkDownloadProviderConfig() });
+  return NextResponse.json({
+    sources,
+    downloader: getVkDownloadProviderConfig(),
+    vkCookies,
+    listing: {
+      provider: process.env.VK_LISTING_PROVIDER || "auto",
+      playwright: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true",
+      ytDlpFallback: process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true",
+      scrollPages: Number(process.env.VK_LISTING_SCROLL_PAGES || 6),
+      waitMs: Number(process.env.VK_LISTING_WAIT_MS || 6000),
+    },
+  });
 }
 
 export async function POST(request: Request) {

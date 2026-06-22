@@ -1,5 +1,8 @@
 FROM node:20-bookworm-slim
 
+ENV PLAYWRIGHT_BROWSERS_PATH=0
+ENV NEXT_TELEMETRY_DISABLED=1
+
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     python3 \
@@ -34,13 +37,15 @@ RUN pip3 install --break-system-packages yt-dlp
 WORKDIR /app
 
 COPY package*.json ./
+
 RUN npm install
 
-RUN npx playwright install chromium
+RUN npx playwright install --with-deps chromium
 
 COPY . .
 
 RUN npx prisma generate
+
 RUN npm run build
 
 EXPOSE 3000

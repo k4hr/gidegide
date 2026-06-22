@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { createVkMovieJob } from "@/lib/factory/create-vk-movie-job";
 import { humanizeFactoryError, isChatAllowed, sendTelegramMessage } from "@/lib/factory/telegram";
 import { runCommand } from "@/lib/factory/video";
-import { getPublicVkSourceVideos } from "@/lib/factory/vk-super-upload";
+import { getVkCookieHeader, getVkCookiesFileForYtDlp, getVkCookiesForPlaywright, hasVkCookies } from "@/lib/factory/vk-cookies";
+import { listVkVideosWithPlaywright } from "@/lib/factory/providers/vk-playwright-listing-provider";
 
 export type VkSourceVideo = {
   providerVideoId?: string;
@@ -31,14 +32,39 @@ export function vkAutoSourceTimezoneLabel(timezone?: string | null) {
   return normalized === DEFAULT_VK_AUTO_SOURCE_TIMEZONE ? "МСК (Europe/Moscow)" : normalized;
 }
 
+<<<<<<< HEAD
+=======
+const VK_SOURCE_HOSTS = new Set(["vk.com", "vk.ru", "m.vk.com", "m.vk.ru", "vkvideo.ru"]);
+
+function cleanFirstUrl(value: string) {
+  return (value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim()).replace(/[),.!?]+$/, "");
+}
+
+function normalizeVkHost(host: string) {
+  const normalized = host.toLowerCase().replace(/^www\./, "");
+  if (normalized === "m.vk.com" || normalized === "m.vk.ru" || normalized === "vk.ru") return "vk.com";
+  return normalized;
+}
+
+function isSingleVkVideoPath(path: string, search = "") {
+  return /^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(search));
+}
+
+function parseVkPlaylistPath(path: string) {
+  const match = path.match(/^\/video\/playlist\/(-?\d+)_(\d+)/i);
+  if (!match) return null;
+  return { ownerId: Number(match[1]), playlistId: match[2], ownerIdText: match[1] };
+}
+
+>>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
 export function isVkGroupOrVideoSourceUrl(text: string) {
   try {
-    const match = text.match(/https?:\/\/[^\s<>]+/i)?.[0] || text;
-    const url = new URL(match);
-    const host = url.hostname.toLowerCase().replace(/^www\./, "");
-    if (!["vk.com", "m.vk.com", "vkvideo.ru"].includes(host)) return false;
+    const url = new URL(cleanFirstUrl(text));
+    const rawHost = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (!VK_SOURCE_HOSTS.has(rawHost)) return false;
     const path = url.pathname.replace(/\/+$/, "");
-    if (/^\/video-?\d+_\d+/i.test(path) || (path === "/video" && /video-?\d+_\d+/i.test(url.search))) return false;
+    if (isSingleVkVideoPath(path, url.search)) return false;
+    if (parseVkPlaylistPath(path)) return true;
     return path.length > 1;
   } catch {
     return false;
@@ -46,25 +72,352 @@ export function isVkGroupOrVideoSourceUrl(text: string) {
 }
 
 export function normalizeVkSourceUrl(value: string) {
-  const raw = value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim();
-  const url = new URL(raw);
-  let host = url.hostname.toLowerCase().replace(/^www\./, "");
-  if (host === "m.vk.com") host = "vk.com";
+  const url = new URL(cleanFirstUrl(value));
+  let host = normalizeVkHost(url.hostname);
   if (!["vk.com", "vkvideo.ru"].includes(host)) throw new Error("VK источник не открывается");
   let path = url.pathname.replace(/\/+$/, "") || "/";
   if (host === "vk.com" && /^\/videos\/[-\d]+$/i.test(path)) path = path.replace("/videos/", "/videos");
+  if (host === "vk.com") {
+    const playlist = parseVkPlaylistPath(path);
+    if (playlist) path = `/video/playlist/${playlist.ownerIdText}_${playlist.playlistId}`;
+  }
   return `https://${host}${path}`;
 }
 
 function sourceScreenName(sourceUrl: string) {
-  const url = new URL(sourceUrl);
+  const url = new URL(normalizeVkSourceUrl(sourceUrl));
   const parts = url.pathname.split("/").filter(Boolean);
   const first = parts[0] || "";
+  const playlist = parseVkPlaylistPath(url.pathname);
+  if (playlist) return { ownerId: playlist.ownerId, screenName: null, playlistId: playlist.playlistId };
   const owner = first.match(/^videos(-?\d+)$/i)?.[1];
-  if (owner) return { ownerId: Number(owner), screenName: null };
-  if (first === "video" && parts[1]?.startsWith("@")) return { ownerId: null, screenName: parts[1].slice(1) };
-  if (first.startsWith("@")) return { ownerId: null, screenName: first.slice(1) };
-  return { ownerId: null, screenName: first };
+  if (owner) return { ownerId: Number(owner), screenName: null, playlistId: null };
+  if (first === "video" && parts[1]?.startsWith("@")) return { ownerId: null, screenName: parts[1].slice(1), playlistId: null };
+  if (first.startsWith("@")) return { ownerId: null, screenName: first.slice(1), playlistId: null };
+  return { ownerId: null, screenName: first, playlistId: null };
+}
+
+
+export type VkListingAttempt = {
+  provider: "vk-api" | "vkvideo-html" | "vk-html" | "vk-mobile-html" | "yt-dlp" | "playwright-browser";
+  url: string;
+  status?: number;
+  foundCount?: number;
+  error?: string;
+  debug?: unknown;
+};
+
+const VK_PUBLIC_HEADERS = {
+  "user-agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+  accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "accept-language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+  referer: "https://vk.com/",
+};
+
+async function buildVkRequestHeaders(url: string) {
+  const cookie = await getVkCookieHeader();
+  const headers: Record<string, string> = { ...VK_PUBLIC_HEADERS };
+  if (url.includes("vkvideo.ru")) headers.referer = "https://vkvideo.ru/";
+  if (cookie) headers.cookie = cookie;
+  return headers;
+}
+
+function decodePercentEncoding(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, code: string) => String.fromCharCode(Number.parseInt(code, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&#34;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function cleanListingText(value?: string | null) {
+  return decodeHtmlEntities(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\\\//g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeListingTitle(value?: string | null) {
+  const title = cleanListingText(value)
+    .replace(/^смотреть\s+/i, "")
+    .replace(/\s*[|—-]\s*(?:VK Видео|VK|ВКонтакте)\s*$/i, "")
+    .trim();
+
+  if (!title || title.length < 4) return undefined;
+  if (/^(vk|вк|vk video|vk видео|видео|video|без названия|главная|новые|популярное|подписки|плейлисты|клипы)$/i.test(title)) return undefined;
+  if (/^видео\s*-?\d+_\d+$/i.test(title)) return undefined;
+  return title.slice(0, 180);
+}
+
+function normalizeAutoSourceMovieTitle(value?: string | null) {
+  const title = normalizeListingTitle(value);
+  if (!title) return null;
+  if (/^https?:\/\//i.test(title)) return null;
+  if (/^(главная|новые|популярное|подписки|плейлисты|клипы)$/i.test(title)) return null;
+  return title;
+}
+
+function buildAutoSourceMovieTitle(input: {
+  videoTitle?: string | null;
+  sourceTitle?: string | null;
+  sourceUrl?: string | null;
+  fallback?: string;
+}) {
+  return (
+    normalizeAutoSourceMovieTitle(input.videoTitle) ||
+    normalizeAutoSourceMovieTitle(input.sourceTitle) ||
+    normalizeAutoSourceMovieTitle(input.sourceUrl) ||
+    input.fallback ||
+    "VK фильм"
+  );
+}
+
+function titleNear(html: string, position: number) {
+  const slice = html.slice(Math.max(0, position - 2200), Math.min(html.length, position + 3200));
+  const patterns = [
+    /"title"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"name"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"caption"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /"description"\s*:\s*"([^"\\]*(?:\\.[^"\\]*){0,40})"/i,
+    /data-title=["']([^"']{4,220})["']/i,
+    /aria-label=["']([^"']{4,220})["']/i,
+    /title=["']([^"']{4,220})["']/i,
+    /alt=["']([^"']{4,220})["']/i,
+    /<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']{4,220})["']/i,
+  ];
+
+  for (const pattern of patterns) {
+    const title = normalizeListingTitle(slice.match(pattern)?.[1]);
+    if (title) return title;
+  }
+
+  return undefined;
+}
+
+function thumbnailNear(html: string, position: number) {
+  const slice = html.slice(Math.max(0, position - 1200), Math.min(html.length, position + 2400)).replace(/\\\//g, "/");
+  return slice.match(/https?:\/\/[^"'\s<>]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>]*)?/i)?.[0];
+}
+
+function normalizeProviderVideoId(value: string) {
+  return value.replace(/^video/i, "").replace(/^\//, "");
+}
+
+function normalizeFoundVkVideoUrl(providerVideoId: string) {
+  return `https://vk.com/video${normalizeProviderVideoId(providerVideoId)}`;
+}
+
+export function extractVkVideosFromHtml(html: string, baseUrl = "https://vk.com"): VkSourceVideo[] {
+  const decoded = decodeHtmlEntities(html).replace(/\\\//g, "/");
+  const percentDecoded = decodePercentEncoding(decoded);
+  const normalizedHtml = percentDecoded === decoded ? decoded : `${decoded}
+${percentDecoded}`;
+  const matches: Array<{ id: string; index: number }> = [];
+  const patterns = [
+    /(?:https?:\/\/(?:m\.)?vk\.(?:com|ru))?\/video(-?\d+_\d+)/gi,
+    /(?:https?:\/\/vkvideo\.ru)?\/video(-?\d+_\d+)/gi,
+    /href=["'][^"']*video(-?\d+_\d+)/gi,
+    /url\\?"\s*:\s*\\?"[^"\\]*video(-?\d+_\d+)/gi,
+    /contentUrl\\?"\s*:\s*\\?"[^"\\]*video(-?\d+_\d+)/gi,
+    /\bvideo(-?\d+_\d+)\b/gi,
+    /"video_id"\s*:\s*"?(-?\d+_\d+)"?/gi,
+    /"id"\s*:\s*"?video(-?\d+_\d+)"?/gi,
+    /data-video=["'](-?\d+_\d+)["']/gi,
+    /"video"\s*:\s*"(-?\d+_\d+)"/gi,
+  ];
+
+  for (const pattern of patterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(normalizedHtml))) {
+      if (!match[1]) continue;
+      matches.push({ id: normalizeProviderVideoId(match[1]), index: match.index });
+    }
+  }
+
+  const ownerIdPatterns: Array<{ pattern: RegExp; reversed?: boolean }> = [
+    { pattern: /["\']owner_id["\']\s*:\s*(-?\d+)[\s\S]{0,700}?["\']id["\']\s*:\s*(\d+)/gi },
+    { pattern: /["\']ownerId["\']\s*:\s*(-?\d+)[\s\S]{0,700}?["\']id["\']\s*:\s*(\d+)/gi },
+    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,700}?["\']owner_id["\']\s*:\s*(-?\d+)/gi, reversed: true },
+    { pattern: /["\']id["\']\s*:\s*(\d+)[\s\S]{0,700}?["\']ownerId["\']\s*:\s*(-?\d+)/gi, reversed: true },
+  ];
+  for (const { pattern, reversed } of ownerIdPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(normalizedHtml))) {
+      const ownerId = reversed ? match[2] : match[1];
+      const videoId = reversed ? match[1] : match[2];
+      if (ownerId && videoId) matches.push({ id: `${ownerId}_${videoId}`, index: match.index });
+    }
+  }
+
+  const unique = new Map<string, VkSourceVideo>();
+  for (const match of matches) {
+    if (!/^-?\d+_\d+$/.test(match.id)) continue;
+    const current = unique.get(match.id);
+    const title = titleNear(normalizedHtml, match.index) || current?.title;
+    const thumbnailUrl = thumbnailNear(normalizedHtml, match.index) || current?.thumbnailUrl;
+    unique.set(match.id, {
+      providerVideoId: match.id,
+      videoUrl: normalizeFoundVkVideoUrl(match.id),
+      title,
+      thumbnailUrl,
+    });
+  }
+
+  const videos = Array.from(unique.values());
+  console.info("VK source HTML parsed", { baseUrl, foundCount: videos.length });
+  return videos;
+}
+
+function getVkSourceIdentity(sourceUrl: string) {
+  const url = new URL(normalizeVkSourceUrl(sourceUrl));
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  const parts = url.pathname.split("/").filter(Boolean);
+  const first = parts[0] || "";
+  const playlist = parseVkPlaylistPath(url.pathname);
+
+  const videoAtName = first === "video" && parts[1]?.startsWith("@") ? parts[1].slice(1) : null;
+  const atName = first.startsWith("@") ? first.slice(1) : null;
+  const videosOwner = first.match(/^videos(-?\d+)$/i)?.[1] || null;
+  const clubId = first.match(/^club(\d+)$/i)?.[1] || null;
+  const publicId = first.match(/^public(\d+)$/i)?.[1] || null;
+  const ownerId = playlist
+    ? playlist.ownerId
+    : videosOwner
+      ? Number(videosOwner)
+      : clubId
+        ? -Number(clubId)
+        : publicId
+          ? -Number(publicId)
+          : null;
+
+  return {
+    host,
+    slug: videoAtName || atName || first,
+    screenName: videoAtName || atName || (!ownerId && !clubId && !publicId && first !== "video" ? first : null),
+    ownerId,
+    playlistId: playlist?.playlistId || null,
+    playlistOwnerIdText: playlist?.ownerIdText || null,
+  };
+}
+
+function buildVkSourceCandidateUrls(sourceUrl: string) {
+  const normalized = normalizeVkSourceUrl(sourceUrl);
+  const identity = getVkSourceIdentity(normalized);
+  const urls: string[] = [];
+  const add = (url: string) => urls.push(url);
+
+  add(normalized);
+  if (normalized.includes("vk.com/")) add(normalized.replace("https://vk.com/", "https://vk.ru/"));
+
+  if (identity.ownerId !== null) {
+    if (identity.playlistId) {
+      const playlistPath = `${identity.playlistOwnerIdText || identity.ownerId}_${identity.playlistId}`;
+      console.info("[VK_AUTO_SOURCE] playlist detected", { ownerId: identity.ownerId, playlistId: identity.playlistId });
+      add(`https://vk.com/video/playlist/${playlistPath}`);
+      add(`https://vk.ru/video/playlist/${playlistPath}`);
+      add(`https://m.vk.com/video/playlist/${playlistPath}`);
+      add(`https://m.vk.ru/video/playlist/${playlistPath}`);
+    }
+    add(`https://vk.com/videos${identity.ownerId}`);
+    add(`https://vk.ru/videos${identity.ownerId}`);
+    add(`https://m.vk.com/videos${identity.ownerId}`);
+    add(`https://m.vk.ru/videos${identity.ownerId}`);
+    add(`https://vk.com/club${Math.abs(identity.ownerId)}?z=video`);
+    add(`https://m.vk.com/club${Math.abs(identity.ownerId)}`);
+  }
+
+  if (identity.screenName) {
+    const name = identity.screenName.replace(/^@/, "");
+    add(`https://vk.com/video/@${name}`);
+    add(`https://vk.ru/video/@${name}`);
+    add(`https://vkvideo.ru/@${name}`);
+    add(`https://vkvideo.ru/@${name}/videos`);
+    add(`https://vkvideo.ru/@${name}/all`);
+    add(`https://vk.com/${name}?z=video`);
+    add(`https://vk.com/${name}?w=video`);
+    add(`https://vk.ru/${name}?z=video`);
+    add(`https://m.vk.com/${name}`);
+    add(`https://m.vk.ru/${name}`);
+    add(`https://m.vk.com/video/${name}`);
+  }
+
+  return Array.from(new Set(urls));
+}
+
+function candidateProvider(url: string): VkListingAttempt["provider"] {
+  const host = new URL(url).hostname.toLowerCase().replace(/^www\./, "");
+  if (host === "vkvideo.ru") return "vkvideo-html";
+  if (host === "m.vk.com" || host === "m.vk.ru") return "vk-mobile-html";
+  return "vk-html";
+}
+
+async function fetchVkListingHtml(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  try {
+    const response = await fetch(url, {
+      headers: await buildVkRequestHeaders(url),
+      cache: "no-store",
+      redirect: "follow",
+      signal: controller.signal,
+    });
+    const html = await response.text();
+    return { status: response.status, ok: response.ok, html };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function getViaPublicHtml(sourceUrl: string, limit: number, attempts: VkListingAttempt[]) {
+  const found = new Map<string, VkSourceVideo>();
+  const candidates = buildVkSourceCandidateUrls(sourceUrl);
+
+  console.info("[VK_AUTO_SOURCE] public listing candidates", { sourceUrl, candidates, cookiesEnabled: await hasVkCookies() });
+
+  for (const url of candidates) {
+    const attempt: VkListingAttempt = { provider: candidateProvider(url), url };
+    attempts.push(attempt);
+    try {
+      const response = await fetchVkListingHtml(url);
+      attempt.status = response.status;
+      console.info("[VK_AUTO_SOURCE] candidate", { url, status: response.status, provider: attempt.provider });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+
+      const videos = extractVkVideosFromHtml(response.html, url);
+      attempt.foundCount = videos.length;
+      console.info("[VK_AUTO_SOURCE] extracted videos", { url, provider: attempt.provider, foundCount: videos.length });
+      for (const video of videos) {
+        const key = video.providerVideoId || video.videoUrl;
+        if (!found.has(key)) found.set(key, video);
+      }
+
+      if (found.size >= limit) break;
+    } catch (error) {
+      attempt.error = humanizeVkAutoSourceError(error);
+    }
+  }
+
+  const result = Array.from(found.values()).slice(0, limit);
+  console.info("[VK_AUTO_SOURCE] public listing finished", {
+    sourceUrl,
+    foundCount: result.length,
+    attempts,
+  });
+  return result;
 }
 
 async function vkApi<T>(method: string, params: Record<string, string | number>, token: string) {
@@ -100,9 +453,13 @@ async function getViaVkApi(sourceUrl: string, limit: number, token: string): Pro
 
 async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVideo[]> {
   let output = "";
+  const cookiesFile = await getVkCookiesFileForYtDlp();
+  const args = ["--flat-playlist", "--dump-json", "--playlist-end", String(limit), "--socket-timeout", "30"];
+  if (cookiesFile) args.push("--cookies", cookiesFile);
+  args.push(sourceUrl);
   await runCommand(
     "yt-dlp",
-    ["--flat-playlist", "--dump-json", "--playlist-end", String(limit), "--socket-timeout", "30", sourceUrl],
+    args,
     { onOutput: (text) => { output += text; } },
   );
   const videos: VkSourceVideo[] = [];
@@ -122,32 +479,165 @@ async function getViaYtDlp(sourceUrl: string, limit: number): Promise<VkSourceVi
   return videos;
 }
 
-export async function getVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+async function getViaPlaywright(sourceUrl: string, limit: number, attempts: VkListingAttempt[]): Promise<VkSourceVideo[]> {
+  const candidateUrls = buildVkSourceCandidateUrls(sourceUrl);
+  const cookies = await getVkCookiesForPlaywright();
+  const cookiesEnabled = cookies.length > 0;
+
+  console.info("[VK_AUTO_SOURCE] playwright config", {
+    enabled: process.env.VK_LISTING_ENABLE_PLAYWRIGHT,
+    provider: process.env.VK_LISTING_PROVIDER,
+    headless: process.env.VK_LISTING_HEADLESS,
+    candidateCount: candidateUrls.length,
+    cookiesEnabled,
+  });
+
+  console.info("[VK_AUTO_SOURCE] playwright start", {
+    sourceUrl,
+    candidateCount: candidateUrls.length,
+    limit,
+  });
+
+  try {
+    const result = await listVkVideosWithPlaywright({ sourceUrl, candidateUrls, limit, cookies });
+    const foundCount = result.videos.length;
+
+    attempts.push({
+      provider: "playwright-browser",
+      url: sourceUrl,
+      foundCount,
+      error: result.debug.error,
+      debug: result.debug,
+    });
+
+    for (const candidate of result.debug.candidatesTried) {
+      attempts.push({
+        provider: "playwright-browser",
+        url: candidate.url,
+        status: candidate.status,
+        foundCount: candidate.foundCount,
+        error: candidate.error,
+      });
+    }
+
+    console.info("[VK_AUTO_SOURCE] playwright result", {
+      foundCount,
+      domMatches: result.debug.domMatches,
+      networkMatches: result.debug.networkMatches,
+      error: result.debug.error,
+    });
+
+    if (!foundCount && result.debug.error) throw new Error(result.debug.error);
+    return result.videos;
+  } catch (error) {
+    console.error("[VK_AUTO_SOURCE] playwright error", error);
+    throw error;
+  }
+}
+
+async function collectVkSourceVideos(input: { sourceUrl: string; limit: number }) {
   const sourceUrl = normalizeVkSourceUrl(input.sourceUrl);
   const limit = Math.max(1, Math.min(200, input.limit));
   const token = process.env.VK_SERVICE_TOKEN?.trim() || process.env.VK_ACCESS_TOKEN?.trim();
+  const attempts: VkListingAttempt[] = [];
   const errors: string[] = [];
   let videos: VkSourceVideo[] = [];
+
+  console.info("[VK_AUTO_SOURCE] start", { sourceUrl, limit, hasVkToken: Boolean(token), cookiesEnabled: await hasVkCookies() });
+
   if (token) {
-    try { videos = await getViaVkApi(sourceUrl, limit, token); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaVkApi(sourceUrl, limit, token);
+      attempts.push({ provider: "vk-api", url: sourceUrl, foundCount: videos.length });
+      console.info("[VK_AUTO_SOURCE] strategy vk-api", { sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "vk-api", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy vk-api failed", { sourceUrl, reason });
+    }
   }
+
   if (!videos.length) {
-    try { videos = await getPublicVkSourceVideos({ sourceUrl, limit }); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaPublicHtml(sourceUrl, limit, attempts);
+      console.info("[VK_AUTO_SOURCE] strategy public-html", { sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      console.warn("[VK_AUTO_SOURCE] strategy public-html failed", { sourceUrl, reason });
+    }
   }
+
   if (!videos.length && process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true") {
-    try { videos = await getViaYtDlp(sourceUrl, limit); } catch (error) { errors.push(humanizeVkAutoSourceError(error)); }
+    try {
+      videos = await getViaYtDlp(sourceUrl, limit);
+      attempts.push({ provider: "yt-dlp", url: sourceUrl, foundCount: videos.length });
+      console.info("[VK_AUTO_SOURCE] strategy yt-dlp", { sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "yt-dlp", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy yt-dlp failed", { sourceUrl, reason });
+    }
   }
+
+  console.info("[VK_AUTO_SOURCE] playwright enabled", {
+    enabled: process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true",
+    raw: process.env.VK_LISTING_ENABLE_PLAYWRIGHT,
+    currentFoundCount: videos.length,
+  });
+
+  if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() === "true") {
+    try {
+      videos = await getViaPlaywright(sourceUrl, limit, attempts);
+      console.info("[VK_AUTO_SOURCE] strategy playwright-browser", { sourceUrl, foundCount: videos.length });
+    } catch (error) {
+      const reason = humanizeVkAutoSourceError(error);
+      errors.push(reason);
+      attempts.push({ provider: "playwright-browser", url: sourceUrl, error: reason });
+      console.warn("[VK_AUTO_SOURCE] strategy playwright-browser failed", { sourceUrl, reason });
+    }
+  }
+
+  if (!videos.length && process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() !== "true") {
+    attempts.push({ provider: "playwright-browser", url: sourceUrl, foundCount: 0, error: "Playwright listing disabled" });
+  }
+
   const unique = new Map<string, VkSourceVideo>();
   for (const video of videos) {
     if (video.durationSec !== undefined && video.durationSec < 15) continue;
-    const normalizedVideoUrl = video.providerVideoId ? `https://vk.com/video${video.providerVideoId}` : video.videoUrl.split(/[?#]/)[0];
-    const key = video.providerVideoId || normalizedVideoUrl;
-    if (!unique.has(key)) unique.set(key, { ...video, videoUrl: normalizedVideoUrl });
+    const providerVideoId = video.providerVideoId || video.videoUrl.match(/video(-?\d+_\d+)/i)?.[1];
+    const normalizedVideoUrl = providerVideoId ? normalizeFoundVkVideoUrl(providerVideoId) : video.videoUrl.split(/[?#]/)[0];
+    const key = providerVideoId || normalizedVideoUrl;
+    if (!unique.has(key)) unique.set(key, { ...video, providerVideoId, videoUrl: normalizedVideoUrl });
   }
-  if (!unique.size) {
-    throw new Error("Не получилось получить список видео из VK-источника. Скачивание отдельных видео через vkvideodownload.com работает, но для группы нужен доступный публичный список видео.");
+
+  const result = Array.from(unique.values()).slice(0, limit);
+  console.info("[VK_AUTO_SOURCE] final", {
+    sourceUrl,
+    foundCount: result.length,
+    attempts,
+    errors,
+  });
+
+  return { sourceUrl, videos: result, attempts, errors };
+}
+
+export async function checkVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+  return collectVkSourceVideos(input);
+}
+
+export async function getVkSourceVideos(input: { sourceUrl: string; limit: number }) {
+  const result = await collectVkSourceVideos(input);
+
+  if (!result.videos.length) {
+    throw new Error(
+      "Не получилось получить список видео из VK-источника. Попробуй раздел видео https://vk.com/videos-123456789, канал https://vk.com/video/@groupname или плейлист https://vk.com/video/playlist/-123456789_1. Если VK скрывает список без авторизации, добавь VK cookies в Railway. Инструкция: /cookies_help.",
+    );
   }
-  return Array.from(unique.values()).slice(0, limit);
+
+  return result.videos;
 }
 
 export function humanizeVkAutoSourceError(error: unknown) {
@@ -156,6 +646,7 @@ export function humanizeVkAutoSourceError(error: unknown) {
   if (lower.includes("не получилось получить список видео из vk-источника")) return message;
   if (lower.includes("service_token") || lower.includes("access token")) return "VK_SERVICE_TOKEN не настроен или недействителен";
   if (lower.includes("yt-dlp")) return "yt-dlp не смог получить список";
+  if (lower.includes("playwright") || lower.includes("chromium")) return message.includes("Chromium") || message.includes("chromium") ? "Playwright listing включён, но Chromium не установлен. Нужно установить chromium через npx playwright install chromium." : message;
   if (lower.includes("ffmpeg")) return "ошибка ffmpeg";
   if (lower.includes("youtube") || lower.includes("r2") || lower.includes("720")) return humanizeFactoryError(error);
   if (lower.includes("http") || lower.includes("resolve") || lower.includes("не открывается")) return "VK источник не открывается";
@@ -252,7 +743,11 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
         const claimed = await prisma.factoryVkAutoSourceVideo.updateMany({ where: { id: video.id, status: "NEW", factoryJobId: null }, data: { status: "PROCESSING", pickedAt: new Date(), error: null } });
         if (!claimed.count) continue;
         const clipSeconds = Math.max(15, Math.min(60, video.durationSec || 60));
+<<<<<<< HEAD
         const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: video.title || "VK видео", clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
+=======
+        const job = await createVkMovieJob({ sourceUrl: video.videoUrl, movieTitle: buildAutoSourceMovieTitle({ videoTitle: video.title, sourceTitle: source.sourceTitle, sourceUrl: source.sourceUrl }), clipCount: 1, clipSeconds, scheduleMode: "NOW", scheduleStartHour: source.publishStartHour, scheduleEndHour: source.publishEndHour, scheduleIntervalMinutes: intervalMinutes || 60, timeZone: sourceTimezone, scheduledAt });
+>>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
         await prisma.factoryVkAutoSourceVideo.update({ where: { id: video.id }, data: { status: "QUEUED", factoryJobId: job.id } });
         created += 1;
       } catch (error) {
@@ -263,8 +758,31 @@ export async function runVkAutoSourceDaily(sourceId: string, options: { force?: 
 
     await prisma.factoryVkAutoSourceRun.update({ where: { id: run.id }, data: { status: created ? "JOBS_CREATED" : "DONE", foundCount, pickedCount: picked.length, createdJobCount: created, failedCount: failed, ...(created ? {} : { finishedAt: new Date() }) } });
     await prisma.factoryVkAutoSource.update({ where: { id: source.id }, data: { lastRunDate: today, lastRunAt: new Date(), nextRunAt: nextRunAt(today, sourceTimezone), lastError: null } });
+<<<<<<< HEAD
     await notifyVkAutoSourceRun(run.id, `✅ Найдено и взято в работу: ${created} видео.\nСоздано задач: ${created}.\nПубликация: ${source.publishStartHour}:00–${source.publishEndHour}:00.${failed ? `\nОшибок создания: ${failed}.` : ""}`);
     if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.\nИсточник: ${source.sourceTitle || source.sourceUrl}\nСоздано задач: 0\nОпубликовано: 0\nОшибок: ${failed}`);
+=======
+    const skipped = Math.max(0, fetched.length - foundCount);
+    await notifyVkAutoSourceRun(run.id, `✅ Автозабор запущен: ${source.sourceTitle || source.sourceUrl}
+
+Найдено новых видео: ${foundCount}.
+Создано задач обработки: ${created}.
+Уже обработанные видео пропущены: ${skipped}.
+
+Публикации появятся после рендера.
+План публикаций: ${source.publishStartHour}:00–${source.publishEndHour}.
+
+Проверить:
+/queue — очередь обработки
+/status — последние задачи${failed ? `
+
+Ошибок создания: ${failed}.` : ""}`);
+    if (!created) await notifyVkAutoSourceRun(run.id, `🏁 Автозабор завершён.
+Источник: ${source.sourceTitle || source.sourceUrl}
+Создано задач обработки: 0
+Опубликовано: 0
+Ошибок: ${failed}`);
+>>>>>>> ffda38c13fc565af37b0c9e48986d7703a2a34d7
     return run;
   } catch (error) {
     const reason = humanizeVkAutoSourceError(error);
@@ -301,6 +819,8 @@ async function queueReplacementVideo(input: {
     publishStartHour: number;
     publishEndHour: number;
     timezone: string;
+    sourceTitle?: string | null;
+    sourceUrl?: string | null;
   };
   run: {
     id: string;
@@ -330,7 +850,7 @@ async function queueReplacementVideo(input: {
   try {
     const job = await createVkMovieJob({
       sourceUrl: replacement.videoUrl,
-      movieTitle: replacement.title || "VK видео",
+      movieTitle: buildAutoSourceMovieTitle({ videoTitle: replacement.title, sourceTitle: input.source.sourceTitle, sourceUrl: input.source.sourceUrl }),
       clipCount: 1,
       clipSeconds: Math.max(15, Math.min(60, replacement.durationSec || 60)),
       scheduleMode: "NOW",
