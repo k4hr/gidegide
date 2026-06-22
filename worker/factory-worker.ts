@@ -21,13 +21,19 @@ import {
 } from "@/lib/factory/r2";
 import { buildClipDescription, buildClipTitle } from "@/lib/factory/games";
 import { withDbRetry } from "@/lib/factory/db-retry";
-import { buildMovieClipRedfilmDescription, generateMovieAiTitlePack } from "@/lib/factory/movie-ai-titles";
+import {
+  buildMovieClipRedfilmDescription,
+  generateMovieAiTitlePack,
+} from "@/lib/factory/movie-ai-titles";
 import {
   buildMovieSmartClipStarts,
   buildSequentialClipStarts,
   buildSmartClipStarts,
 } from "@/lib/factory/smart-cut";
-import { humanizeFactoryError, notifyTelegramJob } from "@/lib/factory/telegram";
+import {
+  humanizeFactoryError,
+  notifyTelegramJob,
+} from "@/lib/factory/telegram";
 import {
   processDueVkAutoSources,
   updateVkAutoSourceVideoFromJob,
@@ -38,11 +44,14 @@ function sleep(ms: number) {
 }
 
 type UploadScheduleConfig = {
-  type?: string;
+  type?: "WINDOW_INTERVAL" | "WINDOW_EVEN" | string;
   startHour: number;
   endHour: number;
   intervalMinutes: number;
   timeZone: string;
+  startAt?: string;
+  endAt?: string;
+  clipCount?: number;
 };
 
 function parseUploadSchedule(
@@ -56,19 +65,26 @@ function parseUploadSchedule(
     };
     const schedule = parsed.uploadSchedule;
 
-    if (!schedule || schedule.type !== "WINDOW_INTERVAL") {
+    if (
+      !schedule ||
+      !["WINDOW_INTERVAL", "WINDOW_EVEN"].includes(String(schedule.type))
+    ) {
       return null;
     }
 
     return {
-      type: "WINDOW_INTERVAL",
+      type: schedule.type,
       startHour: Math.max(0, Math.min(23, Number(schedule.startHour) || 14)),
       endHour: Math.max(1, Math.min(24, Number(schedule.endHour) || 23)),
       intervalMinutes: Math.max(
-        15,
+        1,
         Math.min(180, Number(schedule.intervalMinutes) || 60),
       ),
       timeZone: schedule.timeZone || "Europe/Moscow",
+      startAt:
+        typeof schedule.startAt === "string" ? schedule.startAt : undefined,
+      endAt: typeof schedule.endAt === "string" ? schedule.endAt : undefined,
+      clipCount: Math.max(1, Math.min(40, Number(schedule.clipCount) || 1)),
     };
   } catch {
     return null;
@@ -160,6 +176,26 @@ function getScheduledUploadAt(input: {
   now?: Date;
 }) {
   if (!input.schedule) return null;
+
+  if (
+    input.schedule.type === "WINDOW_EVEN" &&
+    input.schedule.startAt &&
+    input.schedule.endAt
+  ) {
+    const startAt = new Date(input.schedule.startAt);
+    const endAt = new Date(input.schedule.endAt);
+    if (
+      Number.isFinite(startAt.getTime()) &&
+      Number.isFinite(endAt.getTime())
+    ) {
+      const totalClips = Math.max(1, input.schedule.clipCount || 1);
+      const windowMs = Math.max(0, endAt.getTime() - startAt.getTime());
+      const stepMs = totalClips <= 1 ? 0 : Math.floor(windowMs / totalClips);
+      return new Date(
+        startAt.getTime() + stepMs * Math.max(0, input.clipIndex - 1),
+      );
+    }
+  }
 
   const now = input.now ?? new Date();
   const parts = getTimeZoneParts(now, input.schedule.timeZone);
@@ -548,6 +584,23 @@ async function processOneJob() {
 
     sourcePath = await ensureLocalSourceFile(job);
 
+    const refreshedJobMeta = await db(() =>
+      prisma.factoryJob.findUnique({
+        where: { id: job.id },
+        select: {
+          sourceOriginalName: true,
+          titlePrefix: true,
+          longVideoDescription: true,
+        },
+      }),
+    );
+    const effectiveSourceOriginalName =
+      refreshedJobMeta?.sourceOriginalName ?? job.sourceOriginalName;
+    const effectiveTitlePrefix =
+      refreshedJobMeta?.titlePrefix ?? job.titlePrefix;
+    const effectiveLongVideoDescription =
+      refreshedJobMeta?.longVideoDescription ?? job.longVideoDescription;
+
     await notifyTelegramJob(job.id, "⬇️ Исходник скачан");
 
     await assertNotCanceled(job.id);
@@ -573,12 +626,6 @@ async function processOneJob() {
         duration,
         clipSeconds: job.clipSeconds,
         maxClips,
-        windowSeconds: 600,
-        windowsPerMovie: 4,
-        windowStepSeconds: Math.max(30, job.smartStepSeconds || 60),
-        skipIntroSeconds: 240,
-        skipOutroSeconds: 240,
-        minGapBetweenWindowsSeconds: 600,
         onProgress: (progress, label) =>
           updateJobProgress(job.id, progress, label),
         isCanceled: () => isJobCanceled(job.id),
@@ -628,12 +675,13 @@ async function processOneJob() {
 
     const movieAiTitles = movieSmartJob
       ? await generateMovieAiTitlePack({
-          sourceTitle: job.sourceOriginalName ?? job.titlePrefix,
-          userDescription: job.longVideoDescription,
+          sourceTitle: effectiveSourceOriginalName ?? effectiveTitlePrefix,
+          userDescription: effectiveLongVideoDescription,
           totalClips: clipStarts.length,
           clipSeconds: job.clipSeconds,
           clipStarts,
-          onProgress: (progress, label) => updateJobProgress(job.id, progress, label),
+          onProgress: (progress, label) =>
+            updateJobProgress(job.id, progress, label),
         })
       : null;
 
@@ -662,8 +710,8 @@ async function processOneJob() {
         buildClipTitle({
           game: job.game,
           clipIndex,
-          customPrefix: job.titlePrefix,
-          sourceTitle: job.sourceOriginalName,
+          customPrefix: effectiveTitlePrefix,
+          sourceTitle: effectiveSourceOriginalName,
         });
 
       const clip = await db(() =>
@@ -681,7 +729,10 @@ async function processOneJob() {
       for (const target of targets) {
         await assertNotCanceled(job.id);
 
-        const titlePrefixForTarget = target.titlePrefix || job.titlePrefix;
+        const titlePrefixForTarget =
+          target.titlePrefix && !/^VK_RU:VK фильм/i.test(target.titlePrefix)
+            ? target.titlePrefix
+            : effectiveTitlePrefix;
 
         const title =
           movieAiTitles?.titles[i] ??
@@ -689,25 +740,31 @@ async function processOneJob() {
             game: job.game,
             clipIndex,
             customPrefix: titlePrefixForTarget,
-            sourceTitle: job.sourceOriginalName,
+            sourceTitle: effectiveSourceOriginalName,
           });
 
         const description = movieSmartJob
-          ? movieAiTitles?.descriptions[i] ??
+          ? (movieAiTitles?.descriptions[i] ??
             buildMovieClipRedfilmDescription({
-              movieTitle: movieAiTitles?.movieTitle ?? job.sourceOriginalName ?? "VK фильм",
+              movieTitle:
+                movieAiTitles?.movieTitle ??
+                effectiveSourceOriginalName ??
+                "VK фильм",
               movieYear: movieAiTitles?.movieYear ?? null,
-              movieDescription: movieAiTitles?.movieDescription ?? job.longVideoDescription ?? job.sourceOriginalName,
+              movieDescription:
+                movieAiTitles?.movieDescription ??
+                effectiveLongVideoDescription ??
+                effectiveSourceOriginalName,
               clipTitle: title,
               clipIndex,
-              sourceTitle: job.sourceOriginalName,
-            })
-          : job.longVideoDescription?.trim() ||
+              sourceTitle: effectiveSourceOriginalName,
+            }))
+          : effectiveLongVideoDescription?.trim() ||
             buildClipDescription({
               game: job.game,
               customPrefix: titlePrefixForTarget,
               title,
-              sourceTitle: job.sourceOriginalName,
+              sourceTitle: effectiveSourceOriginalName,
             });
 
         const renderProgress =
@@ -727,6 +784,8 @@ async function processOneJob() {
               startSec,
               clipSeconds: job.clipSeconds,
               isCanceled: () => isJobCanceled(job.id),
+              onProgress: (progress, label) =>
+                updateJobProgress(job.id, progress, label),
             })
           : await renderFactoryClip({
               jobId: job.id,
@@ -737,9 +796,14 @@ async function processOneJob() {
               clipSeconds: job.clipSeconds,
               template: getTargetTemplate(target),
               isCanceled: () => isJobCanceled(job.id),
+              onProgress: (progress, label) =>
+                updateJobProgress(job.id, progress, label),
             });
 
-        await notifyTelegramJob(job.id, `🎬 Рендер: ${clipIndex}/${clipStarts.length}`);
+        await notifyTelegramJob(
+          job.id,
+          `🎬 Рендер: ${clipIndex}/${clipStarts.length}`,
+        );
 
         try {
           await assertNotCanceled(job.id);
@@ -836,7 +900,9 @@ async function processOneJob() {
               await updateVkAutoSourceVideoFromJob(job.id, {
                 status: "PUBLISHED",
                 url: result.url,
-              }).catch((error) => console.error("VK auto-source publish update failed:", error));
+              }).catch((error) =>
+                console.error("VK auto-source publish update failed:", error),
+              );
             } catch (error) {
               await safeDb(() =>
                 prisma.factoryPublish.update({
@@ -859,7 +925,12 @@ async function processOneJob() {
               await updateVkAutoSourceVideoFromJob(job.id, {
                 status: "FAILED",
                 error,
-              }).catch((updateError) => console.error("VK auto-source failure update failed:", updateError));
+              }).catch((updateError) =>
+                console.error(
+                  "VK auto-source failure update failed:",
+                  updateError,
+                ),
+              );
             }
           }
 
@@ -960,14 +1031,21 @@ async function processOneJob() {
       await updateVkAutoSourceVideoFromJob(job.id, {
         status: "FAILED",
         error: new Error("Задача отменена"),
-      }).catch((updateError) => console.error("VK auto-source cancel update failed:", updateError));
+      }).catch((updateError) =>
+        console.error("VK auto-source cancel update failed:", updateError),
+      );
     } else {
       await markJobFailed(job.id, error);
-      await notifyTelegramJob(job.id, `❌ Ошибка: ${humanizeFactoryError(error)}`);
+      await notifyTelegramJob(
+        job.id,
+        `❌ Ошибка: ${humanizeFactoryError(error)}`,
+      );
       await updateVkAutoSourceVideoFromJob(job.id, {
         status: "FAILED",
         error,
-      }).catch((updateError) => console.error("VK auto-source failure update failed:", updateError));
+      }).catch((updateError) =>
+        console.error("VK auto-source failure update failed:", updateError),
+      );
     }
 
     if (sourcePath) {

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, rm } from "node:fs/promises";
 import { nanoid } from "nanoid";
 
 import {
@@ -8,9 +8,21 @@ import {
   FACTORY_TEMP_DIR,
   ensureFactoryDirs,
 } from "@/lib/factory/paths";
-import { downloadViaRipYoutube, isYoutubeUrl } from "@/lib/factory/rip-downloader";
+import {
+  downloadViaRipYoutube,
+  isYoutubeUrl,
+} from "@/lib/factory/rip-downloader";
 import { downloadViaVkVideo, isVkVideoUrl } from "@/lib/factory/vk-downloader";
+import { MOVIE_SMART_CONFIG } from "@/lib/factory/movie-smart-config";
+import {
+  areMovieSubtitlesEnabled,
+  burnMovieSubtitles,
+} from "@/lib/factory/movie-subtitles";
 import { getVideoDurationSeconds, runCommand } from "@/lib/factory/video";
+import {
+  applyGlobalOverlayToVideo,
+  isGlobalOverlayEnabled,
+} from "@/lib/factory/video-overlay";
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
@@ -20,14 +32,18 @@ export type FactoryRenderTemplate = {
 };
 
 function buildCenteredMovieFilter() {
+  const scale = MOVIE_SMART_CONFIG.movieMainScale;
+  const blurFilter = MOVIE_SMART_CONFIG.movieBackgroundBlur
+    ? "gblur=sigma=32,"
+    : "";
+
   return [
     "[0:v]split=2[bgsrc][fgsrc]",
-    "[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,gblur=sigma=32,eq=brightness=-0.07:saturation=0.85,setsar=1[bg]",
-    "[fgsrc]scale='trunc(min(1080/iw\\,1920/ih)*iw*1.30/2)*2':'trunc(min(1080/iw\\,1920/ih)*ih*1.30/2)*2',crop='trunc(min(iw\\,1080)/2)*2':'trunc(min(ih\\,1920)/2)*2',setsar=1[fg]",
+    `[bgsrc]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,${blurFilter}eq=brightness=-0.07:saturation=0.85,setsar=1[bg]`,
+    `[fgsrc]scale='trunc(min(1080/iw\\,1920/ih)*iw*${scale.toFixed(2)}/2)*2':'trunc(min(1080/iw\\,1920/ih)*ih*${scale.toFixed(2)}/2)*2',crop='trunc(min(iw\\,1080)/2)*2':'trunc(min(ih\\,1920)/2)*2',setsar=1[fg]`,
     "[bg][fg]overlay=(W-w)/2:(H-h)/2,format=yuv420p[v]",
   ].join(";");
 }
-
 
 function buildRenderFilter(template: FactoryRenderTemplate) {
   const personFilters = [
@@ -163,8 +179,10 @@ export async function downloadSourceFromUrl(input: {
       return await downloadViaVkVideo(input);
     } catch (error) {
       console.error("VK downloader failed", error);
+      const reason =
+        error instanceof Error ? error.message : "неизвестная ошибка";
       throw new Error(
-        "Не получилось скачать это VK-видео со звуком. Выбери другое видео или загрузи MP4 вручную.",
+        `Не получилось скачать это VK-видео со звуком: ${reason}`,
       );
     }
   }
@@ -200,6 +218,7 @@ type RenderFactoryClipInput = {
   clipSeconds: number;
   template: FactoryRenderTemplate;
   isCanceled?: CancelCheck;
+  onProgress?: ProgressCallback;
 };
 
 export async function renderFactoryClip(input: RenderFactoryClipInput) {
@@ -212,6 +231,12 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
     FACTORY_OUTPUT_DIR,
     `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
   );
+  const baseOutputPath = isGlobalOverlayEnabled()
+    ? path.join(
+        tempDir,
+        `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.base.mp4`,
+      )
+    : outputPath;
 
   await mkdir(tempDir, { recursive: true });
 
@@ -259,7 +284,7 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
         "-ac",
         "2",
         "-shortest",
-        outputPath,
+        baseOutputPath,
       ],
       {
         logPrefix: `ffmpeg-${input.clipIndex}`,
@@ -267,13 +292,28 @@ export async function renderFactoryClip(input: RenderFactoryClipInput) {
       },
     );
 
+    if (baseOutputPath !== outputPath) {
+      const applied = await applyGlobalOverlayToVideo({
+        inputPath: baseOutputPath,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (!applied) {
+        await copyFile(baseOutputPath, outputPath);
+      }
+    }
+
     return outputPath;
   } finally {
     await rm(tempDir, { recursive: true, force: true });
   }
 }
 
-export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput, "lanaPath" | "template">) {
+export async function renderCenteredMovieClip(
+  input: Omit<RenderFactoryClipInput, "lanaPath" | "template">,
+) {
   await ensureFactoryDirs();
 
   const tempId = `${input.jobId}-${input.clipIndex}-movie-${nanoid(8)}`;
@@ -283,10 +323,21 @@ export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput
     FACTORY_OUTPUT_DIR,
     `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
   );
+  const needsSubtitles = areMovieSubtitlesEnabled();
+  const needsOverlay = isGlobalOverlayEnabled();
+  const rawOutputPath =
+    needsSubtitles || needsOverlay
+      ? path.join(
+          tempDir,
+          `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.movie.raw.mp4`,
+        )
+      : outputPath;
 
   await mkdir(tempDir, { recursive: true });
 
   try {
+    await input.onProgress?.(56, "Увеличиваю кадр фильма");
+
     await runCommand(
       "ffmpeg",
       [
@@ -320,13 +371,49 @@ export async function renderCenteredMovieClip(input: Omit<RenderFactoryClipInput
         "-ac",
         "2",
         "-shortest",
-        outputPath,
+        rawOutputPath,
       ],
       {
         logPrefix: `ffmpeg-movie-${input.clipIndex}`,
         isCanceled: input.isCanceled,
       },
     );
+
+    let currentPath = rawOutputPath;
+
+    if (needsSubtitles) {
+      const subtitledPath = needsOverlay
+        ? path.join(
+            tempDir,
+            `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.movie.subtitled.mp4`,
+          )
+        : outputPath;
+      const subtitlesApplied = await burnMovieSubtitles({
+        inputPath: currentPath,
+        outputPath: subtitledPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (subtitlesApplied) {
+        currentPath = subtitledPath;
+      }
+    }
+
+    if (needsOverlay) {
+      const overlayApplied = await applyGlobalOverlayToVideo({
+        inputPath: currentPath,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (!overlayApplied) {
+        await copyFile(currentPath, outputPath);
+      }
+    } else if (currentPath !== outputPath) {
+      await copyFile(currentPath, outputPath);
+    }
 
     return outputPath;
   } finally {

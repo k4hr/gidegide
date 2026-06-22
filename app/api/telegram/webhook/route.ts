@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { cancelFactoryJob } from "@/lib/factory/cancel-job";
@@ -21,6 +22,7 @@ import {
   answerCallbackQuery,
   editTelegramMessage,
   extractVkVideoUrl,
+  extractVkVideoUrls,
   humanizeFactoryError,
   sendTelegramMessage,
   upsertTelegramChat,
@@ -29,6 +31,10 @@ import {
 import { getVkCookiesStatus } from "@/lib/factory/vk-cookies";
 
 export const runtime = "nodejs";
+
+function toPrismaJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
+}
 
 type TelegramUser = { username?: string; first_name?: string };
 type TelegramUpdate = {
@@ -40,9 +46,6 @@ type TelegramUpdate = {
     message?: { message_id: number; chat: { id: number } };
   };
 };
-
-type JobSettings = { clips: number; seconds: number; interval: number; start: number; end: number };
-const DEFAULT_SETTINGS: JobSettings = { clips: 10, seconds: 60, interval: 60, start: 14, end: 23 };
 
 function configuredSecretIsValid(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
@@ -77,7 +80,10 @@ function mainMenuText() {
 Пример:
 https://vk.com/video-123456_789
 
-2) Отправь ссылку на VK-группу или VK Video канал — я добавлю ежедневный автозабор.
+2) Отправь сразу несколько отдельных VK-видео ссылок — я соберу пакет на несколько дней.
+Пример: 10 ссылок = 10 дней, каждый фильм публикуется в своё окно.
+
+3) Отправь ссылку на VK-группу или VK Video канал — я добавлю ежедневный автозабор.
 Лучшие форматы:
 https://vkvideo.ru/@kinobro
 https://vk.com/video/@kinobro
@@ -85,19 +91,16 @@ https://vk.com/videos-123456789
 https://vk.com/video/playlist/-220018529_16
 https://vk.ru/video/playlist/-220018529_16
 
-Автозабор:
-• каждый день до 10 новых видео
-• публикация с 15:00 до 23:00 МСК
-• скачивание роликов через vkvideodownload.com
-
 Команды:
 /menu — главное меню
+/pack — собрать пакет ссылок на дни
+/done — закончить сбор пакета
 /sources — мои источники
 /status — задачи
 /queue — очередь обработки и публикаций
 /run_today — запустить автозабор сейчас
 /help — помощь
-/cookies_help — как подключить VK cookies, если источник не читается
+/cookies_help — как подключить VK cookies
 /cookies_status — статус cookies и browser listing`;
 }
 
@@ -114,13 +117,12 @@ function mainMenuKeyboard(): TelegramReplyMarkup {
         { text: "🗓 Очередь", callback_data: "tg:menu:queue" },
       ],
       [
-        { text: "🔐 VK cookies", callback_data: "tg:menu:cookies_help" },
+        { text: "📦 Пакет ссылок", callback_data: "tg:menu:pack" },
         ...(factoryUrl ? [{ text: "Открыть завод", url: factoryUrl }] : [{ text: "ℹ️ Помощь", callback_data: "tg:menu:help" }]),
       ],
     ],
   };
 }
-
 
 function cookiesHelpText() {
   return `🔐 Как дать боту доступ к списку VK-видео без логина и пароля
@@ -147,8 +149,7 @@ VK_COOKIES_B64_3=третья часть
 Важно:
 — не отправляй cookies в Telegram;
 — не публикуй cookies в GitHub;
-— cookies дают доступ к аккаунту, храни их как секрет;
-— если вышел из VK или сменил пароль, cookies могут устареть.`;
+— cookies дают доступ к аккаунту, храни их как секрет.`;
 }
 
 async function cookiesStatusText() {
@@ -164,22 +165,186 @@ Playwright listing: ${process.env.VK_LISTING_ENABLE_PLAYWRIGHT?.toLowerCase() ==
 yt-dlp listing fallback: ${process.env.VK_DOWNLOAD_ALLOW_YTDLP_FALLBACK?.toLowerCase() === "true" ? "ON" : "OFF"}`;
 }
 
+type JobSettings = {
+  clips: number;
+  seconds: number;
+  interval?: number;
+  startMode: "NOW" | "TIME";
+  startHour: number;
+  startMinute: number;
+  endHour: number;
+  endMinute: number;
+  firstDay: "TODAY" | "TOMORROW";
+  urls?: string[];
+  batchId?: string;
+};
+
+const TELEGRAM_TIME_ZONE = "Europe/Moscow";
+const DEFAULT_SETTINGS: JobSettings = {
+  clips: 10,
+  seconds: 60,
+  interval: 60,
+  startMode: "NOW",
+  startHour: 18,
+  startMinute: 0,
+  endHour: 23,
+  endMinute: 0,
+  firstDay: "TODAY",
+};
+
 function parseSettings(value: unknown): JobSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return { ...DEFAULT_SETTINGS };
-  const input = value as Partial<JobSettings>;
+  const input = value as Partial<JobSettings> & { start?: number; end?: number; urls?: unknown };
+  const startMode = input.startMode === "TIME" ? "TIME" : "NOW";
+  const endHour = [21, 22, 23, 24].includes(Number(input.endHour ?? input.end)) ? Number(input.endHour ?? input.end) : 23;
+  const startHour = [14, 16, 18, 20, 21, 22].includes(Number(input.startHour ?? input.start)) ? Number(input.startHour ?? input.start) : 18;
+  const urls = Array.isArray(input.urls)
+    ? input.urls.map((url) => String(url)).filter(Boolean).slice(0, 30)
+    : undefined;
+
   return {
     clips: [5, 10, 20].includes(Number(input.clips)) ? Number(input.clips) : 10,
     seconds: [30, 60].includes(Number(input.seconds)) ? Number(input.seconds) : 60,
     interval: [15, 30, 60].includes(Number(input.interval)) ? Number(input.interval) : 60,
-    start: Number(input.start) === 18 ? 18 : 14,
-    end: 23,
+    startMode,
+    startHour,
+    startMinute: 0,
+    endHour,
+    endMinute: 0,
+    firstDay: input.firstDay === "TOMORROW" ? "TOMORROW" : "TODAY",
+    ...(urls ? { urls } : {}),
+    ...(typeof input.batchId === "string" ? { batchId: input.batchId } : {}),
   };
+}
+
+function timeZoneParts(date: Date, timeZone: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, Number(part.value)]),
+  ) as Record<string, number>;
+
+  return {
+    year: parts.year,
+    month: parts.month ?? 1,
+    day: parts.day ?? 1,
+    hour: parts.hour === 24 ? 0 : (parts.hour ?? 0),
+    minute: parts.minute ?? 0,
+    second: parts.second ?? 0,
+  };
+}
+
+function makeDateInTimeZone(input: {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second?: number;
+  timeZone: string;
+}) {
+  const utcGuess = new Date(Date.UTC(input.year, input.month - 1, input.day, input.hour, input.minute, input.second ?? 0));
+  const represented = timeZoneParts(utcGuess, input.timeZone);
+  const representedAsUtc = Date.UTC(represented.year, represented.month - 1, represented.day, represented.hour, represented.minute, represented.second);
+  return new Date(utcGuess.getTime() - (representedAsUtc - utcGuess.getTime()));
+}
+
+function addDaysToLocalParts(parts: { year: number; month: number; day: number }, days: number) {
+  const date = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days, 12, 0, 0));
+  return { year: date.getUTCFullYear(), month: date.getUTCMonth() + 1, day: date.getUTCDate() };
+}
+
+function getPublishWindow(settings: JobSettings, dayOffset = 0, now = new Date()) {
+  const nowParts = timeZoneParts(now, TELEGRAM_TIME_ZONE);
+  const localDay = addDaysToLocalParts(nowParts, dayOffset + (settings.firstDay === "TOMORROW" ? 1 : 0));
+  const nowMinutes = nowParts.hour * 60 + nowParts.minute;
+  let startAt: Date;
+
+  if (settings.startMode === "NOW" && dayOffset === 0 && settings.firstDay !== "TOMORROW") {
+    startAt = now;
+  } else if (settings.startMode === "NOW") {
+    startAt = makeDateInTimeZone({
+      ...localDay,
+      hour: nowParts.hour,
+      minute: nowParts.minute,
+      timeZone: TELEGRAM_TIME_ZONE,
+    });
+  } else {
+    const configured = makeDateInTimeZone({
+      ...localDay,
+      hour: settings.startHour,
+      minute: settings.startMinute,
+      timeZone: TELEGRAM_TIME_ZONE,
+    });
+    startAt = dayOffset === 0 && settings.firstDay !== "TOMORROW" && configured.getTime() <= now.getTime() && nowMinutes < settings.endHour * 60
+      ? now
+      : configured;
+  }
+
+  let endDay = localDay;
+  let endHour = settings.endHour;
+  if (endHour >= 24) {
+    endHour = 0;
+    endDay = addDaysToLocalParts(localDay, 1);
+  }
+  let endAt = makeDateInTimeZone({
+    ...endDay,
+    hour: endHour,
+    minute: settings.endMinute,
+    timeZone: TELEGRAM_TIME_ZONE,
+  });
+  if (endAt.getTime() <= startAt.getTime()) {
+    const nextDay = addDaysToLocalParts(timeZoneParts(endAt, TELEGRAM_TIME_ZONE), 1);
+    endAt = makeDateInTimeZone({
+      ...nextDay,
+      hour: endHour,
+      minute: settings.endMinute,
+      timeZone: TELEGRAM_TIME_ZONE,
+    });
+  }
+
+  const intervalMinutes = Math.max(1, Math.floor((endAt.getTime() - startAt.getTime()) / Math.max(1, settings.clips) / 60000));
+  return { startAt, endAt, intervalMinutes };
+}
+
+function formatTimeMsk(date: Date) {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: TELEGRAM_TIME_ZONE, hour: "2-digit", minute: "2-digit" }).format(date);
+}
+
+function formatDateTimeMsk(date: Date) {
+  return new Intl.DateTimeFormat("ru-RU", { timeZone: TELEGRAM_TIME_ZONE, dateStyle: "short", timeStyle: "short" }).format(date);
+}
+
+function formatEndHour(settings: JobSettings) {
+  return settings.endHour === 24 ? "00:00" : `${String(settings.endHour).padStart(2, "0")}:00`;
+}
+
+function startLabel(settings: JobSettings) {
+  return settings.startMode === "NOW" ? "сейчас" : `${String(settings.startHour).padStart(2, "0")}:00`;
+}
+
+function isBatchJobSource(sourceUrl: string) {
+  return sourceUrl.startsWith("telegram-batch:");
+}
+
+function getBatchUrls(settings: JobSettings) {
+  return Array.isArray(settings.urls) ? settings.urls.filter(Boolean) : [];
 }
 
 function previewKeyboard(id: string): TelegramReplyMarkup {
   return {
     inline_keyboard: [
-      [{ text: "🚀 10 видео с 14:00 до 23:00", callback_data: `tg:auto:${id}` }],
+      [{ text: "🚀 Запустить", callback_data: `tg:auto:${id}` }],
       [{ text: "⚙️ Настроить", callback_data: `tg:settings:${id}` }],
       [{ text: "👀 Только проверить", callback_data: `tg:check:${id}` }],
       [{ text: "❌ Отмена", callback_data: `tg:cancel:${id}` }],
@@ -266,24 +431,59 @@ async function showSources(chatDbId: string, telegramChatId: string, runButtons 
   };
 }
 
-function settingsKeyboard(id: string): TelegramReplyMarkup {
+function settingsKeyboard(id: string, isBatch = false): TelegramReplyMarkup {
   return {
     inline_keyboard: [
       [5, 10, 20].map((n) => ({ text: String(n), callback_data: `tg:set:${id}:clips:${n}` })),
       [30, 60].map((n) => ({ text: `${n} сек`, callback_data: `tg:set:${id}:seconds:${n}` })),
-      [15, 30, 60].map((n) => ({ text: n === 60 ? "1 час" : `${n} мин`, callback_data: `tg:set:${id}:interval:${n}` })),
       [
-        { text: "14–23", callback_data: `tg:set:${id}:window:14` },
-        { text: "18–23", callback_data: `tg:set:${id}:window:18` },
+        { text: "сейчас", callback_data: `tg:set:${id}:start:now` },
+        { text: "14:00", callback_data: `tg:set:${id}:start:14` },
+        { text: "18:00", callback_data: `tg:set:${id}:start:18` },
+        { text: "20:00", callback_data: `tg:set:${id}:start:20` },
       ],
-      [{ text: "🚀 Запустить", callback_data: `tg:auto:${id}` }],
+      [
+        { text: "до 21", callback_data: `tg:set:${id}:end:21` },
+        { text: "до 22", callback_data: `tg:set:${id}:end:22` },
+        { text: "до 23", callback_data: `tg:set:${id}:end:23` },
+        { text: "до 00", callback_data: `tg:set:${id}:end:24` },
+      ],
+      ...(isBatch
+        ? [[
+            { text: "сегодня", callback_data: `tg:set:${id}:firstday:today` },
+            { text: "завтра", callback_data: `tg:set:${id}:firstday:tomorrow` },
+          ]]
+        : []),
+      [{ text: isBatch ? "🚀 Создать пакет" : "🚀 Запустить", callback_data: `tg:auto:${id}` }],
       [{ text: "❌ Отмена", callback_data: `tg:cancel:${id}` }],
     ],
   };
 }
 
-function settingsText(settings: JobSettings) {
-  return `⚙️ Настройки задачи\n\nСколько роликов? ${settings.clips}\nДлина? ${settings.seconds} сек\nИнтервал? ${settings.interval} мин\nОкно? ${settings.start}:00–${settings.end}:00`;
+function settingsText(settings: JobSettings, urlsCount = 1) {
+  const publishWindow = getPublishWindow(settings);
+  const totalPublications = urlsCount * settings.clips;
+  const warning = publishWindow.intervalMinutes < 15
+    ? `\n\n⚠️ Интервал ~${publishWindow.intervalMinutes} мин. Это часто. Лучше расширить окно или уменьшить количество роликов.`
+    : "";
+
+  if (urlsCount > 1) {
+    const first = getPublishWindow(settings, 0);
+    const last = getPublishWindow(settings, urlsCount - 1);
+    return `⚙️ Настройки пакета\n\nСсылок: ${urlsCount}\nРоликов с каждого фильма: ${settings.clips}\nВсего публикаций: ${totalPublications}\nДлина: ${settings.seconds} сек\nПервый день: ${settings.firstDay === "TOMORROW" ? "завтра" : "сегодня"}\nСтарт: ${startLabel(settings)}\nДо: ${formatEndHour(settings)}\nРаспределение: равномерно внутри окна\nИнтервал внутри дня: ~${first.intervalMinutes} мин\nПериод: ${formatDateTimeMsk(first.startAt)} — ${formatDateTimeMsk(last.endAt)}${warning}`;
+  }
+
+  return `⚙️ Настройки задачи\n\nСколько роликов? ${settings.clips}\nДлина? ${settings.seconds} сек\nСтарт? ${startLabel(settings)}\nДо? ${formatEndHour(settings)}\nРаспределение? равномерно\nПубликации: ${formatTimeMsk(publishWindow.startAt)}–${formatTimeMsk(publishWindow.endAt)}\nИнтервал: ~${publishWindow.intervalMinutes} мин${warning}`;
+}
+
+function batchDraftKeyboard(id: string): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [{ text: "⚙️ Настроить пакет", callback_data: `tg:settings:${id}` }],
+      [{ text: "🚀 Создать пакет", callback_data: `tg:auto:${id}` }],
+      [{ text: "❌ Отмена", callback_data: `tg:cancel:${id}` }],
+    ],
+  };
 }
 
 function formatFactoryJobStatus(status?: string | null) {
@@ -676,6 +876,113 @@ ${reason}`;
   }
 }
 
+
+async function getOpenBatchDraft(chatDbId: string) {
+  return prisma.factoryTelegramJob.findFirst({
+    where: { chatId: chatDbId, status: "BATCH_DRAFT", sourceUrl: { startsWith: "telegram-batch:" } },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+async function createBatchDraft(chatDbId: string, urls: string[] = []) {
+  const batchId = crypto.randomUUID();
+  return prisma.factoryTelegramJob.create({
+    data: {
+      chatId: chatDbId,
+      sourceUrl: `telegram-batch:${batchId}`,
+      status: "BATCH_DRAFT",
+      settings: toPrismaJson({ ...DEFAULT_SETTINGS, startMode: "TIME", startHour: 18, endHour: 23, batchId, urls }),
+    },
+  });
+}
+
+async function showBatchDraft(chatId: string, draft: { id: string; settings: unknown }, editMessageId?: number) {
+  const settings = parseSettings(draft.settings);
+  const urls = getBatchUrls(settings);
+  const text = urls.length
+    ? `${settingsText(settings, urls.length)}\n\nКаждая ссылка = отдельный день. Первый фильм — первый день, второй — следующий день.`
+    : `📦 Режим пакета включён.\n\nОтправляй VK/VKVideo ссылки одним сообщением или несколькими сообщениями подряд.\nКогда закончишь — нажми «Настроить пакет» или «Создать пакет».`;
+  if (editMessageId) return editTelegramMessage(chatId, editMessageId, text, batchDraftKeyboard(draft.id));
+  const sent = await sendTelegramMessage(chatId, text, batchDraftKeyboard(draft.id));
+  await prisma.factoryTelegramJob.update({ where: { id: draft.id }, data: { telegramMessageId: String(sent.message_id) } });
+  return sent;
+}
+
+function buildMovieTitleFromUrl(url: string, index: number) {
+  try {
+    const parsed = new URL(url);
+    const id = parsed.pathname.match(/video-?\d+_\d+/i)?.[0] || parsed.pathname.split("/").filter(Boolean).pop();
+    return `VK фильм ${index}${id ? ` · ${id}` : ""}`.slice(0, 90);
+  } catch {
+    return `VK фильм ${index}`;
+  }
+}
+
+async function createMovieJobForTelegram(input: {
+  chatDbId: string;
+  sourceUrl: string;
+  settings: JobSettings;
+  dayOffset?: number;
+  movieTitle?: string;
+  scheduledAtMode?: "NOW" | "WINDOW_START";
+}) {
+  const publishWindow = getPublishWindow(input.settings, input.dayOffset || 0);
+  const job = await createVkMovieJob({
+    sourceUrl: input.sourceUrl,
+    movieTitle: input.movieTitle,
+    clipCount: input.settings.clips,
+    clipSeconds: input.settings.seconds,
+    scheduleMode: "WINDOW",
+    scheduleStartHour: timeZoneParts(publishWindow.startAt, TELEGRAM_TIME_ZONE).hour,
+    scheduleEndHour: input.settings.endHour,
+    scheduleIntervalMinutes: publishWindow.intervalMinutes,
+    scheduleStartAt: publishWindow.startAt,
+    scheduleEndAt: publishWindow.endAt,
+    scheduleDistribution: "EVEN",
+    telegramChatId: input.chatDbId,
+    scheduledAt: input.scheduledAtMode === "WINDOW_START" ? publishWindow.startAt : null,
+  });
+  return { job, window: publishWindow };
+}
+
+async function createBatchJobs(input: {
+  chatDbId: string;
+  telegramChatId: string;
+  draftId: string;
+  settings: JobSettings;
+}) {
+  const urls = getBatchUrls(input.settings);
+  if (!urls.length) throw new Error("В пакете нет VK-видео ссылок");
+  const created: Array<{ id: string; sourceUrl: string; startAt: Date; endAt: Date }> = [];
+
+  for (const [index, url] of urls.entries()) {
+    const plannedWindow = getPublishWindow(input.settings, index);
+    const { job, window: publishWindow } = await createMovieJobForTelegram({
+      chatDbId: input.chatDbId,
+      sourceUrl: url,
+      settings: input.settings,
+      dayOffset: index,
+      movieTitle: buildMovieTitleFromUrl(url, index + 1),
+      scheduledAtMode: index === 0 && plannedWindow.startAt.getTime() <= Date.now() ? "NOW" : "WINDOW_START",
+    });
+    const childSettings = { ...input.settings, batchParentId: input.draftId, batchDayIndex: index + 1 } as Record<string, unknown>;
+    delete childSettings.urls;
+    await prisma.factoryTelegramJob.create({
+      data: {
+        chatId: input.chatDbId,
+        sourceUrl: url,
+        status: "QUEUED",
+        factoryJobId: job.id,
+        settings: toPrismaJson(childSettings),
+      },
+    });
+    created.push({ id: job.id, sourceUrl: url, startAt: publishWindow.startAt, endAt: publishWindow.endAt });
+  }
+
+  await prisma.factoryTelegramJob.update({ where: { id: input.draftId }, data: { status: "BATCH_CREATED", lastStatusText: `Создано задач: ${created.length}` } });
+  return created;
+}
+
 async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   const chatId = String(message.chat.id);
   const chat = await upsertTelegramChat({ chatId, user: message.from });
@@ -690,6 +997,16 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   if (command === "/status") return showStatus(chat.id, chatId);
   if (command === "/queue") return showQueue(chat.id, chatId);
   if (command === "/sources" || command === "/source_status") return showSources(chat.id, chatId);
+  if (command === "/pack" || command === "/batch") {
+    const existing = await getOpenBatchDraft(chat.id);
+    const draft = existing || await createBatchDraft(chat.id);
+    return showBatchDraft(chatId, draft);
+  }
+  if (command === "/done") {
+    const draft = await getOpenBatchDraft(chat.id);
+    if (!draft) return sendTelegramMessage(chatId, "Нет открытого пакета. Начни с /pack или отправь несколько VK-видео ссылок одним сообщением.");
+    return showBatchDraft(chatId, draft);
+  }
   if (command === "/run_today") {
     const sources = await prisma.factoryVkAutoSource.findMany({ where: { chatId: chat.id, isEnabled: true }, orderBy: { createdAt: "asc" } });
     if (!sources.length) return sendTelegramMessage(chatId, "Нет включённых источников. Открой /sources или пришли ссылку на VK Video канал.");
@@ -703,6 +1020,20 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
   if (command === "/resume_sources") {
     const result = await prisma.factoryVkAutoSource.updateMany({ where: { chatId: chat.id }, data: { isEnabled: true } });
     return sendTelegramMessage(chatId, `▶️ Источники включены: ${result.count}.`);
+  }
+
+  const videoUrls = extractVkVideoUrls(text);
+  const openDraft = await getOpenBatchDraft(chat.id);
+  if (openDraft && videoUrls.length) {
+    const settings = parseSettings(openDraft.settings);
+    const merged = Array.from(new Set([...(settings.urls || []), ...videoUrls])).slice(0, 30);
+    const updated = await prisma.factoryTelegramJob.update({ where: { id: openDraft.id }, data: { settings: toPrismaJson({ ...settings, urls: merged }) } });
+    return showBatchDraft(chatId, updated, Number(openDraft.telegramMessageId) || undefined);
+  }
+
+  if (videoUrls.length > 1) {
+    const draft = await createBatchDraft(chat.id, videoUrls);
+    return showBatchDraft(chatId, draft);
   }
 
   if (isVkGroupOrVideoSourceUrl(text)) {
@@ -755,8 +1086,13 @@ async function handleMessage(message: NonNullable<TelegramUpdate["message"]>) {
     }
     return sendTelegramMessage(chatId, "Не вижу VK/VKVideo ссылки. Пришли полную ссылку, начинающуюся с https://, или открой /menu.");
   }
-  const telegramJob = await prisma.factoryTelegramJob.create({ data: { chatId: chat.id, sourceUrl, settings: DEFAULT_SETTINGS } });
-  const sent = await sendTelegramMessage(chatId, "🎬 Видео получено.\nСкачивание будет через vkvideodownload.com.\n\nЧто делаем?", previewKeyboard(telegramJob.id));
+  const telegramJob = await prisma.factoryTelegramJob.create({ data: { chatId: chat.id, sourceUrl, settings: toPrismaJson(DEFAULT_SETTINGS) } });
+  const sent = await sendTelegramMessage(chatId, `🎬 Видео получено.
+Скачивание будет через vkvideodownload.com.
+
+${settingsText(DEFAULT_SETTINGS)}
+
+Что делаем?`, previewKeyboard(telegramJob.id));
   await prisma.factoryTelegramJob.update({ where: { id: telegramJob.id }, data: { telegramMessageId: String(sent.message_id) } });
 }
 
@@ -780,6 +1116,11 @@ async function handleCallback(query: NonNullable<TelegramUpdate["callback_query"
     if (action === "status") return showStatus(chat.id, chatId);
     if (action === "queue") return showQueue(chat.id, chatId);
     if (action === "cookies_help") return sendTelegramMessage(chatId, cookiesHelpText());
+    if (action === "pack") {
+      const existing = await getOpenBatchDraft(chat.id);
+      const draft = existing || await createBatchDraft(chat.id);
+      return showBatchDraft(chatId, draft);
+    }
     return sendTelegramMessage(chatId, mainMenuText(), mainMenuKeyboard());
   }
 
@@ -954,21 +1295,38 @@ ${reason}`, autoSourceActionKeyboard(updated));
   if (!telegramJob) return answerCallbackQuery(query.id, "Задача не найдена");
   const messageId = telegramJob.telegramMessageId || callbackMessage!.message_id;
   let settings = parseSettings(telegramJob.settings);
+  const isBatch = isBatchJobSource(telegramJob.sourceUrl);
+  const urlsCount = isBatch ? getBatchUrls(settings).length : 1;
 
   if (action === "settings") {
     await answerCallbackQuery(query.id);
-    return editTelegramMessage(chatId, messageId, settingsText(settings), settingsKeyboard(id));
+    return editTelegramMessage(chatId, messageId, settingsText(settings, urlsCount), settingsKeyboard(id, isBatch));
   }
   if (action === "set") {
     const key = parts[3];
-    const value = Number(parts[4]);
+    const rawValue = parts[4];
+    const value = Number(rawValue);
     if (key === "clips" && [5, 10, 20].includes(value)) settings.clips = value;
     if (key === "seconds" && [30, 60].includes(value)) settings.seconds = value;
+    if (key === "start") {
+      if (rawValue === "now") settings.startMode = "NOW";
+      if ([14, 16, 18, 20, 21, 22].includes(value)) {
+        settings.startMode = "TIME";
+        settings.startHour = value;
+        settings.startMinute = 0;
+      }
+    }
+    if (key === "end" && [21, 22, 23, 24].includes(value)) settings.endHour = value;
+    if (key === "firstday") settings.firstDay = rawValue === "tomorrow" ? "TOMORROW" : "TODAY";
     if (key === "interval" && [15, 30, 60].includes(value)) settings.interval = value;
-    if (key === "window" && [14, 18].includes(value)) settings.start = value;
-    await prisma.factoryTelegramJob.update({ where: { id }, data: { settings } });
+    if (key === "window" && [14, 18].includes(value)) {
+      settings.startMode = "TIME";
+      settings.startHour = value;
+      settings.endHour = 23;
+    }
+    await prisma.factoryTelegramJob.update({ where: { id }, data: { settings: toPrismaJson(settings) } });
     await answerCallbackQuery(query.id, "Сохранено");
-    return editTelegramMessage(chatId, messageId, settingsText(settings), settingsKeyboard(id));
+    return editTelegramMessage(chatId, messageId, settingsText(settings, urlsCount), settingsKeyboard(id, isBatch));
   }
   if (action === "check") {
     await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "CHECKED" } });
@@ -985,26 +1343,44 @@ ${reason}`, autoSourceActionKeyboard(updated));
     if (telegramJob.factoryJobId) return answerCallbackQuery(query.id, "Задача уже создана");
     const claimed = await prisma.factoryTelegramJob.updateMany({ where: { id, factoryJobId: null, status: { not: "CREATING" } }, data: { status: "CREATING" } });
     if (claimed.count === 0) return answerCallbackQuery(query.id, "Задача уже создаётся");
-    await answerCallbackQuery(query.id, "Создаю задачу…");
+    await answerCallbackQuery(query.id, isBatch ? "Создаю пакет…" : "Создаю задачу…");
     try {
-      const job = await createVkMovieJob({
-        sourceUrl: telegramJob.sourceUrl,
-        clipCount: settings.clips,
-        clipSeconds: settings.seconds,
-        scheduleMode: "WINDOW",
-        scheduleStartHour: settings.start,
-        scheduleEndHour: settings.end,
-        scheduleIntervalMinutes: settings.interval,
-        telegramChatId: chat.id,
-      });
-      await prisma.factoryTelegramJob.update({ where: { id }, data: { factoryJobId: job.id, status: "QUEUED" } });
       const site = appUrl("/factory");
       const keyboard: TelegramReplyMarkup = { inline_keyboard: [[...(site ? [{ text: "Открыть сайт", url: site }] : []), { text: "Отменить", callback_data: `tg:cancel:${id}` }]] };
-      return editTelegramMessage(chatId, messageId, `✅ Задача создана: #${job.id}\n🎬 ${settings.clips} роликов по ${settings.seconds} секунд\n⏰ Публикация: ${settings.start}:00–${settings.end}:00, раз в ${settings.interval === 60 ? "час" : `${settings.interval} мин`}`, keyboard);
+
+      if (isBatch) {
+        const created = await createBatchJobs({ chatDbId: chat.id, telegramChatId: chatId, draftId: id, settings });
+        const first = created[0];
+        const last = created[created.length - 1];
+        return editTelegramMessage(chatId, messageId, `✅ Пакет создан.
+
+Фильмов: ${created.length}
+Роликов с каждого: ${settings.clips}
+Всего публикаций: ${created.length * settings.clips}
+Период: ${first ? formatDateTimeMsk(first.startAt) : "—"} — ${last ? formatDateTimeMsk(last.endAt) : "—"}
+Окно каждого дня: ${startLabel(settings)}–${formatEndHour(settings)}
+
+Проверить:
+/queue — очередь обработки
+/status — последние задачи`, keyboard);
+      }
+
+      const publishWindow = getPublishWindow(settings);
+      const { job } = await createMovieJobForTelegram({
+        chatDbId: chat.id,
+        sourceUrl: telegramJob.sourceUrl,
+        settings,
+        scheduledAtMode: "NOW",
+      });
+      await prisma.factoryTelegramJob.update({ where: { id }, data: { factoryJobId: job.id, status: "QUEUED" } });
+      return editTelegramMessage(chatId, messageId, `✅ Задача создана: #${job.id}
+🎬 ${settings.clips} роликов по ${settings.seconds} секунд
+⏰ Публикация: ${formatTimeMsk(publishWindow.startAt)}–${formatTimeMsk(publishWindow.endAt)} МСК
+⚖️ Распределение: равномерно, примерно каждые ${publishWindow.intervalMinutes} мин`, keyboard);
     } catch (error) {
       const reason = humanizeFactoryError(error);
       await prisma.factoryTelegramJob.update({ where: { id }, data: { status: "FAILED", lastStatusText: `❌ Ошибка: ${reason}` } });
-      return editTelegramMessage(chatId, messageId, `❌ Ошибка: ${reason}`, previewKeyboard(id));
+      return editTelegramMessage(chatId, messageId, `❌ Ошибка: ${reason}`, isBatch ? batchDraftKeyboard(id) : previewKeyboard(id));
     }
   }
   return answerCallbackQuery(query.id, "Неизвестная команда");
