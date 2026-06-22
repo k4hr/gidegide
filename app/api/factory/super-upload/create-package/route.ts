@@ -10,14 +10,15 @@ export const runtime = "nodejs";
 const RANDOM_TEMPLATE_ID = "RANDOM";
 
 function normalizeClipRange(input: {
-  clipSeconds: number;
+  clipSeconds?: number;
   clipMinSeconds?: number;
   clipMaxSeconds?: number;
 }) {
-  const rawMin = Number(input.clipMinSeconds ?? input.clipSeconds);
-  const rawMax = Number(input.clipMaxSeconds ?? input.clipSeconds);
-  const min = Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMin) ? rawMin : input.clipSeconds)));
-  const max = Math.max(min, Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMax) ? rawMax : input.clipSeconds))));
+  const fallbackClipSeconds = Math.max(10, Math.min(60, Math.round(input.clipSeconds ?? 60)));
+  const rawMin = Number(input.clipMinSeconds ?? fallbackClipSeconds);
+  const rawMax = Number(input.clipMaxSeconds ?? fallbackClipSeconds);
+  const min = Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMin) ? rawMin : fallbackClipSeconds)));
+  const max = Math.max(min, Math.max(10, Math.min(60, Math.round(Number.isFinite(rawMax) ? rawMax : fallbackClipSeconds))));
 
   return {
     min,
