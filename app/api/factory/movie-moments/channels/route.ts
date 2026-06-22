@@ -70,8 +70,12 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = postSchema.parse(await request.json());
+    const sourceUrl = body.sourceUrl;
+    if (!sourceUrl) {
+      return NextResponse.json({ error: "Вставь ссылку на официальный YouTube-канал, видео или @handle" }, { status: 400 });
+    }
     const result = await addSuperUploadDonor({
-      sourceUrl: body.sourceUrl,
+      sourceUrl,
       donorKind: MOVIE_MOMENTS_DONOR_KIND,
     });
     const candidates = await buildTodayCandidates({ limit: 3, donorKind: MOVIE_MOMENTS_DONOR_KIND });

@@ -12,8 +12,12 @@ const bodySchema = z.object({
 export async function POST(request: Request) {
   try {
     const body = bodySchema.parse(await request.json());
+    const sourceUrl = body.sourceUrl;
+    if (!sourceUrl) {
+      return NextResponse.json({ error: "Вставь ссылку на YouTube-канал или видео" }, { status: 400 });
+    }
     const result = await analyzeYoutubeSource({
-      sourceUrl: body.sourceUrl,
+      sourceUrl,
     });
 
     return NextResponse.json(result);

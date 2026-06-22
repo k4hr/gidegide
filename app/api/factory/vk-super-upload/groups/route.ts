@@ -53,7 +53,15 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = postSchema.parse(await request.json());
-    const group = await addVkGroup(body);
+    const sourceUrl = body.sourceUrl;
+    if (!sourceUrl) {
+      return NextResponse.json({ error: "Вставь ссылку на VK-группу" }, { status: 400 });
+    }
+    const group = await addVkGroup({
+      sourceUrl,
+      name: body.name ?? null,
+      category: body.category ?? null,
+    });
     const candidates = await buildVkDailyCandidates({ limit: 3 });
 
     return NextResponse.json({
@@ -86,7 +94,14 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const body = patchSchema.parse(await request.json());
-    const group = await setVkGroupActive(body);
+    const id = body.id;
+    if (!id) {
+      return NextResponse.json({ error: "Не передан id VK-группы" }, { status: 400 });
+    }
+    const group = await setVkGroupActive({
+      id,
+      isActive: body.isActive === true,
+    });
     const candidates = await buildVkDailyCandidates({ limit: 3 });
 
     return NextResponse.json({
