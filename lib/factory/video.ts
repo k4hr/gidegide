@@ -173,6 +173,33 @@ export async function getVideoDurationSeconds(filePath: string) {
   return Math.floor(duration);
 }
 
+export async function getVideoDimensions(filePath: string) {
+  const output = await readCommand("ffprobe", [
+    "-v",
+    "error",
+    "-select_streams",
+    "v:0",
+    "-show_entries",
+    "stream=width,height",
+    "-of",
+    "csv=p=0:s=x",
+    filePath,
+  ]);
+
+  const [widthRaw, heightRaw] = output.trim().split("x");
+  const width = Number(widthRaw);
+  const height = Number(heightRaw);
+
+  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+    throw new Error("Не получилось узнать размер видео");
+  }
+
+  return {
+    width: Math.floor(width / 2) * 2,
+    height: Math.floor(height / 2) * 2,
+  };
+}
+
 export async function hasAudioStream(filePath: string) {
   try {
     const output = await readCommand("ffprobe", [

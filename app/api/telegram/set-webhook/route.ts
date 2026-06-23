@@ -6,15 +6,11 @@ const TELEGRAM_COMMANDS = [
   { command: "start", description: "Запустить бота" },
   { command: "menu", description: "Главное меню" },
   { command: "help", description: "Помощь" },
-  { command: "cookies_help", description: "Как подключить VK cookies" },
-  { command: "cookies_status", description: "Статус VK cookies и Playwright" },
-  { command: "sources", description: "VK-источники" },
-  { command: "source_status", description: "Статус автозабора" },
-  { command: "run_today", description: "Запустить автозабор сейчас" },
-  { command: "pause_sources", description: "Остановить автозабор" },
-  { command: "resume_sources", description: "Включить автозабор" },
-  { command: "status", description: "Задачи" },
-  { command: "queue", description: "Очередь публикаций" },
+  { command: "instagram_sources", description: "Instagram-источники" },
+  { command: "instagram_run_today", description: "Запустить Instagram с выбором окна МСК" },
+  { command: "instagram_status", description: "Статус Instagram задач" },
+  { command: "instagram_pause", description: "Пауза Instagram автозабора" },
+  { command: "instagram_resume", description: "Включить Instagram автозабор" },
 ];
 
 async function callTelegram(token: string, method: string, payload: Record<string, unknown>) {

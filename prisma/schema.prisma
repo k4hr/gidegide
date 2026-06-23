@@ -251,6 +251,7 @@ model FactoryJob {
   vkCandidates                  FactoryVkVideoCandidate[]
   telegramJobs                  FactoryTelegramJob[]
   vkAutoSourceVideos            FactoryVkAutoSourceVideo[]
+  instagramAutoSourceVideos     FactoryInstagramAutoSourceVideo[]
   createdAt                     DateTime                   @default(now())
   updatedAt                     DateTime                   @updatedAt
 
@@ -279,8 +280,9 @@ model FactoryTelegramChat {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  jobs          FactoryTelegramJob[]
-  vkAutoSources FactoryVkAutoSource[]
+  jobs                 FactoryTelegramJob[]
+  vkAutoSources        FactoryVkAutoSource[]
+  instagramAutoSources FactoryInstagramAutoSource[]
 
   @@index([chatId])
   @@index([isAllowed])
@@ -375,6 +377,91 @@ model FactoryVkAutoSourceRun {
   finishedAt      DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
+
+  @@unique([sourceId, runDate])
+  @@index([sourceId])
+  @@index([runDate])
+  @@index([status])
+}
+
+model FactoryInstagramAutoSource {
+  id               String              @id @default(cuid())
+  chatId           String
+  chat             FactoryTelegramChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  sourceUrl        String
+  username         String?
+  sourceTitle      String?
+  isEnabled        Boolean             @default(true)
+  dailyLimit       Int                 @default(10)
+  publishStartHour Int                 @default(18)
+  publishEndHour   Int                 @default(23)
+  timezone         String              @default("Europe/Moscow")
+  lastRunDate      String?
+  lastRunAt        DateTime?
+  nextRunAt        DateTime?
+  lastError        String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  videos FactoryInstagramAutoSourceVideo[]
+  runs   FactoryInstagramAutoSourceRun[]
+
+  @@unique([chatId, sourceUrl])
+  @@index([chatId])
+  @@index([username])
+  @@index([isEnabled])
+  @@index([nextRunAt])
+}
+
+model FactoryInstagramAutoSourceVideo {
+  id              String                     @id @default(cuid())
+  sourceId        String
+  source          FactoryInstagramAutoSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  shortcode       String?
+  sourceUrl       String
+  mediaUrl        String?
+  caption         String?
+  thumbnailUrl    String?
+  durationSec     Int?
+  width           Int?
+  height          Int?
+  sizeBytes       BigInt?
+  hash            String?
+  status          String                     @default("NEW")
+  factoryJobId    String?
+  factoryJob      FactoryJob?                @relation(fields: [factoryJobId], references: [id], onDelete: SetNull)
+  pickedAt        DateTime?
+  downloadedAt    DateTime?
+  publishedUrl    String?
+  error           String?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
+
+  @@unique([sourceId, sourceUrl])
+  @@index([sourceId])
+  @@index([shortcode])
+  @@index([hash])
+  @@index([status])
+  @@index([factoryJobId])
+  @@index([pickedAt])
+}
+
+model FactoryInstagramAutoSourceRun {
+  id              String                     @id @default(cuid())
+  sourceId        String
+  source          FactoryInstagramAutoSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  runDate         String
+  status          String                     @default("STARTED")
+  foundCount      Int                        @default(0)
+  pickedCount     Int                        @default(0)
+  createdJobCount Int                        @default(0)
+  publishedCount  Int                        @default(0)
+  failedCount     Int                        @default(0)
+  error           String?
+  startedAt       DateTime                   @default(now())
+  finishedAt      DateTime?
+  createdAt       DateTime                   @default(now())
+  updatedAt       DateTime                   @updatedAt
 
   @@unique([sourceId, runDate])
   @@index([sourceId])

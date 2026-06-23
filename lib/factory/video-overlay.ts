@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
-import { runCommand } from "./video";
+import { getVideoDimensions, runCommand } from "./video";
 
 type CancelCheck = () => Promise<boolean>;
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
@@ -43,14 +43,13 @@ export function isGlobalOverlayEnabled() {
   return getGlobalOverlayConfig().enabled;
 }
 
-function buildOverlayFilter(transparencyMode: OverlayTransparencyMode) {
-  // Keep this as explicit ffmpeg filter strings, not an array join.
-  // A previous dynamic join could produce an empty filter segment on Linux ffmpeg
-  // and fail with: No such filter: ''.
+function buildOverlayFilter(transparencyMode: OverlayTransparencyMode, width: number, height: number) {
+  // Overlay is scaled to the already-rendered video size.
+  // For Instagram ready 9:16 shorts this avoids scaling/cropping the main video.
   const overlayBase =
     "[1:v]fps=30," +
-    "scale=1080:1920:force_original_aspect_ratio=increase," +
-    "crop=1080:1920," +
+    `scale=${width}:${height}:force_original_aspect_ratio=increase,` +
+    `crop=${width}:${height},` +
     "setsar=1," +
     "format=rgba";
 
@@ -112,9 +111,10 @@ export async function applyGlobalOverlayToVideo(input: {
   });
 
   const overlayInputArgs = config.loop ? ["-stream_loop", "-1"] : [];
-  const filterComplex = buildOverlayFilter(config.transparencyMode);
+  const dimensions = await getVideoDimensions(input.inputPath);
+  const filterComplex = buildOverlayFilter(config.transparencyMode, dimensions.width, dimensions.height);
 
-  console.log("[OVERLAY] filter", { filterComplex });
+  console.log("[OVERLAY] filter", { filterComplex, dimensions });
 
   try {
     await runCommand(

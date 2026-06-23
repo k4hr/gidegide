@@ -420,3 +420,84 @@ export async function renderCenteredMovieClip(
     await rm(tempDir, { recursive: true, force: true });
   }
 }
+
+export async function renderInstagramReadyShortClip(
+  input: Omit<RenderFactoryClipInput, "lanaPath" | "template">,
+) {
+  await ensureFactoryDirs();
+
+  const tempId = `${input.jobId}-${input.clipIndex}-instagram-${nanoid(8)}`;
+  const tempDir = path.join(FACTORY_TEMP_DIR, tempId);
+  const outputPath = path.join(
+    FACTORY_OUTPUT_DIR,
+    `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.mp4`,
+  );
+  const needsOverlay = isGlobalOverlayEnabled();
+  const rawOutputPath = needsOverlay
+    ? path.join(tempDir, `${input.jobId}-${String(input.clipIndex).padStart(4, "0")}.instagram.raw.mp4`)
+    : outputPath;
+
+  await mkdir(tempDir, { recursive: true });
+
+  try {
+    await input.onProgress?.(56, "Готовлю Instagram Reel без масштабирования");
+
+    await runCommand(
+      "ffmpeg",
+      [
+        "-y",
+        "-ss",
+        String(input.startSec),
+        "-t",
+        String(input.clipSeconds),
+        "-i",
+        input.sourcePath,
+        "-map",
+        "0:v:0",
+        "-map",
+        "0:a?",
+        "-pix_fmt",
+        "yuv420p",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "20",
+        "-c:a",
+        "aac",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-b:a",
+        "160k",
+        "-movflags",
+        "+faststart",
+        "-shortest",
+        rawOutputPath,
+      ],
+      {
+        logPrefix: `ffmpeg-instagram-noscale-${input.clipIndex}`,
+        isCanceled: input.isCanceled,
+      },
+    );
+
+    if (needsOverlay) {
+      const overlayApplied = await applyGlobalOverlayToVideo({
+        inputPath: rawOutputPath,
+        outputPath,
+        isCanceled: input.isCanceled,
+        onProgress: input.onProgress,
+      });
+
+      if (!overlayApplied) {
+        await copyFile(rawOutputPath, outputPath);
+      }
+    }
+
+    return outputPath;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+}

@@ -9,6 +9,7 @@ import {
   getSourceDuration,
   renderCenteredMovieClip,
   renderFactoryClip,
+  renderInstagramReadyShortClip,
   type FactoryRenderTemplate,
 } from "../lib/factory/render";
 import { uploadYoutubeShort } from "../lib/factory/youtube";
@@ -34,10 +35,12 @@ import {
   humanizeFactoryError,
   notifyTelegramJob,
 } from "../lib/factory/telegram";
+import { updateVkAutoSourceVideoFromJob } from "../lib/factory/vk-auto-source";
 import {
-  processDueVkAutoSources,
-  updateVkAutoSourceVideoFromJob,
-} from "../lib/factory/vk-auto-source";
+  buildInstagramYoutubeDescription,
+  processDueInstagramAutoSources,
+  updateInstagramAutoSourceVideoFromJob,
+} from "../lib/factory/instagram-auto-source";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -498,14 +501,23 @@ async function ensureLocalTemplateAssetFile(target: {
   return localPath;
 }
 
+function isInstagramJob(job: { titlePrefix?: string | null; recommendation?: string | null }) {
+  return (
+    job.titlePrefix?.startsWith("INSTAGRAM:") ||
+    Boolean(job.recommendation?.includes("instagram_auto_source"))
+  );
+}
+
 function isMovieSmartJob(job: {
   cutMode?: string;
   titlePrefix?: string | null;
+  recommendation?: string | null;
 }) {
   return (
     job.cutMode === "MOVIE_SMART" ||
     job.titlePrefix?.startsWith("MOVIE_MOMENTS::") ||
-    job.titlePrefix?.startsWith("VK_RU:")
+    job.titlePrefix?.startsWith("VK_RU:") ||
+    isInstagramJob(job)
   );
 }
 
@@ -549,6 +561,7 @@ async function processOneJob() {
       throw new Error("У задачи нет выбранных аккаунтов публикации");
     }
 
+    const instagramJob = isInstagramJob(job);
     const movieSmartJob = isMovieSmartJob(job);
     const uploadSchedule = parseUploadSchedule(job.recommendation);
 
@@ -620,7 +633,9 @@ async function processOneJob() {
     );
     let clipStarts: number[] = [];
 
-    if (movieSmartJob) {
+    if (instagramJob) {
+      clipStarts = [0];
+    } else if (movieSmartJob) {
       clipStarts = await buildMovieSmartClipStarts({
         sourcePath,
         duration,
@@ -673,7 +688,7 @@ async function processOneJob() {
 
     await notifyTelegramJob(job.id, `✂️ Найдено ${clipStarts.length} нарезок`);
 
-    const movieAiTitles = movieSmartJob
+    const movieAiTitles = movieSmartJob && !instagramJob
       ? await generateMovieAiTitlePack({
           sourceTitle: effectiveSourceOriginalName ?? effectiveTitlePrefix,
           userDescription: effectiveLongVideoDescription,
@@ -734,18 +749,21 @@ async function processOneJob() {
             ? target.titlePrefix
             : effectiveTitlePrefix;
 
-        const title =
-          movieAiTitles?.titles[i] ??
-          buildClipTitle({
-            game: job.game,
-            clipIndex,
-            customPrefix: titlePrefixForTarget,
-            sourceTitle: effectiveSourceOriginalName,
-          });
+        const title = instagramJob
+          ? (effectiveSourceOriginalName || `Instagram Reel ${clipIndex}`)
+          : movieAiTitles?.titles[i] ??
+            buildClipTitle({
+              game: job.game,
+              clipIndex,
+              customPrefix: titlePrefixForTarget,
+              sourceTitle: effectiveSourceOriginalName,
+            });
 
-        const description = movieSmartJob
-          ? (movieAiTitles?.descriptions[i] ??
-            buildMovieClipRedfilmDescription({
+        const description = instagramJob
+          ? buildInstagramYoutubeDescription(effectiveLongVideoDescription)
+          : movieSmartJob
+            ? (movieAiTitles?.descriptions[i] ??
+              buildMovieClipRedfilmDescription({
               movieTitle:
                 movieAiTitles?.movieTitle ??
                 effectiveSourceOriginalName ??
@@ -758,9 +776,9 @@ async function processOneJob() {
               clipTitle: title,
               clipIndex,
               sourceTitle: effectiveSourceOriginalName,
-            }))
-          : effectiveLongVideoDescription?.trim() ||
-            buildClipDescription({
+              }))
+            : effectiveLongVideoDescription?.trim() ||
+              buildClipDescription({
               game: job.game,
               customPrefix: titlePrefixForTarget,
               title,
@@ -776,8 +794,8 @@ async function processOneJob() {
           `Рендер ${clipIndex}/${clipStarts.length} для ${target.account.name}`,
         );
 
-        const outputPath = movieSmartJob
-          ? await renderCenteredMovieClip({
+        const outputPath = instagramJob
+          ? await renderInstagramReadyShortClip({
               jobId: job.id,
               clipIndex,
               sourcePath,
@@ -787,7 +805,18 @@ async function processOneJob() {
               onProgress: (progress, label) =>
                 updateJobProgress(job.id, progress, label),
             })
-          : await renderFactoryClip({
+          : movieSmartJob
+            ? await renderCenteredMovieClip({
+                jobId: job.id,
+                clipIndex,
+                sourcePath,
+                startSec,
+                clipSeconds: job.clipSeconds,
+                isCanceled: () => isJobCanceled(job.id),
+                onProgress: (progress, label) =>
+                  updateJobProgress(job.id, progress, label),
+              })
+            : await renderFactoryClip({
               jobId: job.id,
               clipIndex,
               sourcePath,
@@ -903,6 +932,12 @@ async function processOneJob() {
               }).catch((error) =>
                 console.error("VK auto-source publish update failed:", error),
               );
+              await updateInstagramAutoSourceVideoFromJob(job.id, {
+                status: "PUBLISHED",
+                url: result.url,
+              }).catch((error) =>
+                console.error("Instagram auto-source publish update failed:", error),
+              );
             } catch (error) {
               await safeDb(() =>
                 prisma.factoryPublish.update({
@@ -928,6 +963,15 @@ async function processOneJob() {
               }).catch((updateError) =>
                 console.error(
                   "VK auto-source failure update failed:",
+                  updateError,
+                ),
+              );
+              await updateInstagramAutoSourceVideoFromJob(job.id, {
+                status: "FAILED",
+                error,
+              }).catch((updateError) =>
+                console.error(
+                  "Instagram auto-source failure update failed:",
                   updateError,
                 ),
               );
@@ -1034,6 +1078,12 @@ async function processOneJob() {
       }).catch((updateError) =>
         console.error("VK auto-source cancel update failed:", updateError),
       );
+      await updateInstagramAutoSourceVideoFromJob(job.id, {
+        status: "FAILED",
+        error: new Error("Задача отменена"),
+      }).catch((updateError) =>
+        console.error("Instagram auto-source cancel update failed:", updateError),
+      );
     } else {
       await markJobFailed(job.id, error);
       await notifyTelegramJob(
@@ -1045,6 +1095,12 @@ async function processOneJob() {
         error,
       }).catch((updateError) =>
         console.error("VK auto-source failure update failed:", updateError),
+      );
+      await updateInstagramAutoSourceVideoFromJob(job.id, {
+        status: "FAILED",
+        error,
+      }).catch((updateError) =>
+        console.error("Instagram auto-source failure update failed:", updateError),
       );
     }
 
@@ -1077,7 +1133,7 @@ async function main() {
 
   await mkdir(FACTORY_SOURCE_DIR, { recursive: true });
   await resetInterruptedJobs();
-  void runVkAutoSourceLoop();
+  void runInstagramAutoSourceLoop();
 
   while (true) {
     const processed = await processOneJob();
@@ -1088,17 +1144,18 @@ async function main() {
   }
 }
 
-async function runVkAutoSourceLoop() {
+async function runInstagramAutoSourceLoop() {
   while (true) {
     try {
-      const started = await processDueVkAutoSources();
-      if (started) console.log(`VK auto-source runs started: ${started}`);
+      const started = await processDueInstagramAutoSources();
+      if (started) console.log(`Instagram auto-source jobs created: ${started}`);
     } catch (error) {
-      console.error("VK auto-source scheduler failed:", error);
+      console.error("Instagram auto-source scheduler failed:", error);
     }
     await sleep(5 * 60 * 1000);
   }
 }
+
 
 main().catch((error) => {
   console.error(error);
