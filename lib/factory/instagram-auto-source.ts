@@ -299,36 +299,160 @@ export function buildInstagramYoutubeDescription(caption?: string | null) {
   return parts.join("\n").replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
-function cleanTitleBase(value?: string | null) {
-  const text = (value || "")
-    .replace(/https?:\/\/\S+/g, "")
-    .replace(/#\S+/g, "")
+function normalizeTitleText(value?: string | null) {
+  return (value || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/#[\p{L}\p{N}_]+/gu, "")
     .replace(new RegExp(INSTAGRAM_REDFILM_PHRASE, "gi"), "")
+    .replace(/[«»]/g, '"')
     .replace(/[\r\n]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
 
-  if (!text) return "Короткий момент из фильма";
-  const sentences = text.split(/[.!?…]/).map((item) => item.trim()).filter(Boolean);
-  return (sentences[0] || text).slice(0, 75).trim() || "Короткий момент из фильма";
+function extractMovieTitleFromCaption(value?: string | null) {
+  const text = normalizeTitleText(value);
+  const quoted = text.match(/"([^"\n]{3,70})"/);
+  if (quoted?.[1]) return quoted[1].replace(/\s+/g, " ").trim();
+
+  const filmMatch = text.match(/(?:фильм|кино|сериал)\s*[:—-]\s*([^.!?]{3,70})/i);
+  if (filmMatch?.[1]) return filmMatch[1].replace(/\s+/g, " ").trim();
+
+  return null;
+}
+
+function classifyInstagramStoryTitle(value?: string | null) {
+  const text = normalizeTitleText(value).toLowerCase().replace(/ё/g, "е");
+
+  if (/ужас|монстр|призрак|под кровать|страх|кошмар|маньяк|убийц/.test(text)) return "Фильм, который держит в напряжении";
+  if (/похит|залож|тюрьм|побег|плен|преступ|расслед|убийств|полици/.test(text)) return "Криминальный сюжет с сильной развязкой";
+  if (/семья|мама|папа|дочь|сын|ребен|детей|муж|жена|брак|отношени|свидани|любов/.test(text)) return "История, которая цепляет с первых секунд";
+  if (/бедн|работ|деньг|богат|миллион|наслед|модель|доход|предложени/.test(text)) return "Она получила шанс, который изменил всё";
+  if (/спорт|боец|мма|чемпион|тренер|соревнован/.test(text)) return "Фильм про характер и победу";
+  if (/тайн|секрет|дневник|правд|обман|исчез/.test(text)) return "Фильм с тайной, которую хочется раскрыть";
+  if (/после|однажды|внезапно|неожиданно|обнаружив|оказалось/.test(text)) return "Сюжет с неожиданным поворотом";
+
+  return "Фильм, который стоит посмотреть";
+}
+
+function cleanTitleBase(value?: string | null) {
+  const movieTitle = extractMovieTitleFromCaption(value);
+  if (movieTitle) return `Что посмотреть: ${movieTitle}`.slice(0, 85).trim();
+
+  return classifyInstagramStoryTitle(value).slice(0, 85).trim();
+}
+
+const YOUTUBE_TITLE_MAX_LENGTH = 100;
+
+const BASE_MOVIE_TITLE_HASHTAGS = ["#фильм", "#кино", "#фильмнавечер"];
+const DEFAULT_MOVIE_TITLE_HASHTAGS = [...BASE_MOVIE_TITLE_HASHTAGS, "#shorts"];
+
+function uniqueHashtags(tags: string[]) {
+  const seen = new Set<string>();
+  return tags
+    .map((tag) => tag.trim().toLowerCase())
+    .filter((tag) => /^#[\p{L}\p{N}_]+$/u.test(tag))
+    .filter((tag) => {
+      if (seen.has(tag)) return false;
+      seen.add(tag);
+      return true;
+    });
+}
+
+function hashtagsForInstagramTitle(caption?: string | null) {
+  const text = normalizeTitleText(caption).toLowerCase().replace(/ё/g, "е");
+  const tags = [...DEFAULT_MOVIE_TITLE_HASHTAGS];
+
+  if (/ужас|монстр|призрак|страх|кошмар|маньяк|убийц/.test(text)) tags.push("#ужасы");
+  if (/похит|залож|тюрьм|побег|плен|преступ|расслед|убийств|полици/.test(text)) tags.push("#детектив");
+  if (/семья|мама|папа|дочь|сын|ребен|детей|муж|жена|брак|отношени|свидани|любов/.test(text)) tags.push("#мелодрама");
+  if (/сериал|серия/.test(text)) tags.push("#сериал");
+  if (/спорт|боец|мма|чемпион|тренер|соревнован/.test(text)) tags.push("#спорт");
+
+  return uniqueHashtags(tags);
+}
+
+function trimTitleBaseForHashtags(baseTitle: string, maxLength: number) {
+  const cleanBase = baseTitle
+    .replace(/#[\p{L}\p{N}_]+/gu, "")
+    .replace(/^\s*(?:сюжет|описание|description)\s*[:—-]\s*/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleanBase.length <= maxLength) return cleanBase;
+
+  const clipped = cleanBase.slice(0, Math.max(10, maxLength)).trim();
+  const lastSpace = clipped.lastIndexOf(" ");
+  if (lastSpace >= 24) return clipped.slice(0, lastSpace).replace(/[,.!?:;—-]+$/g, "").trim();
+  return clipped.replace(/[,.!?:;—-]+$/g, "").trim();
+}
+
+function appendHashtagsToYoutubeTitle(baseTitle: string, caption?: string | null) {
+  const hashtags = hashtagsForInstagramTitle(caption);
+  const minimumHashtags = BASE_MOVIE_TITLE_HASHTAGS.join(" ");
+  const minimumSuffixLength = minimumHashtags.length + 1;
+  const baseMaxLength = Math.max(35, YOUTUBE_TITLE_MAX_LENGTH - minimumSuffixLength);
+  let title = trimTitleBaseForHashtags(baseTitle, baseMaxLength);
+
+  if (!title) title = "Фильм, который стоит посмотреть";
+
+  const appended: string[] = [];
+  for (const tag of hashtags) {
+    const candidate = `${title} ${[...appended, tag].join(" ")}`.trim();
+    if (candidate.length <= YOUTUBE_TITLE_MAX_LENGTH) {
+      appended.push(tag);
+    }
+  }
+
+  if (appended.length < BASE_MOVIE_TITLE_HASHTAGS.length) {
+    title = trimTitleBaseForHashtags(baseTitle, YOUTUBE_TITLE_MAX_LENGTH - minimumSuffixLength);
+    return `${title} ${minimumHashtags}`.replace(/\s+/g, " ").trim().slice(0, YOUTUBE_TITLE_MAX_LENGTH);
+  }
+
+  return `${title} ${appended.join(" ")}`.replace(/\s+/g, " ").trim().slice(0, YOUTUBE_TITLE_MAX_LENGTH);
 }
 
 async function uniqueYoutubeTitle(input: { caption?: string | null; username?: string | null; shortcode?: string | null }) {
   const base = cleanTitleBase(input.caption);
-  const variants = [
-    base,
-    `${base} | REDFILM`,
-    `${base} #shorts`,
-    input.username ? `${base} — ${input.username}` : `${base} — Movie Short`,
-    input.shortcode ? `${base} ${input.shortcode.slice(0, 5)}` : `${base} ${Date.now().toString().slice(-4)}`,
-  ].map((title) => title.replace(/\s+/g, " ").trim().slice(0, 95));
+  const movieTitle = extractMovieTitleFromCaption(input.caption);
+  const storyTitle = classifyInstagramStoryTitle(input.caption);
+  const shortcodeSuffix = input.shortcode ? input.shortcode.slice(-4).toUpperCase() : Date.now().toString().slice(-4);
+
+  const rawVariants = movieTitle
+    ? [
+        `Что посмотреть: ${movieTitle}`,
+        `${movieTitle} — стоит увидеть`,
+        `${movieTitle}: сильный момент`,
+        `${movieTitle} | REDFILM`,
+        `Фильм ${movieTitle} зацепил всех`,
+      ]
+    : [
+        storyTitle,
+        `${storyTitle} | REDFILM`,
+        "Фильм, который стоит обязательно посмотреть",
+        "Этот момент из фильма невозможно пропустить",
+        "Сильная сцена, после которой хочется досмотреть",
+        "Что за фильм? Смотри на REDFILM",
+      ];
+
+  const variants = rawVariants
+    .map((title) => title.replace(/^\s*(?:сюжет|описание|description)\s*[:—-]\s*/i, ""))
+    .map((title) => appendHashtagsToYoutubeTitle(title, input.caption))
+    .filter(Boolean);
 
   for (const title of variants) {
-    const exists = await db(() => prisma.factoryPublish.findFirst({ where: { title }, select: { id: true } }));
-    if (!exists) return title;
+    const exists = await db(() =>
+      prisma.factoryPublish.findFirst({ where: { title }, select: { id: true } }),
+    );
+    if (!exists) {
+      const existingJob = await db(() =>
+        prisma.factoryJob.findFirst({ where: { sourceOriginalName: title }, select: { id: true } }),
+      );
+      if (!existingJob) return title;
+    }
   }
 
-  return `${base.slice(0, 82)} ${Date.now().toString().slice(-6)}`.trim();
+  return appendHashtagsToYoutubeTitle(`${base} ${shortcodeSuffix}`, input.caption);
 }
 
 async function sha256File(filePath: string) {

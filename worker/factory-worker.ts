@@ -1216,7 +1216,7 @@ async function resetInterruptedJobs() {
 }
 
 async function main() {
-  console.log("Factory worker started · instagram upsert guard v7");
+  console.log("Factory worker started · instagram title-hashtags v9");
 
   await mkdir(FACTORY_SOURCE_DIR, { recursive: true });
   await resetInterruptedJobs();

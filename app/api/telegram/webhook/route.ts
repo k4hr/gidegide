@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 import { NextResponse } from "next/server";
 
 import { prisma } from "../../../../lib/prisma";
@@ -142,34 +144,127 @@ function runWindowText() {
   ].join("\n");
 }
 
-async function executeRunToday(chatId: string | number, publishEndHourInput: number | string) {
-  const publishEndHour = normalizeInstagramPublishEndHour(publishEndHourInput);
-  const windowLabel = formatInstagramPublishWindowLabel(publishEndHour);
-  await sendTelegramMessage(chatId, `▶️ Запускаю Instagram автозабор: ${windowLabel}...`, mainKeyboard());
-  const result = await runInstagramAutoSourcesDaily({
-    chatId: String(chatId),
-    force: true,
-    limit: 10,
-    startFromNow: true,
-    publishEndHour,
+
+type TelegramActionLock = {
+  acquired: boolean;
+  key: string;
+  value?: string;
+  lockUntil?: Date;
+};
+
+function chatActionLockKey(chatId: string | number, action: string) {
+  const safeChatId = String(chatId).replace(/[^a-zA-Z0-9_-]/g, "_");
+  return `telegram.instagram.${safeChatId}.${action}.lock`;
+}
+
+function parseLockUntil(value?: string | null) {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as { lockUntil?: string };
+    if (!parsed.lockUntil) return null;
+    const date = new Date(parsed.lockUntil);
+    return Number.isNaN(date.getTime()) ? null : date;
+  } catch {
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+}
+
+async function acquireTelegramActionLock(chatId: string | number, action: string, ttlMinutes: number): Promise<TelegramActionLock> {
+  const key = chatActionLockKey(chatId, action);
+  const now = new Date();
+  const lockUntil = new Date(now.getTime() + Math.max(1, ttlMinutes) * 60 * 1000);
+  const token = crypto.randomUUID();
+  const value = JSON.stringify({ token, lockUntil: lockUntil.toISOString() });
+
+  const existing = await prisma.factorySetting.findUnique({ where: { key }, select: { value: true } });
+  const existingUntil = parseLockUntil(existing?.value);
+  if (existing && existingUntil && existingUntil.getTime() > now.getTime()) {
+    return { acquired: false, key, lockUntil: existingUntil };
+  }
+
+  if (!existing) {
+    try {
+      await prisma.factorySetting.create({ data: { key, value } });
+      return { acquired: true, key, value, lockUntil };
+    } catch {
+      const current = await prisma.factorySetting.findUnique({ where: { key }, select: { value: true } });
+      return { acquired: false, key, lockUntil: parseLockUntil(current?.value) || lockUntil };
+    }
+  }
+
+  const updated = await prisma.factorySetting.updateMany({
+    where: { key, value: existing.value },
+    data: { value },
   });
-  await sendTelegramMessage(
-    chatId,
-    [
-      "✅ Instagram запуск завершён.",
-      "",
-      `Окно публикаций: ${windowLabel}`,
-      `Найдено: ${result.foundCount}`,
-      `Новых: ${result.newCount}`,
-      `Дублей: ${result.duplicateCount}`,
-      `Скачано: ${result.downloadedCount}`,
-      `Создано задач: ${result.createdJobsCount}`,
-      `Пропущено: ${result.skippedCount ?? 0}`,
-      `Ошибок: ${result.failedCount ?? 0}`,
-      result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
-    ].filter(Boolean).join("\n"),
-    mainKeyboard(),
-  );
+
+  if (updated.count === 1) return { acquired: true, key, value, lockUntil };
+
+  const current = await prisma.factorySetting.findUnique({ where: { key }, select: { value: true } });
+  return { acquired: false, key, lockUntil: parseLockUntil(current?.value) || lockUntil };
+}
+
+async function keepTelegramActionLockCooldown(lock: TelegramActionLock, cooldownSeconds = 120) {
+  if (!lock.acquired || !lock.value) return;
+  const cooldownUntil = new Date(Date.now() + Math.max(15, cooldownSeconds) * 1000);
+  const token = (() => {
+    try {
+      return (JSON.parse(lock.value || "{}") as { token?: string }).token || crypto.randomUUID();
+    } catch {
+      return crypto.randomUUID();
+    }
+  })();
+  const value = JSON.stringify({ token, lockUntil: cooldownUntil.toISOString(), completed: true });
+  await prisma.factorySetting.updateMany({ where: { key: lock.key, value: lock.value }, data: { value } }).catch(() => undefined);
+}
+
+function alreadyRunningText(action: "test" | "run", lockUntil?: Date) {
+  return [
+    action === "test" ? "🧪 Тестовая загрузка уже выполняется." : "▶️ Запуск Instagram уже выполняется.",
+    "",
+    "Я не запускаю второй раз, чтобы не создать дубли задач.",
+    lockUntil ? `Повторить можно после: ${formatDate(lockUntil)}` : null,
+  ].filter(Boolean).join("\n");
+}
+
+async function executeRunToday(chatId: string | number, publishEndHourInput: number | string) {
+  const lock = await acquireTelegramActionLock(chatId, "run_today", 45);
+  if (!lock.acquired) {
+    await sendTelegramMessage(chatId, alreadyRunningText("run", lock.lockUntil), mainKeyboard());
+    return;
+  }
+
+  try {
+    const publishEndHour = normalizeInstagramPublishEndHour(publishEndHourInput);
+    const windowLabel = formatInstagramPublishWindowLabel(publishEndHour);
+    await sendTelegramMessage(chatId, `▶️ Запускаю Instagram автозабор: ${windowLabel}...`, mainKeyboard());
+    const result = await runInstagramAutoSourcesDaily({
+      chatId: String(chatId),
+      force: true,
+      limit: 10,
+      startFromNow: true,
+      publishEndHour,
+    });
+    await sendTelegramMessage(
+      chatId,
+      [
+        "✅ Instagram запуск завершён.",
+        "",
+        `Окно публикаций: ${windowLabel}`,
+        `Найдено: ${result.foundCount}`,
+        `Новых: ${result.newCount}`,
+        `Дублей: ${result.duplicateCount}`,
+        `Скачано: ${result.downloadedCount}`,
+        `Создано задач: ${result.createdJobsCount}`,
+        `Пропущено: ${result.skippedCount ?? 0}`,
+        `Ошибок: ${result.failedCount ?? 0}`,
+        result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
+      ].filter(Boolean).join("\n"),
+      mainKeyboard(),
+    );
+  } finally {
+    await keepTelegramActionLockCooldown(lock, 300);
+  }
 }
 
 
@@ -217,32 +312,43 @@ function cancelAllConfirmKeyboard(): TelegramReplyMarkup {
 }
 
 async function executeTestOne(chatId: string | number) {
-  await sendTelegramMessage(chatId, "🧪 Тестовая загрузка: ставлю в очередь только 1 Instagram-видео...", mainKeyboard());
-  const result = await runInstagramAutoSourcesDaily({
-    chatId: String(chatId),
-    force: true,
-    limit: 1,
-    startFromNow: true,
-    publishEndHour: 24,
-  });
+  const lock = await acquireTelegramActionLock(chatId, "test_one", 15);
+  if (!lock.acquired) {
+    await sendTelegramMessage(chatId, alreadyRunningText("test", lock.lockUntil), mainKeyboard());
+    return;
+  }
 
-  await sendTelegramMessage(
-    chatId,
-    [
-      "🧪 Тестовая загрузка завершена.",
-      "",
-      `Найдено: ${result.foundCount}`,
-      `Новых: ${result.newCount}`,
-      `Дублей/пропущенных повторов: ${result.duplicateCount}`,
-      `Скачано: ${result.downloadedCount}`,
-      `Создано задач: ${result.createdJobsCount}`,
-      `Пропущено: ${result.skippedCount ?? 0}`,
-      `Ошибок: ${result.failedCount ?? 0}`,
-      result.createdJobsCount === 0 ? "Если задач 0 — нажми 🔎 Досканировать: возможно, последние Reels уже были в базе, а новые лежат глубже в профиле." : null,
-      result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
-    ].filter(Boolean).join("\n"),
-    mainKeyboard(),
-  );
+  try {
+    await sendTelegramMessage(chatId, "🧪 Тестовая загрузка: ставлю в очередь строго 1 Instagram-видео...", mainKeyboard());
+    const result = await runInstagramAutoSourcesDaily({
+      chatId: String(chatId),
+      force: true,
+      limit: 1,
+      startFromNow: true,
+      publishEndHour: 24,
+    });
+
+    await sendTelegramMessage(
+      chatId,
+      [
+        "🧪 Тестовая загрузка завершена.",
+        "",
+        `Найдено: ${result.foundCount}`,
+        `Новых: ${result.newCount}`,
+        `Дублей/пропущенных повторов: ${result.duplicateCount}`,
+        `Скачано: ${result.downloadedCount}`,
+        `Создано задач: ${result.createdJobsCount}`,
+        `Пропущено: ${result.skippedCount ?? 0}`,
+        `Ошибок: ${result.failedCount ?? 0}`,
+        result.createdJobsCount > 1 ? "⚠️ Защита: создано больше одной задачи. Проверь worker/webhook, это не норма." : null,
+        result.createdJobsCount === 0 ? "Если задач 0 — нажми 🔎 Досканировать: возможно, последние Reels уже были в базе, а новые лежат глубже в профиле." : null,
+        result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
+      ].filter(Boolean).join("\n"),
+      mainKeyboard(),
+    );
+  } finally {
+    await keepTelegramActionLockCooldown(lock, 120);
+  }
 }
 
 async function cancelAllInstagramTasks(chatId: string | number) {

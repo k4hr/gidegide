@@ -88,3 +88,15 @@ After deploying this version, redeploy/restart both the web service and `gidegid
 ```txt
 Factory worker started · instagram scan lock v6
 ```
+
+## Instagram v8 notes
+
+- `🧪 Загрузить 1 видео` и ручной `▶️ Запуск сейчас` теперь защищены lock-ом в `FactorySetting`.
+  Это нужно потому, что Telegram может повторить webhook-запрос, если обработка заняла слишком долго. Без lock-а один клик мог создать 2 задачи.
+- Тестовый запуск теперь ставит в очередь строго 1 ролик. Повторный клик/ретрай в течение короткого окна вернёт сообщение, что запуск уже выполняется.
+- Названия YouTube Shorts для Instagram больше не берутся тупо из начала caption. Caption остаётся description, а title строится отдельной логикой:
+  - убирает `Сюжет:` / `Описание:` / ссылки / хэштеги / REDFILM-фразу;
+  - пытается достать название фильма из кавычек;
+  - иначе выбирает нормальный hook-title по смыслу caption;
+  - проверяет уникальность по `FactoryPublish.title` и `FactoryJob.sourceOriginalName`.
+- Worker marker: `Factory worker started · instagram title-hashtags v9`.
