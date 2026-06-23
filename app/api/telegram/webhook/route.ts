@@ -198,7 +198,7 @@ async function executeDeepScan(chatId: string | number, sourceId?: string) {
 
   const blocks: string[] = [];
   for (const source of sources) {
-    const result = await checkInstagramAutoSource(source.id, { limit });
+    const result = await checkInstagramAutoSource(source.id, { limit, mode: "deep" });
     blocks.push(formatScanResult(source, result));
   }
 
@@ -356,6 +356,21 @@ function formatScanResult(source: { sourceTitle?: string | null; username?: stri
   const stats = result.stats;
   const title = sourceName(source);
 
+  if (result.scanAlreadyRunning) {
+    return [
+      `🔎 Скан уже идёт: ${title}`,
+      "",
+      result.scanMode ? `Режим: ${result.scanMode}` : null,
+      result.scanStartedAt ? `Начат: ${formatDate(result.scanStartedAt)}` : null,
+      result.scanLockUntil ? `Защита от повтора до: ${formatDate(result.scanLockUntil)}` : null,
+      "",
+      `Уже сохранено в базе: ${stats.total}`,
+      `Доступно к загрузке: ${stats.available}`,
+      "",
+      "Не нажимай глубокий скан несколько раз подряд: дождись результата первого запуска.",
+    ].filter(Boolean).join("\n");
+  }
+
   if (result.cooldownUntil || result.error?.toLowerCase().includes("instagram")) {
     return [
       `✅ Instagram source added: ${title}`,
@@ -417,6 +432,9 @@ async function sourcesText(chatId: string | number) {
       return [
         sourceName(source),
         source.isEnabled ? "Status: 🟢 active" : "Status: ⏸ paused",
+        source.scanLockUntil && new Date(source.scanLockUntil).getTime() > Date.now()
+          ? `Scan: 🔎 running${source.scanMode ? ` (${source.scanMode})` : ""} until ${formatDate(source.scanLockUntil)}`
+          : null,
         `Total saved in DB: ${stats.total || source.lastFoundCount || 0}`,
         `Last scan found: ${source.lastFoundCount || 0}`,
         `Available: ${stats.available}`,
@@ -564,7 +582,7 @@ async function addSourcesFromText(chatId: string | number, text: string) {
   for (const url of urls) {
     try {
       const source = await addInstagramAutoSource({ chatId: String(chatId), sourceUrl: url, dailyLimit: 10 });
-      const scan = await checkInstagramAutoSource(source.id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit });
+      const scan = await checkInstagramAutoSource(source.id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit, mode: "add" });
       results.push(formatScanResult(source, scan));
     } catch (error) {
       failed.push(`${url} — ${humanizeInstagramAutoSourceError(error)}`);
@@ -694,7 +712,7 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
     await editTelegramMessage(chatId, messageId, "🔍 Проверяю Instagram-источник...", mainKeyboard());
     const source = await prisma.factoryInstagramAutoSource.findUnique({ where: { id } });
     if (!source) throw new Error("Instagram-источник не найден");
-    const result = await checkInstagramAutoSource(id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit });
+    const result = await checkInstagramAutoSource(id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit, mode: "check" });
     await sendTelegramMessage(chatId, `${formatScanResult(source, result)}\n\nПримеры:\n${result.examples.slice(0, 5).join("\n") || "—"}`, sourceKeyboard(id));
   }
 }

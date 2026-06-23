@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
-import type { FactoryInstagramAutoSource } from "@prisma/client";
+import { Prisma, type FactoryInstagramAutoSource } from "@prisma/client";
 
 import { prisma } from "../prisma";
 import { FACTORY_SOURCE_DIR } from "./paths";
@@ -33,6 +33,74 @@ function delay(ms: number) {
 
 function addHours(date: Date, hours: number) {
   return new Date(date.getTime() + Math.max(1, hours) * 60 * 60 * 1000);
+}
+
+function addMinutes(date: Date, minutes: number) {
+  return new Date(date.getTime() + Math.max(1, minutes) * 60 * 1000);
+}
+
+type InstagramScanMode = "add" | "check" | "deep" | "auto";
+
+type InstagramSourceScanLock = {
+  acquired: boolean;
+  lockUntil: Date | null;
+  startedAt: Date | null;
+  mode: string | null;
+  token: string | null;
+};
+
+async function acquireInstagramSourceScanLock(
+  sourceId: string,
+  mode: InstagramScanMode,
+  ttlMinutes = mode === "deep" ? 75 : 35,
+): Promise<InstagramSourceScanLock> {
+  const now = new Date();
+  const lockUntil = addMinutes(now, ttlMinutes);
+  const token = crypto.randomUUID();
+
+  const result = await db(() =>
+    prisma.factoryInstagramAutoSource.updateMany({
+      where: {
+        id: sourceId,
+        OR: [{ scanLockUntil: null }, { scanLockUntil: { lte: now } }],
+      },
+      data: {
+        scanStartedAt: now,
+        scanLockUntil: lockUntil,
+        scanMode: mode,
+        scanLockToken: token,
+      },
+    }),
+  );
+
+  if (result.count === 1) {
+    return { acquired: true, lockUntil, startedAt: now, mode, token };
+  }
+
+  const source = await db(() =>
+    prisma.factoryInstagramAutoSource.findUnique({
+      where: { id: sourceId },
+      select: { scanStartedAt: true, scanLockUntil: true, scanMode: true, scanLockToken: true },
+    }),
+  );
+
+  return {
+    acquired: false,
+    lockUntil: source?.scanLockUntil ?? null,
+    startedAt: source?.scanStartedAt ?? null,
+    mode: source?.scanMode ?? null,
+    token: source?.scanLockToken ?? null,
+  };
+}
+
+async function releaseInstagramSourceScanLock(sourceId: string, token?: string | null) {
+  if (!token) return;
+  await db(() =>
+    prisma.factoryInstagramAutoSource.updateMany({
+      where: { id: sourceId, scanLockToken: token },
+      data: { scanStartedAt: null, scanLockUntil: null, scanMode: null, scanLockToken: null },
+    }),
+  ).catch(() => undefined);
 }
 
 function parseDateSetting(value?: string | null) {
@@ -480,6 +548,25 @@ export async function getInstagramSourceUsageStats(sourceIds: string[]) {
   return countVideoStats(videos);
 }
 
+
+function isPrismaUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+}
+
+function instagramVideoUpdateData(video: InstagramPublicVideo) {
+  return {
+    seenAt: new Date(),
+    shortcode: video.shortcode || undefined,
+    mediaUrl: video.mediaUrl || undefined,
+    caption: video.caption || undefined,
+    thumbnailUrl: video.thumbnailUrl || undefined,
+    durationSec: video.durationSeconds || undefined,
+    width: video.width || undefined,
+    height: video.height || undefined,
+    sourcePublishedAt: video.publishedAt || undefined,
+  };
+}
+
 async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: InstagramPublicVideo[]) {
   let newCount = 0;
   let duplicateCount = 0;
@@ -500,6 +587,7 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
   }
 
   const seenThisScan = new Set<string>();
+  const duplicateSamples: string[] = [];
 
   for (const video of videos) {
     const keys = instagramVideoDedupeKeys(video);
@@ -515,44 +603,70 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
         await db(() =>
           prisma.factoryInstagramAutoSourceVideo.update({
             where: { id: existing.id },
-            data: {
-              seenAt: new Date(),
-              caption: video.caption || undefined,
-              thumbnailUrl: video.thumbnailUrl || undefined,
-              durationSec: video.durationSeconds || undefined,
-              width: video.width || undefined,
-              height: video.height || undefined,
-              sourcePublishedAt: video.publishedAt || undefined,
-            },
+            data: instagramVideoUpdateData(video),
           }),
         );
       }
-      console.info("[INSTAGRAM] duplicate reel skipped", {
-        source: source.username ? `@${source.username}` : source.sourceUrl,
-        key: primaryKey,
-      });
+      if (duplicateSamples.length < 12) duplicateSamples.push(primaryKey);
       continue;
     }
 
-    const created = await db(() =>
-      prisma.factoryInstagramAutoSourceVideo.create({
-        data: {
-          sourceId: source.id,
-          shortcode: video.shortcode || null,
-          sourceUrl: video.sourceUrl,
-          mediaUrl: video.mediaUrl || null,
-          caption: video.caption || null,
-          thumbnailUrl: video.thumbnailUrl || null,
-          durationSec: video.durationSeconds || null,
-          width: video.width || null,
-          height: video.height || null,
-          sourcePublishedAt: video.publishedAt || null,
-          seenAt: new Date(),
-          status: "NEW",
-        },
-        select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
-      }),
-    );
+    let created: (typeof existingVideos)[number] | null = null;
+
+    try {
+      created = await db(() =>
+        prisma.factoryInstagramAutoSourceVideo.create({
+          data: {
+            sourceId: source.id,
+            shortcode: video.shortcode || null,
+            sourceUrl: video.sourceUrl,
+            mediaUrl: video.mediaUrl || null,
+            caption: video.caption || null,
+            thumbnailUrl: video.thumbnailUrl || null,
+            durationSec: video.durationSeconds || null,
+            width: video.width || null,
+            height: video.height || null,
+            sourcePublishedAt: video.publishedAt || null,
+            seenAt: new Date(),
+            status: "NEW",
+          },
+          select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
+        }),
+      );
+    } catch (error) {
+      if (!isPrismaUniqueConstraintError(error)) throw error;
+
+      duplicateCount += 1;
+      if (duplicateSamples.length < 12) duplicateSamples.push(primaryKey);
+
+      const duplicated = await db(() =>
+        prisma.factoryInstagramAutoSourceVideo.update({
+          where: { sourceId_sourceUrl: { sourceId: source.id, sourceUrl: video.sourceUrl } },
+          data: instagramVideoUpdateData(video),
+          select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
+        }).catch(async () =>
+          prisma.factoryInstagramAutoSourceVideo.findFirst({
+            where: {
+              sourceId: source.id,
+              OR: [
+                { sourceUrl: video.sourceUrl },
+                ...(video.shortcode ? [{ shortcode: video.shortcode }] : []),
+              ],
+            },
+            select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
+          }),
+        ),
+      );
+
+      if (duplicated) {
+        for (const key of instagramVideoDedupeKeys(duplicated)) {
+          if (!keyToExisting.has(key)) keyToExisting.set(key, duplicated);
+        }
+      }
+      continue;
+    }
+
+    if (!created) continue;
 
     for (const key of instagramVideoDedupeKeys(created)) {
       if (!keyToExisting.has(key)) keyToExisting.set(key, created);
@@ -560,14 +674,41 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
     newCount += 1;
   }
 
+  if (duplicateCount > 0) {
+    console.info("[INSTAGRAM] duplicate reels skipped", {
+      source: source.username ? `@${source.username}` : source.sourceUrl,
+      count: duplicateCount,
+      samples: duplicateSamples,
+    });
+  }
+
   return { newCount, duplicateCount };
 }
 
-export async function checkInstagramAutoSource(id: string, input?: { limit?: number }) {
+export async function checkInstagramAutoSource(id: string, input?: { limit?: number; mode?: InstagramScanMode }) {
   const source = await db(() => prisma.factoryInstagramAutoSource.findUnique({ where: { id } }));
   if (!source) throw new Error("Instagram-источник не найден");
 
   const limit = Math.max(1, Math.min(FACTORY_CONFIG.instagramDeepScanLimit, input?.limit ?? FACTORY_CONFIG.instagramScanOnAddLimit));
+  const mode = input?.mode ?? (limit >= FACTORY_CONFIG.instagramDeepScanLimit ? "deep" : "check");
+  const lock = await acquireInstagramSourceScanLock(source.id, mode, limit >= FACTORY_CONFIG.instagramDeepScanLimit ? 90 : 40);
+
+  if (!lock.acquired) {
+    const statsMap = await getInstagramSourceUsageStats([source.id]);
+    return {
+      foundCount: 0,
+      newCount: 0,
+      duplicateCount: 0,
+      stats: statsMap.get(source.id) || emptyUsageStats(),
+      examples: [],
+      error: `Scan already running${lock.mode ? ` (${lock.mode})` : ""}`,
+      cooldownUntil: null as Date | null,
+      scanAlreadyRunning: true,
+      scanLockUntil: lock.lockUntil,
+      scanStartedAt: lock.startedAt,
+      scanMode: lock.mode,
+    };
+  }
 
   try {
     const videos = await listInstagramPublicVideos({
@@ -599,6 +740,10 @@ export async function checkInstagramAutoSource(id: string, input?: { limit?: num
       examples: videos.slice(0, 5).map((video) => video.sourceUrl),
       error: videos.length > 0 ? null : "No public reels found",
       cooldownUntil: null as Date | null,
+      scanAlreadyRunning: false,
+      scanLockUntil: null as Date | null,
+      scanStartedAt: null as Date | null,
+      scanMode: null as string | null,
     };
   } catch (error) {
     const cooldownUntil = isInstagramRateLimitError(error) ? await setInstagramCooldown(source.id, error) : null;
@@ -619,7 +764,13 @@ export async function checkInstagramAutoSource(id: string, input?: { limit?: num
       examples: [],
       error: message,
       cooldownUntil,
+      scanAlreadyRunning: false,
+      scanLockUntil: null as Date | null,
+      scanStartedAt: null as Date | null,
+      scanMode: null as string | null,
     };
+  } finally {
+    await releaseInstagramSourceScanLock(source.id, lock.token);
   }
 }
 
@@ -819,6 +970,18 @@ async function ensureDiscoveredForSources(sources: FactoryInstagramAutoSource[])
   for (const [index, source] of activeSources.entries()) {
     if (index > 0) await delay(INSTAGRAM_AUTO_SOURCE_CONFIG.sourceDelaySeconds * 1000);
 
+    const lock = await acquireInstagramSourceScanLock(source.id, "auto", 45);
+    if (!lock.acquired) {
+      skippedCount += 1;
+      console.info("[INSTAGRAM] source scan skipped because another scan is running", {
+        source: source.username ? `@${source.username}` : source.sourceUrl,
+        mode: lock.mode,
+        startedAt: lock.startedAt,
+        lockUntil: lock.lockUntil,
+      });
+      continue;
+    }
+
     try {
       console.info("[INSTAGRAM] source scan start", source.username ? `@${source.username}` : source.sourceUrl);
       const videos = await listInstagramPublicVideos({
@@ -875,6 +1038,8 @@ async function ensureDiscoveredForSources(sources: FactoryInstagramAutoSource[])
         }),
       );
       console.error("[INSTAGRAM] source scan failed", source.sourceUrl, error);
+    } finally {
+      await releaseInstagramSourceScanLock(source.id, lock.token);
     }
   }
 

@@ -401,6 +401,10 @@ model FactoryInstagramAutoSource {
   lastScanAt       DateTime?
   nextRunAt        DateTime?
   cooldownUntil    DateTime?
+  scanStartedAt    DateTime?
+  scanLockUntil    DateTime?
+  scanMode         String?
+  scanLockToken    String?
   lastFoundCount   Int?
   lastError        String?
   createdAt        DateTime            @default(now())
@@ -415,6 +419,7 @@ model FactoryInstagramAutoSource {
   @@index([isEnabled])
   @@index([nextRunAt])
   @@index([cooldownUntil])
+  @@index([scanLockUntil])
 }
 
 model FactoryInstagramAutoSourceVideo {

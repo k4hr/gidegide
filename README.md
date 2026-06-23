@@ -74,3 +74,17 @@ Telegram buttons/commands:
 - `🧪 Загрузить 1 видео` / `/instagram_test_one` — queues one available Instagram video for testing.
 
 After deploying changes, redeploy/restart both the web service and `gidegide-worker`, then reinstall Telegram webhook if the bot menu/buttons do not update.
+
+## Instagram deep scan lock v6
+
+Instagram deep scan can take several minutes. The bot and worker now store a per-source scan lock in the database (`scanStartedAt`, `scanLockUntil`, `scanMode`) so the same profile cannot be scanned by several webhook/worker processes at the same time.
+
+If a deep scan is already running, the bot returns “Скан уже идёт” instead of starting another Playwright session. This prevents duplicate `list start` logs and reduces Instagram rate-limit risk.
+
+Duplicate Reel logs are now summarized instead of printing hundreds of `duplicate reel skipped` lines.
+
+After deploying this version, redeploy/restart both the web service and `gidegide-worker`. The worker log should contain:
+
+```txt
+Factory worker started · instagram scan lock v6
+```
