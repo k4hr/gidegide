@@ -1,5 +1,5 @@
 import path from "node:path";
-import { copyFile, mkdir, rm } from "node:fs/promises";
+import { copyFile, mkdir, open, rm, stat } from "node:fs/promises";
 import { nanoid } from "nanoid";
 
 import {
@@ -13,12 +13,13 @@ import {
   isYoutubeUrl,
 } from "./rip-downloader";
 import { downloadViaVkVideo, isVkVideoUrl } from "./vk-downloader";
+import { downloadInstagramPublicVideo } from "./providers/instagram-public-provider";
 import { MOVIE_SMART_CONFIG } from "./movie-smart-config";
 import {
   areMovieSubtitlesEnabled,
   burnMovieSubtitles,
 } from "./movie-subtitles";
-import { getVideoDurationSeconds, runCommand } from "./video";
+import { assertVideoHasVideo, getVideoDurationSeconds, runCommand } from "./video";
 import {
   applyGlobalOverlayToVideo,
   isGlobalOverlayEnabled,
@@ -26,6 +27,84 @@ import {
 
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
+
+function isInstagramPageUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^m\./, "www.");
+    if (host !== "instagram.com" && host !== "www.instagram.com") return false;
+    return /^\/(reel|p|tv)\/[^/]+\/?/i.test(url.pathname);
+  } catch {
+    return /instagram\.com\/(?:reel|p|tv)\//i.test(value);
+  }
+}
+
+function printableSample(buffer: Buffer) {
+  return buffer
+    .toString("utf8")
+    .replace(/[\x00-\x1f\x7f-\x9f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+async function readFileHead(filePath: string, bytes = 1024) {
+  const handle = await open(filePath, "r").catch(() => null);
+  if (!handle) return Buffer.alloc(0);
+
+  try {
+    const buffer = Buffer.alloc(bytes);
+    const result = await handle.read(buffer, 0, bytes, 0);
+    return buffer.subarray(0, result.bytesRead);
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+async function assertDownloadedVideoFile(filePath: string, sourceUrl: string) {
+  const fileStat = await stat(filePath).catch(() => null);
+  if (!fileStat || fileStat.size <= 0) {
+    throw new Error("Скачивание вернуло пустой файл вместо видео");
+  }
+
+  try {
+    await assertVideoHasVideo(filePath);
+    await getVideoDurationSeconds(filePath);
+  } catch (error) {
+    const head = await readFileHead(filePath);
+    const sample = printableSample(head);
+    await rm(filePath, { force: true }).catch(() => undefined);
+
+    const reason = error instanceof Error ? error.message : "unknown ffprobe error";
+    const hint = sample
+      ? ` Ответ сервера начинается так: ${sample}`
+      : " Ответ сервера не похож на MP4.";
+
+    throw new Error(
+      `Прямая ссылка не вернула валидный MP4. Скачано ${fileStat.size} байт, ffprobe не смог открыть файл (${reason}).${hint} Source: ${sourceUrl}`,
+    );
+  }
+}
+
+async function downloadInstagramSource(input: {
+  jobId: string;
+  sourceUrl: string;
+  onProgress?: ProgressCallback;
+}) {
+  await ensureFactoryDirs();
+  await input.onProgress?.(2, "Скачиваю Instagram Reel через yt-dlp/cookies");
+
+  const outputDir = path.join(FACTORY_SOURCE_DIR, "instagram-job", input.jobId);
+  const downloaded = await downloadInstagramPublicVideo({
+    sourceUrl: input.sourceUrl,
+    outputDir,
+  });
+
+  await assertDownloadedVideoFile(downloaded.filePath, input.sourceUrl);
+  await input.onProgress?.(30, "Instagram Reel скачан и проверен");
+
+  return downloaded.filePath;
+}
 
 export type FactoryRenderTemplate = {
   mirrorLana: boolean;
@@ -100,7 +179,9 @@ export async function downloadDirectSource(input: {
     },
   );
 
-  await input.onProgress?.(30, "Исходный файл скачан");
+  await assertDownloadedVideoFile(outputPath, input.sourceUrl);
+
+  await input.onProgress?.(30, "Исходный файл скачан и проверен");
 
   return outputPath;
 }
@@ -185,6 +266,10 @@ export async function downloadSourceFromUrl(input: {
         `Не получилось скачать это VK-видео со звуком: ${reason}`,
       );
     }
+  }
+
+  if (isInstagramPageUrl(input.sourceUrl)) {
+    return downloadInstagramSource(input);
   }
 
   if (!isYoutubeUrl(input.sourceUrl)) {
