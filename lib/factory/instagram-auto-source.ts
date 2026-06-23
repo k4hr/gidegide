@@ -357,6 +357,21 @@ function emptyUsageStats(): InstagramSourceUsageStats {
   return { total: 0, available: 0, queued: 0, downloaded: 0, rendered: 0, published: 0, failed: 0, duplicate: 0 };
 }
 
+const REUSABLE_INSTAGRAM_VIDEO_STATUSES = ["NEW", "DISCOVERED", "CANCELED"] as const;
+
+function reusableInstagramVideoStatuses(): string[] {
+  return Array.from(REUSABLE_INSTAGRAM_VIDEO_STATUSES);
+}
+
+function isReusableInstagramVideoState(video: { status?: string | null; factoryJobId?: string | null; queuedAt?: Date | null; publishedAtChannel?: Date | null }) {
+  return (
+    REUSABLE_INSTAGRAM_VIDEO_STATUSES.includes(String(video.status || "") as (typeof REUSABLE_INSTAGRAM_VIDEO_STATUSES)[number]) &&
+    !video.factoryJobId &&
+    !video.queuedAt &&
+    !video.publishedAtChannel
+  );
+}
+
 
 function normalizeInstagramVideoUrlKey(value?: string | null) {
   if (!value) return null;
@@ -404,7 +419,7 @@ function bestInstagramVideoDedupeKey(video: { shortcode?: string | null; sourceU
 }
 
 function isReusableInstagramVideoStatus(status?: string | null) {
-  return status === "NEW" || status === "DISCOVERED";
+  return REUSABLE_INSTAGRAM_VIDEO_STATUSES.includes(String(status || "") as (typeof REUSABLE_INSTAGRAM_VIDEO_STATUSES)[number]);
 }
 
 function isBlockedInstagramVideoStatus(status?: string | null) {
@@ -435,7 +450,7 @@ function countVideoStats(
     else if (video.status === "RENDERED" || video.renderedAt) stats.rendered += 1;
     else if (video.status === "DOWNLOADED" || video.downloadedAt) stats.downloaded += 1;
     else if (video.status === "JOB_CREATED" || video.status === "QUEUED" || video.queuedAt || video.factoryJobId) stats.queued += 1;
-    else if (video.status === "NEW" || video.status === "DISCOVERED") stats.available += 1;
+    else if (isReusableInstagramVideoState(video)) stats.available += 1;
 
     result.set(video.sourceId, stats);
   }
@@ -552,7 +567,7 @@ export async function checkInstagramAutoSource(id: string, input?: { limit?: num
   const source = await db(() => prisma.factoryInstagramAutoSource.findUnique({ where: { id } }));
   if (!source) throw new Error("Instagram-источник не найден");
 
-  const limit = Math.max(1, Math.min(100, input?.limit ?? FACTORY_CONFIG.instagramScanOnAddLimit));
+  const limit = Math.max(1, Math.min(FACTORY_CONFIG.instagramDeepScanLimit, input?.limit ?? FACTORY_CONFIG.instagramScanOnAddLimit));
 
   try {
     const videos = await listInstagramPublicVideos({
@@ -643,7 +658,7 @@ async function markDuplicateUnusedInstagramVideos(sourceIds: string[]) {
     prisma.factoryInstagramAutoSourceVideo.findMany({
       where: {
         sourceId: { in: sourceIds },
-        status: { in: ["NEW", "DISCOVERED"] },
+        status: { in: reusableInstagramVideoStatuses() },
         factoryJobId: null,
       },
       select: { id: true, sourceId: true, sourceUrl: true, shortcode: true, caption: true, createdAt: true },
@@ -732,7 +747,7 @@ async function acquireInstagramVideoForQueue(videoId: string) {
     prisma.factoryInstagramAutoSourceVideo.updateMany({
       where: {
         id: videoId,
-        status: { in: ["NEW", "DISCOVERED"] },
+        status: { in: reusableInstagramVideoStatuses() },
         factoryJobId: null,
         queuedAt: null,
       },
@@ -1024,7 +1039,7 @@ export async function runInstagramAutoSourcesDaily(input?: {
     prisma.factoryInstagramAutoSourceVideo.findMany({
       where: {
         sourceId: { in: limitedSourceIds },
-        status: { in: ["NEW", "DISCOVERED"] },
+        status: { in: reusableInstagramVideoStatuses() },
         factoryJobId: null,
         queuedAt: null,
       },

@@ -53,3 +53,24 @@ Factory worker started · instagram queue dedupe v4
 ## Instagram duplicate protection
 
 Instagram Reels теперь дедуплицируются до создания `FactoryJob` по shortcode, нормализованной Reel/Post URL и нормализованному caption. Уже найденные, уже поставленные в очередь, скачанные, отрендеренные и опубликованные ролики блокируют повторную постановку. Если в БД уже накопились старые дубли, используй кнопку в боте `🛑 Отменить все задачи`, затем запускай `🧪 Загрузить 1 видео` для безопасного теста.
+
+## Instagram deep scan / duplicates
+
+Instagram auto sources intentionally do not use Railway env for tuning. Scan limits live in code:
+
+- `lib/factory/instagram-config.ts`
+- `lib/factory/factory-config.ts`
+
+The scanner used to inspect only the latest 20 profile links. For accounts with hundreds/thousands of publications this made the bot report `available: 0` once the latest 20 were already saved. The current scanner scrolls deeper:
+
+- normal scan: up to 300 profile items;
+- Telegram deep scan: up to 1000 profile items via `/instagram_deep_scan` or the `🔎 Досканировать` button.
+
+Telegram buttons/commands:
+
+- `🔎 Досканировать` / `/instagram_deep_scan` — deep scan all Instagram sources for the chat;
+- `🔎 Глубокий скан` on a source — deep scan only that source;
+- `🛑 Отменить все задачи` — cancels queued/active Instagram tasks. Queued videos are released back to `NEW` so they can be tested again;
+- `🧪 Загрузить 1 видео` / `/instagram_test_one` — queues one available Instagram video for testing.
+
+After deploying changes, redeploy/restart both the web service and `gidegide-worker`, then reinstall Telegram webhook if the bot menu/buttons do not update.

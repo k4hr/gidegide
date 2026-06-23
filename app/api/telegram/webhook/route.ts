@@ -62,7 +62,7 @@ function denied(chatId: string | number) {
 }
 
 function mainMenuText() {
-  return `🎬 REDFILM Instagram Auto Sources\n\nОтправь ссылки на публичные Instagram-аккаунты — можно сразу несколько. При добавлении я сразу пробую просканировать профиль и показать, сколько Reels найдено и сколько осталось в запасе.\n\nКаждый день беру новые Reels, не повторяюсь и ставлю ролики в очередь. При ручном запуске ты выбираешь окно публикации: с текущего времени до выбранного часа по МСК.\n\nDescription:\nпервая строка всегда: переходи смотреть на REDFILM\nдальше оригинальное описание из Instagram.\n\nКоманды:\n/menu — меню\n/instagram_sources — источники и запас роликов\n/instagram_run_today — выбрать окно и запустить сегодня\n/instagram_run_today 23 — запустить сейчас и разложить до 23:00 МСК\n/status — последние задачи\n/queue — очередь обработки\n/set_instagram_cookies — сохранить cookies.txt Instagram\n/instagram_pause — пауза\n/instagram_resume — включить`;
+  return `🎬 REDFILM Instagram Auto Sources\n\nОтправь ссылки на публичные Instagram-аккаунты — можно сразу несколько. При добавлении я сразу пробую просканировать профиль и показать, сколько Reels найдено и сколько осталось в запасе.\n\nКаждый день беру новые Reels, не повторяюсь и ставлю ролики в очередь. При ручном запуске ты выбираешь окно публикации: с текущего времени до выбранного часа по МСК.\n\nDescription:\nпервая строка всегда: переходи смотреть на REDFILM\nдальше оригинальное описание из Instagram.\n\nКоманды:\n/menu — меню\n/instagram_sources — источники и запас роликов\n/instagram_deep_scan — глубокий скан до 1000 публикаций\n/instagram_run_today — выбрать окно и запустить сегодня\n/instagram_run_today 23 — запустить сейчас и разложить до 23:00 МСК\n/status — последние задачи\n/queue — очередь обработки\n/set_instagram_cookies — сохранить cookies.txt Instagram\n/instagram_pause — пауза\n/instagram_resume — включить`;
 }
 
 function mainKeyboard(): TelegramReplyMarkup {
@@ -71,14 +71,17 @@ function mainKeyboard(): TelegramReplyMarkup {
     inline_keyboard: [
       [
         { text: "📸 Instagram источники", callback_data: "ig:sources" },
+        { text: "🔎 Досканировать", callback_data: "ig:deep_scan" },
+      ],
+      [
         { text: "▶️ Запуск сейчас", callback_data: "ig:run_menu" },
+        { text: "🧪 Загрузить 1 видео", callback_data: "ig:test_one" },
       ],
       [
         { text: "📊 Статус", callback_data: "ig:status" },
         { text: "🛠 Очередь", callback_data: "ig:queue" },
       ],
       [
-        { text: "🧪 Загрузить 1 видео", callback_data: "ig:test_one" },
         { text: "🛑 Отменить все задачи", callback_data: "ig:cancel_all_confirm" },
       ],
       [
@@ -95,7 +98,11 @@ function sourceKeyboard(sourceId: string): TelegramReplyMarkup {
     inline_keyboard: [
       [
         { text: "🔍 Проверить", callback_data: `ig:check:${sourceId}` },
+        { text: "🔎 Глубокий скан", callback_data: `ig:deep_scan_source:${sourceId}` },
+      ],
+      [
         { text: "▶️ Запуск сейчас", callback_data: "ig:run_menu" },
+        { text: "🧪 1 видео", callback_data: "ig:test_one" },
       ],
       [
         { text: "📸 Источники", callback_data: "ig:sources" },
@@ -166,6 +173,38 @@ async function executeRunToday(chatId: string | number, publishEndHourInput: num
 }
 
 
+async function executeDeepScan(chatId: string | number, sourceId?: string) {
+  const sources = sourceId
+    ? await prisma.factoryInstagramAutoSource.findMany({ where: { id: sourceId, chat: { chatId: String(chatId) } } })
+    : await listInstagramAutoSources(String(chatId));
+
+  if (sources.length === 0) {
+    await sendTelegramMessage(chatId, "📸 Instagram-источников нет. Сначала отправь ссылку на профиль.", mainKeyboard());
+    return;
+  }
+
+  const limit = FACTORY_CONFIG.instagramDeepScanLimit;
+  await sendTelegramMessage(
+    chatId,
+    [
+      "🔎 Запускаю глубокий скан.",
+      `Источников: ${sources.length}`,
+      `Лимит: до ${limit} публикаций на источник`,
+      "",
+      "Это может занять несколько минут. Если Instagram даст лимит — поставлю cooldown.",
+    ].join("\n"),
+    mainKeyboard(),
+  );
+
+  const blocks: string[] = [];
+  for (const source of sources) {
+    const result = await checkInstagramAutoSource(source.id, { limit });
+    blocks.push(formatScanResult(source, result));
+  }
+
+  await sendTelegramMessage(chatId, blocks.join("\n\n---\n\n"), mainKeyboard());
+}
+
 function cancelAllConfirmKeyboard(): TelegramReplyMarkup {
   return {
     inline_keyboard: [
@@ -199,7 +238,7 @@ async function executeTestOne(chatId: string | number) {
       `Создано задач: ${result.createdJobsCount}`,
       `Пропущено: ${result.skippedCount ?? 0}`,
       `Ошибок: ${result.failedCount ?? 0}`,
-      result.createdJobsCount === 0 ? "Если задач 0 — смотри /instagram_sources: возможно, все найденные Reels уже были в очереди/дублях." : null,
+      result.createdJobsCount === 0 ? "Если задач 0 — нажми 🔎 Досканировать: возможно, последние Reels уже были в базе, а новые лежат глубже в профиле." : null,
       result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
     ].filter(Boolean).join("\n"),
     mainKeyboard(),
@@ -252,19 +291,40 @@ async function cancelAllInstagramTasks(chatId: string | number) {
     data: { status: "CANCELED", error: "Задача отменена через Telegram" },
   });
 
-  await prisma.factoryInstagramAutoSourceVideo.updateMany({
-    where: {
-      source: { chat: { chatId: String(chatId) } },
-      factoryJobId: { in: jobIds },
-      status: { notIn: ["PUBLISHED", "DUPLICATE"] },
-    },
-    data: {
-      status: "CANCELED",
-      failedAt: new Date(),
-      failReason: "Задача отменена через Telegram",
-      error: "Задача отменена через Telegram",
-    },
-  });
+  if (queuedIds.length > 0) {
+    await prisma.factoryInstagramAutoSourceVideo.updateMany({
+      where: {
+        source: { chat: { chatId: String(chatId) } },
+        factoryJobId: { in: queuedIds },
+        status: { notIn: ["PUBLISHED", "DUPLICATE"] },
+      },
+      data: {
+        status: "NEW",
+        factoryJobId: null,
+        queuedAt: null,
+        pickedAt: null,
+        failedAt: null,
+        failReason: null,
+        error: null,
+      },
+    });
+  }
+
+  if (activeIds.length > 0) {
+    await prisma.factoryInstagramAutoSourceVideo.updateMany({
+      where: {
+        source: { chat: { chatId: String(chatId) } },
+        factoryJobId: { in: activeIds },
+        status: { notIn: ["PUBLISHED", "DUPLICATE"] },
+      },
+      data: {
+        status: "CANCELED",
+        failedAt: new Date(),
+        failReason: "Задача отменена через Telegram",
+        error: "Задача отменена через Telegram",
+      },
+    });
+  }
 
   await prisma.factoryTelegramJob.updateMany({
     where: { factoryJobId: { in: jobIds }, chat: { chatId: String(chatId) } },
@@ -357,7 +417,8 @@ async function sourcesText(chatId: string | number) {
       return [
         sourceName(source),
         source.isEnabled ? "Status: 🟢 active" : "Status: ⏸ paused",
-        `Total found: ${stats.total || source.lastFoundCount || 0}`,
+        `Total saved in DB: ${stats.total || source.lastFoundCount || 0}`,
+        `Last scan found: ${source.lastFoundCount || 0}`,
         `Available: ${stats.available}`,
         `Queued: ${stats.queued}`,
         `Downloaded: ${stats.downloaded}`,
@@ -554,6 +615,19 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
     return;
   }
 
+  if (data === "ig:deep_scan") {
+    await editTelegramMessage(chatId, messageId, "🔎 Глубокий скан принят. Результат отправлю отдельным сообщением.", mainKeyboard());
+    await executeDeepScan(chatId);
+    return;
+  }
+
+  if (data.startsWith("ig:deep_scan_source:")) {
+    const id = data.slice("ig:deep_scan_source:".length);
+    await editTelegramMessage(chatId, messageId, "🔎 Глубокий скан источника принят. Результат отправлю отдельным сообщением.", mainKeyboard());
+    await executeDeepScan(chatId, id);
+    return;
+  }
+
   if (data === "ig:status") {
     await editTelegramMessage(chatId, messageId, await statusText(chatId), mainKeyboard());
     return;
@@ -682,6 +756,11 @@ export async function POST(request: Request) {
 
     if (text === "/instagram_sources" || text === "/sources") {
       await sendTelegramMessage(chatId, await sourcesText(chatId), mainKeyboard());
+      return NextResponse.json({ ok: true });
+    }
+
+    if (text === "/instagram_deep_scan" || text === "/deep_scan") {
+      await executeDeepScan(chatId);
       return NextResponse.json({ ok: true });
     }
 

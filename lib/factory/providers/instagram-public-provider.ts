@@ -280,7 +280,7 @@ async function listWithPlaywright(sourceUrl: string, username?: string, limit = 
     const page = await context.newPage();
     const response = await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: INSTAGRAM_CONFIG.requestTimeoutMs });
     if (response?.status() === 429) throw new Error("Instagram 429 Too Many Requests");
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(INSTAGRAM_CONFIG.playwrightInitialWaitMs);
 
     const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
     if (looksLikeInstagramGate(bodyText)) {
@@ -288,19 +288,56 @@ async function listWithPlaywright(sourceUrl: string, username?: string, limit = 
     }
 
     const found = new Set<string>();
-    for (let step = 0; step < 8 && found.size < limit; step += 1) {
+    const maxScrollSteps = Math.max(
+      12,
+      Math.min(INSTAGRAM_CONFIG.playwrightMaxScrollSteps, Math.ceil(limit / 5) + INSTAGRAM_CONFIG.playwrightNoNewScrollBreaks),
+    );
+    let noNewSteps = 0;
+    let lastScrollHeight = 0;
+
+    for (let step = 0; step < maxScrollSteps && found.size < limit; step += 1) {
+      const before = found.size;
       const links = await page.evaluate(() =>
-        Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/reel/"],a[href*="/p/"]'))
+        Array.from(document.querySelectorAll<HTMLAnchorElement>('a[href*="/reel/"],a[href*="/p/"],a[href*="/tv/"]'))
           .map((a) => a.href)
           .filter(Boolean),
       );
+
       for (const link of links) {
-        const shortcode = link.match(/\/(?:reel|p)\/([^/?#]+)/i)?.[1];
-        if (shortcode) found.add(link.includes("/p/") ? `https://www.instagram.com/p/${shortcode}/` : `https://www.instagram.com/reel/${shortcode}/`);
+        const match = link.match(/\/(reel|p|tv)\/([^/?#]+)/i);
+        const kind = match?.[1]?.toLowerCase();
+        const shortcode = match?.[2];
+        if (!shortcode) continue;
+        found.add(kind === "p" ? `https://www.instagram.com/p/${shortcode}/` : `https://www.instagram.com/reel/${shortcode}/`);
       }
-      if (found.size >= limit) break;
-      await page.mouse.wheel(0, 1800);
-      await page.waitForTimeout(1200);
+
+      const scrollInfo = await page.evaluate((pixels) => {
+        const beforeY = window.scrollY;
+        const height = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+        window.scrollBy(0, pixels);
+        return { beforeY, afterY: window.scrollY, height };
+      }, INSTAGRAM_CONFIG.playwrightScrollPixels);
+
+      await page.waitForTimeout(INSTAGRAM_CONFIG.playwrightScrollDelayMs);
+
+      const after = found.size;
+      if (after === before && scrollInfo.height === lastScrollHeight) {
+        noNewSteps += 1;
+      } else if (after === before) {
+        noNewSteps += 1;
+      } else {
+        noNewSteps = 0;
+      }
+      lastScrollHeight = scrollInfo.height;
+
+      if (step > 8 && noNewSteps >= INSTAGRAM_CONFIG.playwrightNoNewScrollBreaks) {
+        console.info("[INSTAGRAM] playwright deep scroll stopped", { found: found.size, step, noNewSteps });
+        break;
+      }
+
+      if (step > 0 && step % 20 === 0) {
+        console.info("[INSTAGRAM] playwright deep scan progress", { sourceUrl, found: found.size, step, limit });
+      }
     }
 
     return Array.from(found).slice(0, limit).map((url) => ({
