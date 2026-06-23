@@ -1,5 +1,8 @@
 import { prisma } from "../../../lib/prisma";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function formatDate(value?: Date | null) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("ru-RU", {
