@@ -9,6 +9,8 @@ const TELEGRAM_COMMANDS = [
   { command: "instagram_sources", description: "Instagram-источники" },
   { command: "instagram_run_today", description: "Запустить Instagram с выбором окна МСК" },
   { command: "instagram_status", description: "Статус Instagram задач" },
+  { command: "queue", description: "Очередь обработки" },
+  { command: "set_instagram_cookies", description: "Сохранить Instagram cookies.txt" },
   { command: "instagram_pause", description: "Пауза Instagram автозабора" },
   { command: "instagram_resume", description: "Включить Instagram автозабор" },
 ];

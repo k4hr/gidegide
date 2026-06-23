@@ -833,6 +833,11 @@ async function processOneJob() {
           job.id,
           `🎬 Рендер: ${clipIndex}/${clipStarts.length}`,
         );
+        if (instagramJob) {
+          await updateInstagramAutoSourceVideoFromJob(job.id, { status: "RENDERED" }).catch((error) =>
+            console.error("Instagram auto-source rendered update failed:", error),
+          );
+        }
 
         try {
           await assertNotCanceled(job.id);
@@ -917,6 +922,7 @@ async function processOneJob() {
                     status: "PUBLISHED",
                     platformPostId: result.id,
                     platformUrl: result.url,
+                    publishedAt: new Date(),
                     error: null,
                   },
                 }),
@@ -1015,9 +1021,20 @@ async function processOneJob() {
                     status: "PUBLISHED",
                     platformPostId: result.id,
                     platformUrl: result.url,
+                    publishedAt: new Date(),
                     error: result.message,
                   },
                 }),
+              );
+              await notifyTelegramJob(
+                job.id,
+                `✅ Опубликовано ${clipIndex}/${clipStarts.length}: ${result.url}`,
+              );
+              await updateInstagramAutoSourceVideoFromJob(job.id, {
+                status: "PUBLISHED",
+                url: result.url,
+              }).catch((error) =>
+                console.error("Instagram auto-source publish update failed:", error),
               );
             } catch (error) {
               await safeDb(() =>
@@ -1034,6 +1051,16 @@ async function processOneJob() {
                   },
                 }),
               );
+              await notifyTelegramJob(
+                job.id,
+                `❌ Ошибка публикации ${clipIndex}/${clipStarts.length}: ${humanizeFactoryError(error)}`,
+              );
+              await updateInstagramAutoSourceVideoFromJob(job.id, {
+                status: "FAILED",
+                error,
+              }).catch((updateError) =>
+                console.error("Instagram auto-source failure update failed:", updateError),
+              );
             }
           }
 
@@ -1044,15 +1071,27 @@ async function processOneJob() {
       }
     }
 
+    const publishSummary = await db(() =>
+      prisma.factoryPublish.groupBy({
+        by: ["status"],
+        where: { clip: { jobId: job.id } },
+        _count: { _all: true },
+      }),
+    );
+    const publishedCount = publishSummary.find((row) => row.status === "PUBLISHED")?._count._all ?? 0;
+    const failedPublishCount = publishSummary.find((row) => row.status === "FAILED")?._count._all ?? 0;
+    const shouldFailJob = failedPublishCount > 0 && publishedCount === 0;
+
     await db(() =>
       prisma.factoryJob.update({
         where: {
           id: job.id,
         },
         data: {
-          status: "DONE",
+          status: shouldFailJob ? "FAILED" : "DONE",
           progress: 100,
-          progressLabel: "Готово",
+          progressLabel: shouldFailJob ? "Публикация не завершена" : "Готово: видео опубликовано на канал",
+          error: shouldFailJob ? "Публикация на канал не получила URL/ID" : null,
         },
       }),
     );

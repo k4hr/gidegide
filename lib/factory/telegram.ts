@@ -66,6 +66,16 @@ export function editTelegramMessage(
   });
 }
 
+
+export async function readTelegramFileText(fileId: string) {
+  const file = await callTelegram<{ file_path?: string }>("getFile", { file_id: fileId });
+  if (!file.file_path) throw new Error("Telegram не отдал путь файла");
+
+  const response = await fetch(`https://api.telegram.org/file/bot${getBotToken()}/${file.file_path}`);
+  if (!response.ok) throw new Error(`Telegram file download failed: ${response.status}`);
+  return response.text();
+}
+
 export function answerCallbackQuery(callbackQueryId: string, text?: string) {
   return callTelegram<true>("answerCallbackQuery", {
     callback_query_id: callbackQueryId,

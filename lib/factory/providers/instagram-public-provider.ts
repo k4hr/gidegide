@@ -3,6 +3,9 @@ import path from "node:path";
 
 import { chromium } from "playwright";
 
+import { INSTAGRAM_CONFIG } from "../instagram-config";
+import { isInstagramRateLimitError } from "../instagram-errors";
+import { getInstagramCookiesFilePath, readInstagramCookiesText } from "../instagram-secrets";
 import { readCommand, runCommand, safeFileName } from "../video";
 
 export type InstagramPublicVideo = {
@@ -15,6 +18,7 @@ export type InstagramPublicVideo = {
   width?: number;
   height?: number;
   mediaUrl?: string;
+  publishedAt?: Date;
 };
 
 type NormalizedInstagramSource = {
@@ -24,6 +28,8 @@ type NormalizedInstagramSource = {
 };
 
 const INSTAGRAM_HOSTS = new Set(["instagram.com", "www.instagram.com"]);
+const INSTAGRAM_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36";
 
 function cleanFirstUrl(value: string) {
   return (value.match(/https?:\/\/[^\s<>]+/i)?.[0] || value.trim()).replace(/[),.!?]+$/, "");
@@ -65,6 +71,19 @@ function normalizeReelUrl(shortcode: string) {
 
 function normalizePostUrl(shortcode: string) {
   return `https://www.instagram.com/p/${shortcode}/`;
+}
+
+function parseUploadDate(value?: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return new Date(value * 1000);
+  if (typeof value !== "string") return undefined;
+  if (/^\d{8}$/.test(value)) {
+    const year = Number(value.slice(0, 4));
+    const month = Number(value.slice(4, 6));
+    const day = Number(value.slice(6, 8));
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
 export function isInstagramProfileOrPostText(text: string) {
@@ -164,7 +183,13 @@ function videoFromYtDlpEntry(entry: any, fallbackUsername?: string): InstagramPu
     width: Number.isFinite(Number(entry.width)) ? Number(entry.width) : undefined,
     height: Number.isFinite(Number(entry.height)) ? Number(entry.height) : undefined,
     mediaUrl: typeof entry.url === "string" && /^https?:\/\//.test(entry.url) ? entry.url : undefined,
+    publishedAt: parseUploadDate(entry.timestamp) || parseUploadDate(entry.release_timestamp) || parseUploadDate(entry.upload_date),
   };
+}
+
+async function ytdlpCookieArgs() {
+  const cookiesFile = await getInstagramCookiesFilePath();
+  return cookiesFile ? ["--cookies", cookiesFile] : [];
 }
 
 async function listWithYtDlp(sourceUrl: string, username?: string, limit = 50) {
@@ -175,6 +200,7 @@ async function listWithYtDlp(sourceUrl: string, username?: string, limit = 50) {
     String(Math.max(1, Math.min(200, limit))),
     "--no-warnings",
     "--ignore-errors",
+    ...(await ytdlpCookieArgs()),
     sourceUrl,
   ];
   const stdout = await readCommand("yt-dlp", args);
@@ -183,21 +209,83 @@ async function listWithYtDlp(sourceUrl: string, username?: string, limit = 50) {
 }
 
 async function enrichDirectWithYtDlp(sourceUrl: string, username?: string) {
-  const stdout = await readCommand("yt-dlp", ["--dump-json", "--no-warnings", sourceUrl]);
+  const stdout = await readCommand("yt-dlp", ["--dump-json", "--no-warnings", ...(await ytdlpCookieArgs()), sourceUrl]);
   const first = parseYtDlpJsonLines(stdout)[0];
   return first ? videoFromYtDlpEntry(first, username) : null;
+}
+
+type ParsedCookie = {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+};
+
+function parseNetscapeCookies(text: string): ParsedCookie[] {
+  const cookies: ParsedCookie[] = [];
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || (line.startsWith("#") && !line.startsWith("#HttpOnly_"))) continue;
+    const httpOnly = line.startsWith("#HttpOnly_");
+    const cleanLine = httpOnly ? line.replace(/^#HttpOnly_/, "") : line;
+    const parts = cleanLine.split("\t");
+    if (parts.length < 7) continue;
+    const [domain, , cookiePath, secureRaw, expiresRaw, name, ...valueParts] = parts;
+    if (!domain.includes("instagram.com") || !name) continue;
+    const expires = Number(expiresRaw);
+    cookies.push({
+      name,
+      value: valueParts.join("\t"),
+      domain: domain.startsWith(".") ? domain : `.${domain}`,
+      path: cookiePath || "/",
+      secure: secureRaw.toUpperCase() === "TRUE",
+      httpOnly,
+      ...(Number.isFinite(expires) && expires > 0 ? { expires } : {}),
+    });
+  }
+  return cookies;
+}
+
+function looksLikeInstagramGate(text: string) {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("too many requests") ||
+    lower.includes("please wait a few minutes") ||
+    lower.includes("challenge_required") ||
+    lower.includes("login required") ||
+    lower.includes("log in to see photos and videos") ||
+    lower.includes("log in to instagram") ||
+    lower.includes("sign up to see photos")
+  );
 }
 
 async function listWithPlaywright(sourceUrl: string, username?: string, limit = 50) {
   const browser = await chromium.launch({ headless: true });
   try {
-    const page = await browser.newPage({
-      userAgent:
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+    const context = await browser.newContext({
+      userAgent: INSTAGRAM_USER_AGENT,
       locale: "en-US",
+      viewport: { width: 1365, height: 900 },
     });
-    await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: 45000 });
+
+    const cookiesText = await readInstagramCookiesText();
+    const cookies = cookiesText ? parseNetscapeCookies(cookiesText) : [];
+    if (cookies.length > 0) {
+      await context.addCookies(cookies);
+    }
+
+    const page = await context.newPage();
+    const response = await page.goto(sourceUrl, { waitUntil: "domcontentloaded", timeout: INSTAGRAM_CONFIG.requestTimeoutMs });
+    if (response?.status() === 429) throw new Error("Instagram 429 Too Many Requests");
     await page.waitForTimeout(2500);
+
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    if (looksLikeInstagramGate(bodyText)) {
+      throw new Error(cookies.length > 0 ? "Instagram login required or challenge_required" : "Instagram login required: add cookies with /set_instagram_cookies");
+    }
 
     const found = new Set<string>();
     for (let step = 0; step < 8 && found.size < limit; step += 1) {
@@ -231,7 +319,7 @@ export async function listInstagramPublicVideos(input: {
   limit?: number;
 }): Promise<InstagramPublicVideo[]> {
   const normalized = normalizeInstagramSourceUrl(input.sourceUrl);
-  const limit = input.limit ?? 50;
+  const limit = input.limit ?? INSTAGRAM_CONFIG.listLimit;
   const username = input.username || normalized.username;
   console.log("[INSTAGRAM] list start", { sourceUrl: normalized.sourceUrl, kind: normalized.kind, limit });
 
@@ -240,33 +328,33 @@ export async function listInstagramPublicVideos(input: {
       const direct = await enrichDirectWithYtDlp(normalized.sourceUrl, username);
       if (direct) return [direct];
     } catch (error) {
+      if (isInstagramRateLimitError(error)) throw error;
       console.warn("[INSTAGRAM] direct yt-dlp failed", error instanceof Error ? error.message : error);
     }
     return [{ sourceUrl: normalized.sourceUrl, shortcode: shortcodeFromUrl(normalized.sourceUrl), username }];
   }
 
   const candidates: InstagramPublicVideo[] = [];
-  const listUrls = [
-    `https://www.instagram.com/${username}/reels/`,
-    normalized.sourceUrl,
-  ];
 
-  for (const url of listUrls) {
-    try {
-      console.log("[INSTAGRAM] yt-dlp list start", { url });
-      candidates.push(...(await listWithYtDlp(url, username, limit)));
-      if (candidates.length >= limit) break;
-    } catch (error) {
-      console.warn("[INSTAGRAM] yt-dlp list failed", error instanceof Error ? error.message : error);
-    }
+  try {
+    console.log("[INSTAGRAM] playwright list start", { sourceUrl: normalized.sourceUrl });
+    candidates.push(...(await listWithPlaywright(normalized.sourceUrl, username, limit)));
+  } catch (error) {
+    if (isInstagramRateLimitError(error)) throw error;
+    console.warn("[INSTAGRAM] playwright list failed", error instanceof Error ? error.message : error);
   }
 
-  if (candidates.length < 1) {
-    try {
-      console.log("[INSTAGRAM] playwright list start", { sourceUrl: normalized.sourceUrl });
-      candidates.push(...(await listWithPlaywright(normalized.sourceUrl, username, limit)));
-    } catch (error) {
-      console.warn("[INSTAGRAM] playwright list failed", error instanceof Error ? error.message : error);
+  if (candidates.length < 1 && INSTAGRAM_CONFIG.enableYtdlpProfileList) {
+    const listUrls = [`https://www.instagram.com/${username}/reels/`, normalized.sourceUrl];
+    for (const url of listUrls) {
+      try {
+        console.log("[INSTAGRAM] yt-dlp list start", { url });
+        candidates.push(...(await listWithYtDlp(url, username, limit)));
+        if (candidates.length >= limit) break;
+      } catch (error) {
+        if (isInstagramRateLimitError(error)) throw error;
+        console.warn("[INSTAGRAM] yt-dlp list failed", error instanceof Error ? error.message : error);
+      }
     }
   }
 
@@ -304,6 +392,7 @@ export async function downloadInstagramPublicVideo(input: {
   try {
     meta = await enrichDirectWithYtDlp(normalized.sourceUrl, normalized.username);
   } catch (error) {
+    if (isInstagramRateLimitError(error)) throw error;
     console.warn("[INSTAGRAM] metadata yt-dlp failed", error instanceof Error ? error.message : error);
   }
 
@@ -312,6 +401,7 @@ export async function downloadInstagramPublicVideo(input: {
     [
       "--no-playlist",
       "--no-warnings",
+      ...(await ytdlpCookieArgs()),
       "--merge-output-format",
       "mp4",
       "-f",

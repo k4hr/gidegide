@@ -8,7 +8,9 @@ import { prisma } from "../prisma";
 import { FACTORY_SOURCE_DIR } from "./paths";
 import { withDbRetry } from "./db-retry";
 import { safeFileName } from "./video";
+import { FACTORY_CONFIG } from "./factory-config";
 import { INSTAGRAM_AUTO_SOURCE_CONFIG } from "./instagram-auto-source-config";
+import { getErrorMessage, isInstagramRateLimitError } from "./instagram-errors";
 import {
   listInstagramPublicVideos,
   downloadInstagramPublicVideo,
@@ -21,6 +23,60 @@ export const INSTAGRAM_REDFILM_PHRASE = "переходи смотреть на 
 
 function db<T>(operation: () => Promise<T>) {
   return withDbRetry(operation, 5);
+}
+
+const INSTAGRAM_GLOBAL_COOLDOWN_SETTING_KEY = "instagram.cooldownUntil";
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function addHours(date: Date, hours: number) {
+  return new Date(date.getTime() + Math.max(1, hours) * 60 * 60 * 1000);
+}
+
+function parseDateSetting(value?: string | null) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function getInstagramGlobalCooldownUntil() {
+  const setting = await db(() =>
+    prisma.factorySetting.findUnique({
+      where: { key: INSTAGRAM_GLOBAL_COOLDOWN_SETTING_KEY },
+      select: { value: true },
+    }),
+  );
+  return parseDateSetting(setting?.value);
+}
+
+function isCooldownActive(value?: Date | string | null, now = new Date()) {
+  if (!value) return false;
+  return new Date(value).getTime() > now.getTime();
+}
+
+async function setInstagramCooldown(sourceId: string, error: unknown) {
+  const cooldownUntil = addHours(new Date(), INSTAGRAM_AUTO_SOURCE_CONFIG.cooldownHours);
+  const message = humanizeInstagramAutoSourceError(error);
+
+  await db(() =>
+    prisma.factorySetting.upsert({
+      where: { key: INSTAGRAM_GLOBAL_COOLDOWN_SETTING_KEY },
+      update: { value: cooldownUntil.toISOString() },
+      create: { key: INSTAGRAM_GLOBAL_COOLDOWN_SETTING_KEY, value: cooldownUntil.toISOString() },
+    }),
+  );
+
+  await db(() =>
+    prisma.factoryInstagramAutoSource.update({
+      where: { id: sourceId },
+      data: { cooldownUntil, lastError: message, lastScanAt: new Date() },
+    }),
+  );
+
+  console.warn("[INSTAGRAM] rate limited, cooldown until", cooldownUntil.toISOString());
+  return cooldownUntil;
 }
 
 function dateKey(date = new Date(), timeZone = INSTAGRAM_AUTO_SOURCE_CONFIG.timezone) {
@@ -286,6 +342,75 @@ export async function listInstagramAutoSources(chatId?: string) {
   );
 }
 
+export type InstagramSourceUsageStats = {
+  total: number;
+  available: number;
+  queued: number;
+  downloaded: number;
+  rendered: number;
+  published: number;
+  failed: number;
+  duplicate: number;
+};
+
+function emptyUsageStats(): InstagramSourceUsageStats {
+  return { total: 0, available: 0, queued: 0, downloaded: 0, rendered: 0, published: 0, failed: 0, duplicate: 0 };
+}
+
+function countVideoStats(
+  videos: Array<{
+    sourceId: string;
+    status: string;
+    factoryJobId?: string | null;
+    queuedAt?: Date | null;
+    downloadedAt?: Date | null;
+    renderedAt?: Date | null;
+    publishedAtChannel?: Date | null;
+    failedAt?: Date | null;
+  }>,
+) {
+  const result = new Map<string, InstagramSourceUsageStats>();
+
+  for (const video of videos) {
+    const stats = result.get(video.sourceId) || emptyUsageStats();
+    stats.total += 1;
+
+    if (video.status === "DUPLICATE") stats.duplicate += 1;
+    if (video.status === "PUBLISHED" || video.publishedAtChannel) stats.published += 1;
+    else if (video.status === "FAILED" || video.failedAt) stats.failed += 1;
+    else if (video.status === "RENDERED" || video.renderedAt) stats.rendered += 1;
+    else if (video.status === "DOWNLOADED" || video.downloadedAt) stats.downloaded += 1;
+    else if (video.status === "JOB_CREATED" || video.status === "QUEUED" || video.queuedAt || video.factoryJobId) stats.queued += 1;
+    else if (video.status === "NEW" || video.status === "DISCOVERED") stats.available += 1;
+
+    result.set(video.sourceId, stats);
+  }
+
+  return result;
+}
+
+export async function getInstagramSourceUsageStats(sourceIds: string[]) {
+  if (sourceIds.length === 0) return new Map<string, InstagramSourceUsageStats>();
+
+  const videos = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.findMany({
+      where: { sourceId: { in: sourceIds } },
+      select: {
+        sourceId: true,
+        status: true,
+        factoryJobId: true,
+        queuedAt: true,
+        downloadedAt: true,
+        renderedAt: true,
+        publishedAtChannel: true,
+        failedAt: true,
+      },
+    }),
+  );
+
+  return countVideoStats(videos);
+}
+
 async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: InstagramPublicVideo[]) {
   let newCount = 0;
   let duplicateCount = 0;
@@ -305,6 +430,20 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
 
     if (existing) {
       duplicateCount += 1;
+      await db(() =>
+        prisma.factoryInstagramAutoSourceVideo.update({
+          where: { id: existing.id },
+          data: {
+            seenAt: new Date(),
+            caption: video.caption || undefined,
+            thumbnailUrl: video.thumbnailUrl || undefined,
+            durationSec: video.durationSeconds || undefined,
+            width: video.width || undefined,
+            height: video.height || undefined,
+            sourcePublishedAt: video.publishedAt || undefined,
+          },
+        }),
+      );
       continue;
     }
 
@@ -320,6 +459,8 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
           durationSec: video.durationSeconds || null,
           width: video.width || null,
           height: video.height || null,
+          sourcePublishedAt: video.publishedAt || null,
+          seenAt: new Date(),
           status: "NEW",
         },
       }),
@@ -330,30 +471,64 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
   return { newCount, duplicateCount };
 }
 
-export async function checkInstagramAutoSource(id: string) {
+export async function checkInstagramAutoSource(id: string, input?: { limit?: number }) {
   const source = await db(() => prisma.factoryInstagramAutoSource.findUnique({ where: { id } }));
   if (!source) throw new Error("Instagram-источник не найден");
 
-  const videos = await listInstagramPublicVideos({
-    sourceUrl: source.sourceUrl,
-    username: source.username || undefined,
-    limit: INSTAGRAM_AUTO_SOURCE_CONFIG.maxScanPerSource,
-  });
-  const saved = await saveDiscoveredVideos(source, videos);
+  const limit = Math.max(1, Math.min(100, input?.limit ?? FACTORY_CONFIG.instagramScanOnAddLimit));
 
-  await db(() =>
-    prisma.factoryInstagramAutoSource.update({
-      where: { id: source.id },
-      data: { lastRunAt: new Date(), lastError: null },
-    }),
-  );
+  try {
+    const videos = await listInstagramPublicVideos({
+      sourceUrl: source.sourceUrl,
+      username: source.username || undefined,
+      limit,
+    });
+    const saved = await saveDiscoveredVideos(source, videos);
+    const statsMap = await getInstagramSourceUsageStats([source.id]);
+    const stats = statsMap.get(source.id) || emptyUsageStats();
 
-  return {
-    foundCount: videos.length,
-    newCount: saved.newCount,
-    duplicateCount: saved.duplicateCount,
-    examples: videos.slice(0, 5).map((video) => video.sourceUrl),
-  };
+    await db(() =>
+      prisma.factoryInstagramAutoSource.update({
+        where: { id: source.id },
+        data: {
+          lastRunAt: new Date(),
+          lastScanAt: new Date(),
+          lastFoundCount: videos.length,
+          lastError: videos.length > 0 ? null : "No public reels found or Instagram login/rate limit",
+        },
+      }),
+    );
+
+    return {
+      foundCount: videos.length,
+      newCount: saved.newCount,
+      duplicateCount: saved.duplicateCount,
+      stats,
+      examples: videos.slice(0, 5).map((video) => video.sourceUrl),
+      error: videos.length > 0 ? null : "No public reels found",
+      cooldownUntil: null as Date | null,
+    };
+  } catch (error) {
+    const cooldownUntil = isInstagramRateLimitError(error) ? await setInstagramCooldown(source.id, error) : null;
+    const message = humanizeInstagramAutoSourceError(error);
+    await db(() =>
+      prisma.factoryInstagramAutoSource.update({
+        where: { id: source.id },
+        data: { lastRunAt: new Date(), lastScanAt: new Date(), lastError: message, ...(cooldownUntil ? { cooldownUntil } : {}) },
+      }),
+    );
+    const statsMap = await getInstagramSourceUsageStats([source.id]);
+
+    return {
+      foundCount: 0,
+      newCount: 0,
+      duplicateCount: 0,
+      stats: statsMap.get(source.id) || emptyUsageStats(),
+      examples: [],
+      error: message,
+      cooldownUntil,
+    };
+  }
 }
 
 function shouldUseVideo(video: { durationSec: number | null }) {
@@ -387,37 +562,91 @@ async function ensureDiscoveredForSources(sources: FactoryInstagramAutoSource[])
   let foundCount = 0;
   let newCount = 0;
   let duplicateCount = 0;
+  let skippedCount = 0;
+  let rateLimited = false;
+  let cooldownUntil: Date | null = null;
 
-  for (const source of sources) {
+  const globalCooldown = await getInstagramGlobalCooldownUntil();
+  if (isCooldownActive(globalCooldown)) {
+    console.warn("[INSTAGRAM] global cooldown active", { cooldownUntil: globalCooldown?.toISOString() });
+    return { foundCount, newCount, duplicateCount, skippedCount: sources.length, rateLimited: true, cooldownUntil: globalCooldown };
+  }
+
+  const now = new Date();
+  const activeSources = sources
+    .filter((source) => {
+      if (isCooldownActive(source.cooldownUntil, now)) {
+        skippedCount += 1;
+        console.info("[INSTAGRAM] source skipped", { source: source.username || source.sourceUrl, reason: "cooldown", cooldownUntil: source.cooldownUntil });
+        return false;
+      }
+      return true;
+    })
+    .slice(0, INSTAGRAM_AUTO_SOURCE_CONFIG.maxSourcesPerRun);
+
+  for (const [index, source] of activeSources.entries()) {
+    if (index > 0) await delay(INSTAGRAM_AUTO_SOURCE_CONFIG.sourceDelaySeconds * 1000);
+
     try {
+      console.info("[INSTAGRAM] source scan start", source.username ? `@${source.username}` : source.sourceUrl);
       const videos = await listInstagramPublicVideos({
         sourceUrl: source.sourceUrl,
         username: source.username || undefined,
         limit: INSTAGRAM_AUTO_SOURCE_CONFIG.maxScanPerSource,
       });
       const saved = await saveDiscoveredVideos(source, videos);
+      const statsMap = await getInstagramSourceUsageStats([source.id]);
+      const stats = statsMap.get(source.id) || emptyUsageStats();
+
       foundCount += videos.length;
       newCount += saved.newCount;
       duplicateCount += saved.duplicateCount;
+
       await db(() =>
         prisma.factoryInstagramAutoSource.update({
           where: { id: source.id },
-          data: { lastError: null, lastRunAt: new Date() },
+          data: {
+            lastError: videos.length > 0 ? null : "No public reels found or Instagram login/rate limit",
+            lastRunAt: new Date(),
+            lastScanAt: new Date(),
+            lastFoundCount: videos.length,
+          },
         }),
       );
+
+      console.info("[INSTAGRAM] source scan done", {
+        source: source.username ? `@${source.username}` : source.sourceUrl,
+        found: videos.length,
+        new: saved.newCount,
+        existing: saved.duplicateCount,
+        available: stats.available,
+      });
     } catch (error) {
       const message = humanizeInstagramAutoSourceError(error);
+      if (isInstagramRateLimitError(error)) {
+        cooldownUntil = await setInstagramCooldown(source.id, error);
+        rateLimited = true;
+        await db(() =>
+          prisma.factoryInstagramAutoSource.update({
+            where: { id: source.id },
+            data: { lastError: message, lastRunAt: new Date(), lastScanAt: new Date(), cooldownUntil },
+          }),
+        );
+        console.warn("[INSTAGRAM] source skipped", { source: source.username || source.sourceUrl, reason: "rate_limit", cooldownUntil });
+        break;
+      }
+
       await db(() =>
         prisma.factoryInstagramAutoSource.update({
           where: { id: source.id },
-          data: { lastError: message, lastRunAt: new Date() },
+          data: { lastError: message, lastRunAt: new Date(), lastScanAt: new Date() },
         }),
       );
       console.error("[INSTAGRAM] source scan failed", source.sourceUrl, error);
     }
   }
 
-  return { foundCount, newCount, duplicateCount };
+  return { foundCount, newCount, duplicateCount, skippedCount, rateLimited, cooldownUntil };
 }
 
 async function createInstagramJob(input: {
@@ -478,18 +707,34 @@ async function createInstagramJob(input: {
     }),
   );
 
-  await db(() =>
+  const video = await db(() =>
     prisma.factoryInstagramAutoSourceVideo.update({
       where: { id: input.videoId },
       data: {
         factoryJobId: job.id,
         status: "JOB_CREATED",
+        queuedAt: new Date(),
         pickedAt: new Date(),
         downloadedAt: new Date(),
+        failedAt: null,
+        failReason: null,
         error: null,
       },
+      include: { source: { select: { chatId: true, username: true, sourceUrl: true } } },
     }),
   );
+
+  await db(() =>
+    prisma.factoryTelegramJob.create({
+      data: {
+        chatId: video.source.chatId,
+        factoryJobId: job.id,
+        sourceUrl: input.sourceUrl,
+        status: "QUEUED",
+        lastStatusText: `⏳ В очереди: ${video.source.username ? `@${video.source.username}` : video.source.sourceUrl}`,
+      },
+    }),
+  ).catch(() => undefined);
 
   return job;
 }
@@ -506,6 +751,21 @@ export async function runInstagramAutoSourcesDaily(input?: {
   const limit = Math.max(1, Math.min(50, input?.limit ?? INSTAGRAM_AUTO_SOURCE_CONFIG.dailyLimit));
   const publishEndHour = normalizeInstagramPublishEndHour(input?.publishEndHour);
 
+  const globalCooldown = await getInstagramGlobalCooldownUntil();
+  if (isCooldownActive(globalCooldown)) {
+    return {
+      foundCount: 0,
+      newCount: 0,
+      duplicateCount: 0,
+      downloadedCount: 0,
+      createdJobsCount: 0,
+      skippedCount: 0,
+      failedCount: 0,
+      cooldownUntil: globalCooldown,
+      rateLimited: true,
+    };
+  }
+
   const sources = await db(() =>
     prisma.factoryInstagramAutoSource.findMany({
       where: {
@@ -516,8 +776,11 @@ export async function runInstagramAutoSourcesDaily(input?: {
     }),
   );
 
-  if (sources.length === 0) {
-    return { foundCount: 0, newCount: 0, duplicateCount: 0, downloadedCount: 0, createdJobsCount: 0, skippedCount: 0, failedCount: 0 };
+  const now = new Date();
+  const runnableSources = sources.filter((source) => !isCooldownActive(source.cooldownUntil, now));
+
+  if (sources.length === 0 || runnableSources.length === 0) {
+    return { foundCount: 0, newCount: 0, duplicateCount: 0, downloadedCount: 0, createdJobsCount: 0, skippedCount: sources.length, failedCount: 0 };
   }
 
   const alreadyRan = !input?.force
@@ -533,13 +796,15 @@ export async function runInstagramAutoSourcesDaily(input?: {
     return { foundCount: 0, newCount: 0, duplicateCount: 0, downloadedCount: 0, createdJobsCount: 0, skippedCount: 0, failedCount: 0 };
   }
 
-  const scan = await ensureDiscoveredForSources(sources);
+  const limitedSources = runnableSources.slice(0, INSTAGRAM_AUTO_SOURCE_CONFIG.maxSourcesPerRun);
+
+  const scan = await ensureDiscoveredForSources(limitedSources);
 
   const unused = await db(() =>
     prisma.factoryInstagramAutoSourceVideo.findMany({
       where: {
-        sourceId: { in: sources.map((source) => source.id) },
-        status: { in: ["NEW", "DISCOVERED", "FAILED"] },
+        sourceId: { in: limitedSources.map((source) => source.id) },
+        status: { in: ["NEW", "DISCOVERED"] },
         factoryJobId: null,
       },
       include: { source: true },
@@ -552,9 +817,9 @@ export async function runInstagramAutoSourcesDaily(input?: {
   const picked = roundRobinPick(candidates, limit);
   const slots = scheduledSlots({
     count: picked.length,
-    startHour: sources[0]?.publishStartHour ?? INSTAGRAM_AUTO_SOURCE_CONFIG.publishStartHour,
-    endHour: input?.startFromNow ? publishEndHour : (sources[0]?.publishEndHour ?? INSTAGRAM_AUTO_SOURCE_CONFIG.publishEndHour),
-    timeZone: sources[0]?.timezone || INSTAGRAM_AUTO_SOURCE_CONFIG.timezone,
+    startHour: limitedSources[0]?.publishStartHour ?? INSTAGRAM_AUTO_SOURCE_CONFIG.publishStartHour,
+    endHour: input?.startFromNow ? publishEndHour : (limitedSources[0]?.publishEndHour ?? INSTAGRAM_AUTO_SOURCE_CONFIG.publishEndHour),
+    timeZone: limitedSources[0]?.timezone || INSTAGRAM_AUTO_SOURCE_CONFIG.timezone,
     startFromNow: Boolean(input?.startFromNow),
   });
 
@@ -573,6 +838,15 @@ export async function runInstagramAutoSourcesDaily(input?: {
     );
 
     try {
+      if (index > 0) await delay(INSTAGRAM_AUTO_SOURCE_CONFIG.reelDelaySeconds * 1000);
+
+      await db(() =>
+        prisma.factoryInstagramAutoSourceVideo.update({
+          where: { id: video.id },
+          data: { status: "DOWNLOADING", pickedAt: new Date(), failedAt: null, failReason: null, error: null },
+        }),
+      );
+
       const dir = path.join(FACTORY_SOURCE_DIR, "instagram", video.sourceId, runDate, safeFileName(video.shortcode || video.id));
       const downloaded = await downloadInstagramPublicVideo({ sourceUrl: video.sourceUrl, outputDir: dir });
       const hash = await sha256File(downloaded.filePath);
@@ -588,7 +862,7 @@ export async function runInstagramAutoSourcesDaily(input?: {
         await db(() =>
           prisma.factoryInstagramAutoSourceVideo.update({
             where: { id: video.id },
-            data: { status: "DUPLICATE", hash, sizeBytes: BigInt(stat.size), error: null },
+            data: { status: "DUPLICATE", hash, sizeBytes: BigInt(stat.size), error: null, failReason: null, failedAt: null },
           }),
         );
         await fs.promises.rm(downloaded.filePath, { force: true }).catch(() => undefined);
@@ -609,6 +883,8 @@ export async function runInstagramAutoSourcesDaily(input?: {
             sizeBytes: BigInt(stat.size),
             hash,
             downloadedAt: new Date(),
+            failedAt: null,
+            failReason: null,
             error: null,
           },
         }),
@@ -634,31 +910,45 @@ export async function runInstagramAutoSourcesDaily(input?: {
       );
     } catch (error) {
       failedCount += 1;
+      const message = humanizeInstagramAutoSourceError(error);
+      const rateLimited = isInstagramRateLimitError(error);
+      const cooldownUntil = rateLimited ? await setInstagramCooldown(video.sourceId, error) : null;
+
       await db(() =>
         prisma.factoryInstagramAutoSourceVideo.update({
           where: { id: video.id },
-          data: { status: "FAILED", error: humanizeInstagramAutoSourceError(error) },
+          data: {
+            status: rateLimited ? "RATE_LIMIT" : "FAILED",
+            failedAt: new Date(),
+            failReason: message,
+            error: message,
+          },
         }),
       );
       await db(() =>
         prisma.factoryInstagramAutoSourceRun.update({
           where: { id: run.id },
-          data: { failedCount: { increment: 1 }, error: humanizeInstagramAutoSourceError(error) },
+          data: { failedCount: { increment: 1 }, error: message },
         }),
       );
+
+      if (rateLimited) {
+        console.warn("[INSTAGRAM] download stopped by rate limit", { sourceId: video.sourceId, cooldownUntil });
+        break;
+      }
     }
   }
 
   await db(() =>
     prisma.factoryInstagramAutoSourceRun.updateMany({
-      where: { runDate, sourceId: { in: sources.map((source) => source.id) }, status: "STARTED" },
+      where: { runDate, sourceId: { in: limitedSources.map((source) => source.id) }, status: "STARTED" },
       data: { status: "DONE", foundCount: scan.foundCount, finishedAt: new Date() },
     }),
   );
 
   await db(() =>
     prisma.factoryInstagramAutoSource.updateMany({
-      where: { id: { in: sources.map((source) => source.id) } },
+      where: { id: { in: limitedSources.map((source) => source.id) } },
       data: { lastRunDate: runDate, lastRunAt: new Date() },
     }),
   );
@@ -669,8 +959,10 @@ export async function runInstagramAutoSourcesDaily(input?: {
     duplicateCount: scan.duplicateCount,
     downloadedCount,
     createdJobsCount,
-    skippedCount: Math.max(0, candidates.length - picked.length),
+    skippedCount: Math.max(0, candidates.length - picked.length) + scan.skippedCount,
     failedCount,
+    cooldownUntil: scan.cooldownUntil,
+    rateLimited: scan.rateLimited,
   };
 }
 
@@ -698,20 +990,27 @@ export async function processDueInstagramAutoSources() {
 
 export async function updateInstagramAutoSourceVideoFromJob(
   factoryJobId: string,
-  result: { status: "PUBLISHED" | "FAILED"; url?: string; error?: unknown },
+  result: { status: "RENDERED" | "UPLOADING" | "PUBLISHED" | "FAILED"; url?: string; error?: unknown },
 ) {
   const video = await db(() =>
     prisma.factoryInstagramAutoSourceVideo.findFirst({ where: { factoryJobId }, select: { id: true } }),
   );
   if (!video) return;
 
+  const now = new Date();
+  const errorText = result.error ? humanizeInstagramAutoSourceError(result.error) : null;
+
   await db(() =>
     prisma.factoryInstagramAutoSourceVideo.update({
       where: { id: video.id },
       data: {
         status: result.status,
-        publishedUrl: result.url || null,
-        error: result.error ? humanizeInstagramAutoSourceError(result.error) : null,
+        renderedAt: result.status === "RENDERED" ? now : undefined,
+        publishedAtChannel: result.status === "PUBLISHED" ? now : undefined,
+        failedAt: result.status === "FAILED" ? now : undefined,
+        publishedUrl: result.url || undefined,
+        failReason: errorText,
+        error: errorText,
       },
     }),
   );
@@ -727,13 +1026,13 @@ export async function setInstagramSourcesActive(chatId: string, isEnabled: boole
 }
 
 export function humanizeInstagramAutoSourceError(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error || "");
+  const message = getErrorMessage(error);
   const lower = message.toLowerCase();
   if (lower.includes("private") || lower.includes("login") || lower.includes("sign in")) {
     return "Аккаунт закрытый или Instagram просит вход. Автоматически скачать нельзя.";
   }
-  if (lower.includes("rate") || lower.includes("429") || lower.includes("blocked")) {
-    return "Instagram временно ограничил доступ. Попробую позже.";
+  if (isInstagramRateLimitError(error) || lower.includes("blocked")) {
+    return "Instagram временно ограничил доступ. Источник поставлен на cooldown, попробую позже.";
   }
   if (lower.includes("yt-dlp")) return "yt-dlp не смог скачать Instagram Reel";
   if (lower.includes("не найден") || lower.includes("not found") || lower.includes("404")) return "Instagram Reel не найден или удалён";

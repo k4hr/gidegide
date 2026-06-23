@@ -398,7 +398,10 @@ model FactoryInstagramAutoSource {
   timezone         String              @default("Europe/Moscow")
   lastRunDate      String?
   lastRunAt        DateTime?
+  lastScanAt       DateTime?
   nextRunAt        DateTime?
+  cooldownUntil    DateTime?
+  lastFoundCount   Int?
   lastError        String?
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
@@ -411,6 +414,7 @@ model FactoryInstagramAutoSource {
   @@index([username])
   @@index([isEnabled])
   @@index([nextRunAt])
+  @@index([cooldownUntil])
 }
 
 model FactoryInstagramAutoSourceVideo {
@@ -430,9 +434,16 @@ model FactoryInstagramAutoSourceVideo {
   status          String                     @default("NEW")
   factoryJobId    String?
   factoryJob      FactoryJob?                @relation(fields: [factoryJobId], references: [id], onDelete: SetNull)
+  sourcePublishedAt DateTime?
+  seenAt          DateTime                   @default(now())
+  queuedAt        DateTime?
   pickedAt        DateTime?
   downloadedAt    DateTime?
+  renderedAt      DateTime?
+  publishedAtChannel DateTime?
+  failedAt        DateTime?
   publishedUrl    String?
+  failReason      String?
   error           String?
   createdAt       DateTime                   @default(now())
   updatedAt       DateTime                   @updatedAt
@@ -443,7 +454,13 @@ model FactoryInstagramAutoSourceVideo {
   @@index([hash])
   @@index([status])
   @@index([factoryJobId])
+  @@index([seenAt])
+  @@index([queuedAt])
   @@index([pickedAt])
+  @@index([downloadedAt])
+  @@index([renderedAt])
+  @@index([publishedAtChannel])
+  @@index([failedAt])
 }
 
 model FactoryInstagramAutoSourceRun {
@@ -467,6 +484,26 @@ model FactoryInstagramAutoSourceRun {
   @@index([sourceId])
   @@index([runDate])
   @@index([status])
+}
+
+model FactorySecret {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
+}
+
+model FactorySetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
 }
 
 model FactoryJobTarget {

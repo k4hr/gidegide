@@ -1,20 +1,24 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "../../../../lib/prisma";
+import { FACTORY_CONFIG } from "../../../../lib/factory/factory-config";
 import {
   addInstagramAutoSource,
   checkInstagramAutoSource,
   extractInstagramSourcesFromText,
+  formatInstagramPublishWindowLabel,
+  getInstagramSourceUsageStats,
   humanizeInstagramAutoSourceError,
   listInstagramAutoSources,
+  normalizeInstagramPublishEndHour,
   runInstagramAutoSourcesDaily,
   setInstagramSourcesActive,
-  normalizeInstagramPublishEndHour,
-  formatInstagramPublishWindowLabel,
 } from "../../../../lib/factory/instagram-auto-source";
+import { saveInstagramCookiesText } from "../../../../lib/factory/instagram-secrets";
 import {
   answerCallbackQuery,
   editTelegramMessage,
+  readTelegramFileText,
   sendTelegramMessage,
   upsertTelegramChat,
   type TelegramReplyMarkup,
@@ -23,8 +27,9 @@ import {
 export const runtime = "nodejs";
 
 type TelegramUser = { username?: string; first_name?: string };
+type TelegramDocument = { file_id: string; file_name?: string; mime_type?: string };
 type TelegramUpdate = {
-  message?: { message_id: number; text?: string; chat: { id: number }; from?: TelegramUser };
+  message?: { message_id: number; text?: string; document?: TelegramDocument; chat: { id: number }; from?: TelegramUser };
   callback_query?: {
     id: string;
     data?: string;
@@ -40,6 +45,13 @@ function configuredSecretIsValid(request: Request) {
   return url.searchParams.get("secret") === expected || request.headers.get("x-telegram-bot-api-secret-token") === expected;
 }
 
+function allowedChatIds() {
+  return (process.env.TELEGRAM_ALLOWED_CHAT_IDS || "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
 function appUrl(path = "/factory/instagram-sources") {
   const base = process.env.APP_BASE_URL?.trim().replace(/\/$/, "");
   return base ? `${base}${path}` : null;
@@ -50,8 +62,7 @@ function denied(chatId: string | number) {
 }
 
 function mainMenuText() {
-  return `🎬 REDFILM Instagram Auto Sources\n\nОтправь ссылки на публичные Instagram-аккаунты — можно сразу несколько.\n\nЯ каждый день буду брать новые Reels, не повторяться и скачивать 10 роликов в день суммарно. При ручном запуске ты выбираешь окно публикации: с текущего времени до выбранного часа по МСК.\n\nDescription:\nпервая строка всегда: переходи смотреть на REDFILM\nдальше оригинальное описание из Instagram.\n\nКоманды:\n/menu — меню\n/instagram_sources — источники\n/instagram_run_today — выбрать окно и запустить сегодня
-/instagram_run_today 23 — запустить сейчас и разложить до 23:00 МСК\n/instagram_pause — пауза\n/instagram_resume — включить\n/instagram_status — статус`;
+  return `🎬 REDFILM Instagram Auto Sources\n\nОтправь ссылки на публичные Instagram-аккаунты — можно сразу несколько. При добавлении я сразу пробую просканировать профиль и показать, сколько Reels найдено и сколько осталось в запасе.\n\nКаждый день беру новые Reels, не повторяюсь и ставлю ролики в очередь. При ручном запуске ты выбираешь окно публикации: с текущего времени до выбранного часа по МСК.\n\nDescription:\nпервая строка всегда: переходи смотреть на REDFILM\nдальше оригинальное описание из Instagram.\n\nКоманды:\n/menu — меню\n/instagram_sources — источники и запас роликов\n/instagram_run_today — выбрать окно и запустить сегодня\n/instagram_run_today 23 — запустить сейчас и разложить до 23:00 МСК\n/status — последние задачи\n/queue — очередь обработки\n/set_instagram_cookies — сохранить cookies.txt Instagram\n/instagram_pause — пауза\n/instagram_resume — включить`;
 }
 
 function mainKeyboard(): TelegramReplyMarkup {
@@ -59,17 +70,18 @@ function mainKeyboard(): TelegramReplyMarkup {
   return {
     inline_keyboard: [
       [
-        { text: "📡 Instagram источники", callback_data: "ig:sources" },
+        { text: "📸 Instagram источники", callback_data: "ig:sources" },
         { text: "▶️ Запуск сейчас", callback_data: "ig:run_menu" },
       ],
       [
         { text: "📊 Статус", callback_data: "ig:status" },
-        { text: "⏸ Пауза", callback_data: "ig:pause" },
+        { text: "🛠 Очередь", callback_data: "ig:queue" },
       ],
       [
+        { text: "⏸ Пауза", callback_data: "ig:pause" },
         { text: "▶️ Включить", callback_data: "ig:resume" },
-        ...(url ? [{ text: "Открыть сайт", url }] : [{ text: "ℹ️ Помощь", callback_data: "ig:help" }]),
       ],
+      [url ? { text: "Открыть сайт", url } : { text: "ℹ️ Помощь", callback_data: "ig:help" }],
     ],
   };
 }
@@ -82,8 +94,8 @@ function sourceKeyboard(sourceId: string): TelegramReplyMarkup {
         { text: "▶️ Запуск сейчас", callback_data: "ig:run_menu" },
       ],
       [
-        { text: "📡 Источники", callback_data: "ig:sources" },
-        { text: "📊 Статус", callback_data: "ig:status" },
+        { text: "📸 Источники", callback_data: "ig:sources" },
+        { text: "🛠 Очередь", callback_data: "ig:queue" },
       ],
     ],
   };
@@ -102,7 +114,7 @@ function runWindowKeyboard(): TelegramReplyMarkup {
       ],
       [
         { text: "сейчас → 03:00 МСК", callback_data: "ig:run_until:3" },
-        { text: "📡 Источники", callback_data: "ig:sources" },
+        { text: "📸 Источники", callback_data: "ig:sources" },
       ],
     ],
   };
@@ -132,7 +144,19 @@ async function executeRunToday(chatId: string | number, publishEndHourInput: num
   });
   await sendTelegramMessage(
     chatId,
-    `✅ Instagram запуск завершён.\n\nОкно публикаций: ${windowLabel}\nНайдено: ${result.foundCount}\nНовых: ${result.newCount}\nДублей: ${result.duplicateCount}\nСкачано: ${result.downloadedCount}\nСоздано задач: ${result.createdJobsCount}\nОшибок: ${result.failedCount ?? 0}`,
+    [
+      "✅ Instagram запуск завершён.",
+      "",
+      `Окно публикаций: ${windowLabel}`,
+      `Найдено: ${result.foundCount}`,
+      `Новых: ${result.newCount}`,
+      `Дублей: ${result.duplicateCount}`,
+      `Скачано: ${result.downloadedCount}`,
+      `Создано задач: ${result.createdJobsCount}`,
+      `Пропущено: ${result.skippedCount ?? 0}`,
+      `Ошибок: ${result.failedCount ?? 0}`,
+      result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
+    ].filter(Boolean).join("\n"),
     mainKeyboard(),
   );
 }
@@ -146,65 +170,211 @@ function formatDate(date?: Date | string | null) {
   }).format(new Date(date));
 }
 
-async function sourcesText(chatId: string | number) {
-  const sources = await listInstagramAutoSources(String(chatId));
-  if (sources.length === 0) {
-    return `📡 Instagram-источников пока нет.\n\nОтправь ссылки на публичные аккаунты, например:\nhttps://www.instagram.com/example/`;
+function sourceName(source: { sourceTitle?: string | null; username?: string | null; sourceUrl: string }) {
+  return source.sourceTitle || (source.username ? `@${source.username}` : source.sourceUrl);
+}
+
+function daysOfContent(available: number, dailyLimit: number) {
+  if (available <= 0) return "0 дней";
+  return `~${Math.max(1, Math.ceil(available / Math.max(1, dailyLimit)))} дней`;
+}
+
+function formatScanResult(source: { sourceTitle?: string | null; username?: string | null; sourceUrl: string; dailyLimit: number }, result: Awaited<ReturnType<typeof checkInstagramAutoSource>>) {
+  const stats = result.stats;
+  const title = sourceName(source);
+
+  if (result.cooldownUntil || result.error?.toLowerCase().includes("instagram")) {
+    return [
+      `✅ Instagram source added: ${title}`,
+      "",
+      "⚠️ Could not scan now:",
+      result.error || "Instagram rate limit / login required.",
+      "",
+      "The source was saved, but initial video count may be incomplete.",
+      result.cooldownUntil ? `Cooldown until: ${formatDate(result.cooldownUntil)}` : null,
+      stats.total ? `Already in database: ${stats.total}` : null,
+    ].filter(Boolean).join("\n");
   }
 
-  const counts = await prisma.factoryInstagramAutoSourceVideo.groupBy({
-    by: ["sourceId", "status"],
-    where: { sourceId: { in: sources.map((source) => source.id) } },
-    _count: { _all: true },
-  });
-  const bySource = new Map<string, Record<string, number>>();
-  for (const row of counts) {
-    const item = bySource.get(row.sourceId) || {};
-    item[row.status] = row._count._all;
-    bySource.set(row.sourceId, item);
+  if (result.foundCount === 0) {
+    return [
+      `✅ Instagram source added: ${title}`,
+      "",
+      "⚠️ No public reels found.",
+      "Possible reasons:",
+      "- profile has no reels",
+      "- Instagram requires login",
+      "- temporary rate limit",
+      stats.total ? `Already in database: ${stats.total}` : null,
+    ].filter(Boolean).join("\n");
   }
 
   return [
-    "📡 Instagram-источники:",
+    `✅ Instagram source added: ${title}`,
     "",
-    ...sources.map((source, index) => {
-      const c = bySource.get(source.id) || {};
-      const unused = (c.NEW || 0) + (c.DISCOVERED || 0) + (c.FAILED || 0);
-      const used = (c.JOB_CREATED || 0) + (c.PUBLISHED || 0) + (c.DOWNLOADED || 0);
-      return `${index + 1}) ${source.sourceTitle || source.username || source.sourceUrl}\n${source.isEnabled ? "🟢 активно" : "⏸ пауза"} · новых в базе: ${unused} · использовано: ${used}\nпоследняя проверка: ${formatDate(source.lastRunAt)}${source.lastError ? `\nошибка: ${source.lastError}` : ""}`;
-    }),
+    "📊 Scan result:",
+    `Found on profile: ${result.foundCount} reels`,
+    `New saved: ${result.newCount}`,
+    `Already in database: ${result.duplicateCount}`,
+    `Queued: ${stats.queued}`,
+    `Downloaded: ${stats.downloaded}`,
+    `Rendered: ${stats.rendered}`,
+    `Published: ${stats.published}`,
+    `Failed: ${stats.failed}`,
+    `Available to use: ${stats.available}`,
+    "",
+    `Daily limit: ${source.dailyLimit} reels/day`,
+    `Estimated days of content: ${daysOfContent(stats.available, source.dailyLimit)}`,
   ].join("\n");
 }
 
-async function statusText(chatId: string | number) {
+async function sourcesText(chatId: string | number) {
   const sources = await listInstagramAutoSources(String(chatId));
+  if (sources.length === 0) {
+    return `📸 Instagram sources\n\nИсточников пока нет.\n\nОтправь ссылки на публичные аккаунты, например:\nhttps://www.instagram.com/example/`;
+  }
+
+  const statsMap = await getInstagramSourceUsageStats(sources.map((source) => source.id));
+
+  return [
+    "📸 Instagram sources",
+    "",
+    ...sources.map((source) => {
+      const stats = statsMap.get(source.id) || { total: 0, available: 0, queued: 0, downloaded: 0, rendered: 0, published: 0, failed: 0, duplicate: 0 };
+      return [
+        sourceName(source),
+        source.isEnabled ? "Status: 🟢 active" : "Status: ⏸ paused",
+        `Total found: ${stats.total || source.lastFoundCount || 0}`,
+        `Available: ${stats.available}`,
+        `Queued: ${stats.queued}`,
+        `Downloaded: ${stats.downloaded}`,
+        `Rendered: ${stats.rendered}`,
+        `Published: ${stats.published}`,
+        `Failed: ${stats.failed}`,
+        `Duplicates: ${stats.duplicate}`,
+        `Daily limit: ${source.dailyLimit}`,
+        `Estimated days: ${daysOfContent(stats.available, source.dailyLimit)}`,
+        `Last scan: ${formatDate(source.lastScanAt || source.lastRunAt)}`,
+        source.lastError ? `Last error: ${source.lastError}` : "Last error: none",
+        source.cooldownUntil ? `Cooldown until: ${formatDate(source.cooldownUntil)}` : null,
+      ].filter(Boolean).join("\n");
+    }),
+  ].join("\n\n");
+}
+
+function firstPublishedUrl(job: any) {
+  for (const clip of job.clips || []) {
+    for (const publish of clip.publishes || []) {
+      if (publish.status === "PUBLISHED" && publish.platformUrl) return publish.platformUrl;
+    }
+  }
+  return null;
+}
+
+function firstPublishError(job: any) {
+  for (const clip of job.clips || []) {
+    for (const publish of clip.publishes || []) {
+      if (publish.status === "FAILED" && publish.error) return publish.error;
+    }
+  }
+  return job.error || null;
+}
+
+function jobSourceLabel(job: any) {
+  const video = job.instagramAutoSourceVideos?.[0];
+  const source = video?.source;
+  return source?.username ? `@${source.username}` : source?.sourceUrl || job.sourceUrl || "Instagram Reel";
+}
+
+function jobChannelLabel(job: any) {
+  const publishAccount = job.clips?.flatMap((clip: any) => clip.publishes || [])?.find((publish: any) => publish.account)?.account;
+  const targetAccount = job.targets?.find((target: any) => target.account)?.account;
+  return publishAccount?.name || targetAccount?.name || "—";
+}
+
+function humanJobStatus(job: any) {
+  const publishedUrl = firstPublishedUrl(job);
+  if (publishedUrl) return "✅ Published";
+  if (job.status === "DOWNLOADING") return "⬇️ Downloading video";
+  if (job.status === "RENDERING") return "🎬 Rendering";
+  if (job.status === "PUBLISHING") return "📤 Publishing to channel";
+  if (job.status === "FAILED") return "❌ Failed";
+  if (job.status === "CANCELED") return "🛑 Canceled";
+  return "⏳ Waiting";
+}
+
+async function statusText(chatId: string | number) {
   const jobs = await prisma.factoryJob.findMany({
-    where: {
-      titlePrefix: { startsWith: "INSTAGRAM:" },
-    },
+    where: { titlePrefix: { startsWith: "INSTAGRAM:" }, telegramJobs: { some: { chat: { chatId: String(chatId) } } } },
     orderBy: { createdAt: "desc" },
-    take: 10,
-    select: {
-      id: true,
-      status: true,
-      progress: true,
-      progressLabel: true,
-      sourceOriginalName: true,
-      scheduledAt: true,
-      error: true,
-      createdAt: true,
+    take: FACTORY_CONFIG.telegramStatusLimit,
+    include: {
+      instagramAutoSourceVideos: { include: { source: true } },
+      targets: { include: { account: true } },
+      clips: { include: { publishes: { include: { account: true }, orderBy: { createdAt: "desc" } } }, orderBy: { index: "asc" } },
     },
   });
 
-  const sourceLines = sources.length
-    ? sources.map((source) => `• ${source.sourceTitle || source.username || source.sourceUrl}: ${source.isEnabled ? "ON" : "PAUSE"}, last ${formatDate(source.lastRunAt)}${source.lastError ? `, ошибка: ${source.lastError}` : ""}`)
-    : ["• источников нет"];
+  if (jobs.length === 0) return "📦 Factory status\n\nInstagram-задач пока нет.";
 
-  const jobLines = jobs.length
-    ? jobs.map((job, index) => `${index + 1}) ${job.status} · ${job.progress}% · ${job.sourceOriginalName || "Instagram Reel"}\n${job.progressLabel || ""}${job.scheduledAt ? `\nплан: ${formatDate(job.scheduledAt)}` : ""}${job.error ? `\nошибка: ${job.error.slice(0, 250)}` : ""}`)
-    : ["задач Instagram пока нет"];
+  return [
+    "📦 Factory status",
+    "",
+    ...jobs.map((job, index) => {
+      const publishedUrl = firstPublishedUrl(job);
+      const error = firstPublishError(job);
+      return [
+        `${index + 1}. ${jobSourceLabel(job)} → Reel`,
+        `Status: ${humanJobStatus(job)}`,
+        `Progress: ${job.progressLabel || `${job.progress}%`}`,
+        `Channel: ${jobChannelLabel(job)}`,
+        job.scheduledAt ? `Scheduled: ${formatDate(job.scheduledAt)}` : null,
+        publishedUrl ? `Published URL: ${publishedUrl}` : null,
+        error ? `Reason: ${String(error).slice(0, 250)}` : null,
+        `Created: ${formatDate(job.createdAt)}`,
+      ].filter(Boolean).join("\n");
+    }),
+  ].join("\n\n");
+}
 
-  return [`📊 Instagram status`, "", "Источники:", ...sourceLines, "", "Последние задачи:", ...jobLines].join("\n");
+async function queueText(chatId: string | number) {
+  const processingVideos = await prisma.factoryInstagramAutoSourceVideo.findMany({
+    where: { source: { chat: { chatId: String(chatId) } }, status: { in: ["DOWNLOADING", "JOB_CREATED", "DOWNLOADED", "RENDERED", "RATE_LIMIT"] } },
+    include: { source: true, factoryJob: true },
+    orderBy: { updatedAt: "desc" },
+    take: FACTORY_CONFIG.telegramQueueLimit,
+  });
+
+  const waitingCount = await prisma.factoryInstagramAutoSourceVideo.count({
+    where: { source: { chat: { chatId: String(chatId) } }, status: { in: ["NEW", "DISCOVERED"] }, factoryJobId: null },
+  });
+
+  const publishedToday = await prisma.factoryInstagramAutoSourceVideo.count({
+    where: { source: { chat: { chatId: String(chatId) } }, publishedAtChannel: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
+  });
+
+  const downloading = processingVideos.filter((video) => video.status === "DOWNLOADING");
+  const rendering = processingVideos.filter((video) => video.factoryJob?.status === "RENDERING" || video.status === "DOWNLOADED");
+  const publishing = processingVideos.filter((video) => video.factoryJob?.status === "PUBLISHING" || video.status === "RENDERED");
+
+  const item = (video: (typeof processingVideos)[number]) => `- ${video.source.username ? `@${video.source.username}` : video.source.sourceUrl} / ${video.shortcode || "Reel"}`;
+  const section = (title: string, videos: typeof processingVideos) => [title, ...(videos.length ? videos.map(item) : ["- —"])].join("\n");
+
+  return [
+    "🛠 Processing queue",
+    "",
+    section("⬇️ Downloading:", downloading),
+    "",
+    section("🎬 Rendering:", rendering),
+    "",
+    section("📤 Publishing:", publishing),
+    "",
+    "⏳ Waiting:",
+    `- ${waitingCount} videos`,
+    "",
+    "✅ Published last 24h:",
+    `- ${publishedToday} videos`,
+  ].join("\n");
 }
 
 async function addSourcesFromText(chatId: string | number, text: string) {
@@ -214,31 +384,50 @@ async function addSourcesFromText(chatId: string | number, text: string) {
     return;
   }
 
-  const added: string[] = [];
+  const results: string[] = [];
   const failed: string[] = [];
 
   for (const url of urls) {
     try {
       const source = await addInstagramAutoSource({ chatId: String(chatId), sourceUrl: url, dailyLimit: 10 });
-      added.push(source.sourceTitle || source.username || source.sourceUrl);
+      const scan = await checkInstagramAutoSource(source.id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit });
+      results.push(formatScanResult(source, scan));
     } catch (error) {
       failed.push(`${url} — ${humanizeInstagramAutoSourceError(error)}`);
     }
   }
 
   const lines = [
-    added.length ? `✅ Добавлено Instagram-источников: ${added.length}` : "Instagram-источники не добавлены.",
-    ...added.map((item) => `• ${item}`),
-    "",
-    "Ежедневно: 10 разных Reels суммарно.",
-    "При ручном запуске выберешь окно: с текущего времени до нужного часа МСК.",
-    "Повторы будут пропускаться.",
+    ...results,
+    failed.length ? `❌ Ошибки:\n${failed.join("\n")}` : null,
     "",
     "Description будет браться из Instagram, но первая строка всегда: переходи смотреть на REDFILM",
-    ...(failed.length ? ["", "Ошибки:", ...failed] : []),
   ];
 
-  await sendTelegramMessage(chatId, lines.join("\n"), mainKeyboard());
+  await sendTelegramMessage(chatId, lines.filter(Boolean).join("\n\n"), mainKeyboard());
+}
+
+async function saveCookiesFromMessage(chatId: string | number, text?: string, document?: TelegramDocument) {
+  if (document) {
+    const content = await readTelegramFileText(document.file_id);
+    await saveInstagramCookiesText(content);
+    await sendTelegramMessage(chatId, "✅ Instagram cookies сохранены в БД. Значение не логирую и не показываю в боте.", mainKeyboard());
+    return true;
+  }
+
+  const payload = text?.replace(/^\/set_instagram_cookies\s*/i, "").trim();
+  if (!payload) {
+    await sendTelegramMessage(
+      chatId,
+      "🍪 Пришли cookies.txt файлом или текстом после команды /set_instagram_cookies. Секрет будет сохранён в БД, не в Railway env и не в код.",
+      mainKeyboard(),
+    );
+    return true;
+  }
+
+  await saveInstagramCookiesText(payload);
+  await sendTelegramMessage(chatId, "✅ Instagram cookies сохранены в БД. Значение не логирую и не показываю в боте.", mainKeyboard());
+  return true;
 }
 
 async function handleCallback(data: string, chatId: string | number, messageId: number) {
@@ -254,6 +443,11 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
 
   if (data === "ig:status") {
     await editTelegramMessage(chatId, messageId, await statusText(chatId), mainKeyboard());
+    return;
+  }
+
+  if (data === "ig:queue") {
+    await editTelegramMessage(chatId, messageId, await queueText(chatId), mainKeyboard());
     return;
   }
 
@@ -276,12 +470,7 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
 
   if (data.startsWith("ig:run_until:")) {
     const hour = data.slice("ig:run_until:".length);
-    await editTelegramMessage(
-      chatId,
-      messageId,
-      `▶️ Запуск принят: ${formatInstagramPublishWindowLabel(normalizeInstagramPublishEndHour(hour))}`,
-      mainKeyboard(),
-    );
+    await editTelegramMessage(chatId, messageId, `▶️ Запуск принят: ${formatInstagramPublishWindowLabel(normalizeInstagramPublishEndHour(hour))}`, mainKeyboard());
     await executeRunToday(chatId, hour);
     return;
   }
@@ -289,12 +478,10 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
   if (data.startsWith("ig:check:")) {
     const id = data.slice("ig:check:".length);
     await editTelegramMessage(chatId, messageId, "🔍 Проверяю Instagram-источник...", mainKeyboard());
-    const result = await checkInstagramAutoSource(id);
-    await sendTelegramMessage(
-      chatId,
-      `🔍 Проверка готова.\n\nНайдено: ${result.foundCount}\nНовых: ${result.newCount}\nДублей: ${result.duplicateCount}\n\nПримеры:\n${result.examples.slice(0, 5).join("\n") || "—"}`,
-      sourceKeyboard(id),
-    );
+    const source = await prisma.factoryInstagramAutoSource.findUnique({ where: { id } });
+    if (!source) throw new Error("Instagram-источник не найден");
+    const result = await checkInstagramAutoSource(id, { limit: FACTORY_CONFIG.instagramScanOnAddLimit });
+    await sendTelegramMessage(chatId, `${formatScanResult(source, result)}\n\nПримеры:\n${result.examples.slice(0, 5).join("\n") || "—"}`, sourceKeyboard(id));
   }
 }
 
@@ -308,7 +495,7 @@ export async function POST(request: Request) {
   if (update.callback_query?.message) {
     const chatId = update.callback_query.message.chat.id;
     await upsertTelegramChat({ chatId, user: update.callback_query.from });
-    if (!process.env.TELEGRAM_ALLOWED_CHAT_IDS?.split(",").map((value) => value.trim()).includes(String(chatId))) {
+    if (!allowedChatIds().includes(String(chatId))) {
       await denied(chatId);
       return NextResponse.json({ ok: true });
     }
@@ -327,7 +514,7 @@ export async function POST(request: Request) {
   const chatId = message.chat.id;
   await upsertTelegramChat({ chatId, user: message.from });
 
-  if (!process.env.TELEGRAM_ALLOWED_CHAT_IDS?.split(",").map((value) => value.trim()).includes(String(chatId))) {
+  if (!allowedChatIds().includes(String(chatId))) {
     await denied(chatId);
     return NextResponse.json({ ok: true });
   }
@@ -335,8 +522,21 @@ export async function POST(request: Request) {
   const text = message.text?.trim() || "";
 
   try {
+    if (message.document) {
+      const name = message.document.file_name?.toLowerCase() || "";
+      if (name.includes("cookie") || name.endsWith(".txt")) {
+        await saveCookiesFromMessage(chatId, text, message.document);
+        return NextResponse.json({ ok: true });
+      }
+    }
+
     if (!text || text === "/start" || text === "/help" || text === "/menu") {
       await sendTelegramMessage(chatId, mainMenuText(), mainKeyboard());
+      return NextResponse.json({ ok: true });
+    }
+
+    if (text.startsWith("/set_instagram_cookies")) {
+      await saveCookiesFromMessage(chatId, text, message.document);
       return NextResponse.json({ ok: true });
     }
 
@@ -345,8 +545,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    if (text === "/instagram_status" || text === "/status" || text === "/queue") {
+    if (text === "/instagram_status" || text === "/status") {
       await sendTelegramMessage(chatId, await statusText(chatId), mainKeyboard());
+      return NextResponse.json({ ok: true });
+    }
+
+    if (text === "/queue") {
+      await sendTelegramMessage(chatId, await queueText(chatId), mainKeyboard());
       return NextResponse.json({ ok: true });
     }
 
