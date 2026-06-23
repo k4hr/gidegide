@@ -78,6 +78,10 @@ function mainKeyboard(): TelegramReplyMarkup {
         { text: "🛠 Очередь", callback_data: "ig:queue" },
       ],
       [
+        { text: "🧪 Загрузить 1 видео", callback_data: "ig:test_one" },
+        { text: "🛑 Отменить все задачи", callback_data: "ig:cancel_all_confirm" },
+      ],
+      [
         { text: "⏸ Пауза", callback_data: "ig:pause" },
         { text: "▶️ Включить", callback_data: "ig:resume" },
       ],
@@ -159,6 +163,115 @@ async function executeRunToday(chatId: string | number, publishEndHourInput: num
     ].filter(Boolean).join("\n"),
     mainKeyboard(),
   );
+}
+
+
+function cancelAllConfirmKeyboard(): TelegramReplyMarkup {
+  return {
+    inline_keyboard: [
+      [
+        { text: "Да, отменить все", callback_data: "ig:cancel_all" },
+        { text: "Нет", callback_data: "ig:menu" },
+      ],
+    ],
+  };
+}
+
+async function executeTestOne(chatId: string | number) {
+  await sendTelegramMessage(chatId, "🧪 Тестовая загрузка: ставлю в очередь только 1 Instagram-видео...", mainKeyboard());
+  const result = await runInstagramAutoSourcesDaily({
+    chatId: String(chatId),
+    force: true,
+    limit: 1,
+    startFromNow: true,
+    publishEndHour: 24,
+  });
+
+  await sendTelegramMessage(
+    chatId,
+    [
+      "🧪 Тестовая загрузка завершена.",
+      "",
+      `Найдено: ${result.foundCount}`,
+      `Новых: ${result.newCount}`,
+      `Дублей/пропущенных повторов: ${result.duplicateCount}`,
+      `Скачано: ${result.downloadedCount}`,
+      `Создано задач: ${result.createdJobsCount}`,
+      `Пропущено: ${result.skippedCount ?? 0}`,
+      `Ошибок: ${result.failedCount ?? 0}`,
+      result.createdJobsCount === 0 ? "Если задач 0 — смотри /instagram_sources: возможно, все найденные Reels уже были в очереди/дублях." : null,
+      result.cooldownUntil ? `Cooldown до: ${formatDate(result.cooldownUntil)}` : null,
+    ].filter(Boolean).join("\n"),
+    mainKeyboard(),
+  );
+}
+
+async function cancelAllInstagramTasks(chatId: string | number) {
+  const jobs = await prisma.factoryJob.findMany({
+    where: {
+      titlePrefix: { startsWith: "INSTAGRAM:" },
+      telegramJobs: { some: { chat: { chatId: String(chatId) } } },
+      status: { in: ["QUEUED", "DOWNLOADING", "RENDERING", "PUBLISHING"] },
+    },
+    select: { id: true, status: true },
+    take: 500,
+  });
+
+  const jobIds = jobs.map((job) => job.id);
+  if (jobIds.length === 0) {
+    return { canceledNow: 0, cancelRequested: 0 };
+  }
+
+  const queuedIds = jobs.filter((job) => job.status === "QUEUED").map((job) => job.id);
+  const activeIds = jobs.filter((job) => job.status !== "QUEUED").map((job) => job.id);
+
+  if (queuedIds.length > 0) {
+    await prisma.factoryJob.updateMany({
+      where: { id: { in: queuedIds } },
+      data: {
+        status: "CANCELED",
+        cancelRequested: true,
+        canceledAt: new Date(),
+        progressLabel: "Задача отменена через Telegram",
+      },
+    });
+  }
+
+  if (activeIds.length > 0) {
+    await prisma.factoryJob.updateMany({
+      where: { id: { in: activeIds } },
+      data: {
+        cancelRequested: true,
+        progressLabel: "Отмена запрошена через Telegram",
+      },
+    });
+  }
+
+  await prisma.factoryPublish.updateMany({
+    where: { clip: { jobId: { in: jobIds } }, status: { in: ["QUEUED", "UPLOADING"] } },
+    data: { status: "CANCELED", error: "Задача отменена через Telegram" },
+  });
+
+  await prisma.factoryInstagramAutoSourceVideo.updateMany({
+    where: {
+      source: { chat: { chatId: String(chatId) } },
+      factoryJobId: { in: jobIds },
+      status: { notIn: ["PUBLISHED", "DUPLICATE"] },
+    },
+    data: {
+      status: "CANCELED",
+      failedAt: new Date(),
+      failReason: "Задача отменена через Telegram",
+      error: "Задача отменена через Telegram",
+    },
+  });
+
+  await prisma.factoryTelegramJob.updateMany({
+    where: { factoryJobId: { in: jobIds }, chat: { chatId: String(chatId) } },
+    data: { status: "CANCELED", lastStatusText: "🛑 Задача отменена через Telegram" },
+  });
+
+  return { canceledNow: queuedIds.length, cancelRequested: activeIds.length };
 }
 
 function formatDate(date?: Date | string | null) {
@@ -431,7 +544,7 @@ async function saveCookiesFromMessage(chatId: string | number, text?: string, do
 }
 
 async function handleCallback(data: string, chatId: string | number, messageId: number) {
-  if (data === "ig:help") {
+  if (data === "ig:help" || data === "ig:menu") {
     await editTelegramMessage(chatId, messageId, mainMenuText(), mainKeyboard());
     return;
   }
@@ -448,6 +561,33 @@ async function handleCallback(data: string, chatId: string | number, messageId: 
 
   if (data === "ig:queue") {
     await editTelegramMessage(chatId, messageId, await queueText(chatId), mainKeyboard());
+    return;
+  }
+
+  if (data === "ig:test_one") {
+    await editTelegramMessage(chatId, messageId, "🧪 Тест принят: ставлю одно видео в очередь.", mainKeyboard());
+    await executeTestOne(chatId);
+    return;
+  }
+
+  if (data === "ig:cancel_all_confirm") {
+    await editTelegramMessage(
+      chatId,
+      messageId,
+      "🛑 Точно отменить все Instagram-задачи в очереди и обработке? Опубликованные ролики не трогаю.",
+      cancelAllConfirmKeyboard(),
+    );
+    return;
+  }
+
+  if (data === "ig:cancel_all") {
+    const result = await cancelAllInstagramTasks(chatId);
+    await editTelegramMessage(
+      chatId,
+      messageId,
+      [`🛑 Отмена выполнена.`, "", `Отменено сразу: ${result.canceledNow}`, `Запрошена отмена активных: ${result.cancelRequested}`].join("\n"),
+      mainKeyboard(),
+    );
     return;
   }
 
@@ -569,6 +709,20 @@ export async function POST(request: Request) {
 
     if (text === "/instagram_run_today" || text === "/run_today") {
       await sendTelegramMessage(chatId, runWindowText(), runWindowKeyboard());
+      return NextResponse.json({ ok: true });
+    }
+
+    if (text === "/instagram_test_one" || text === "/test_one") {
+      await executeTestOne(chatId);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (text === "/cancel_all_tasks" || text === "/cancel_all") {
+      await sendTelegramMessage(
+        chatId,
+        "🛑 Точно отменить все Instagram-задачи в очереди и обработке? Опубликованные ролики не трогаю.",
+        cancelAllConfirmKeyboard(),
+      );
       return NextResponse.json({ ok: true });
     }
 

@@ -22,6 +22,8 @@
 - `/instagram_run_today 23` — запустить сейчас и разложить публикации до 23:00 МСК.
 - `/status` или `/instagram_status` — последние задачи: загрузка, рендер, публикация, опубликовано, ошибка.
 - `/queue` — очередь обработки: downloading/rendering/publishing/waiting/published.
+- `/instagram_test_one` или `/test_one` — тестовый запуск: скачать и поставить в очередь только 1 видео.
+- `/cancel_all_tasks` или `/cancel_all` — отменить все Instagram-задачи в очереди/обработке; опубликованные ролики не трогает.
 - `/set_instagram_cookies` — сохранить Instagram cookies/session в БД.
 - `/instagram_pause` — поставить Instagram-источники на паузу.
 - `/instagram_resume` — включить Instagram-источники.
@@ -43,7 +45,11 @@ npm run build
 После обновления Instagram auto source обязательно перезапусти именно worker-сервис (`gidegide-worker`), не только web-сервис. В логах нового worker должно появиться:
 
 ```txt
-Factory worker started · instagram download guard v3
+Factory worker started · instagram queue dedupe v4
 ```
 
 Если в старой задаче уже лежит битый локальный файл `592k` или временная CDN-ссылка Instagram, worker удалит невалидный локальный файл и попробует взять оригинальную ссылку Reel из `FactoryInstagramAutoSourceVideo`. Direct-curl больше не используется для Instagram/CDN/fbcdn/scontent ссылок.
+
+## Instagram duplicate protection
+
+Instagram Reels теперь дедуплицируются до создания `FactoryJob` по shortcode, нормализованной Reel/Post URL и нормализованному caption. Уже найденные, уже поставленные в очередь, скачанные, отрендеренные и опубликованные ролики блокируют повторную постановку. Если в БД уже накопились старые дубли, используй кнопку в боте `🛑 Отменить все задачи`, затем запускай `🧪 Загрузить 1 видео` для безопасного теста.

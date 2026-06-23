@@ -357,6 +357,60 @@ function emptyUsageStats(): InstagramSourceUsageStats {
   return { total: 0, available: 0, queued: 0, downloaded: 0, rendered: 0, published: 0, failed: 0, duplicate: 0 };
 }
 
+
+function normalizeInstagramVideoUrlKey(value?: string | null) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
+    const match = url.pathname.match(/\/(?:reel|p|tv)\/([^/?#]+)/i);
+    if (match?.[1]) return `shortcode:${match[1].toLowerCase()}`;
+    const pathname = url.pathname.replace(/\/+$/, "").toLowerCase();
+    return pathname ? `url:${host}${pathname}` : null;
+  } catch {
+    const match = value.match(/instagram\.com\/(?:reel|p|tv)\/([^/?#\s]+)/i);
+    return match?.[1] ? `shortcode:${match[1].toLowerCase()}` : null;
+  }
+}
+
+function normalizeCaptionKey(value?: string | null) {
+  const cleaned = (value || "")
+    .replace(/https?:\/\/\S+/gi, "")
+    .replace(/#[\p{L}\p{N}_]+/gu, "")
+    .replace(new RegExp(INSTAGRAM_REDFILM_PHRASE, "gi"), "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (cleaned.length < 24) return null;
+  return `caption:${cleaned.slice(0, 180)}`;
+}
+
+function instagramVideoDedupeKeys(video: { shortcode?: string | null; sourceUrl?: string | null; caption?: string | null }) {
+  const keys = new Set<string>();
+  if (video.shortcode) keys.add(`shortcode:${video.shortcode.toLowerCase()}`);
+  const urlKey = normalizeInstagramVideoUrlKey(video.sourceUrl);
+  if (urlKey) keys.add(urlKey);
+  const captionKey = normalizeCaptionKey(video.caption);
+  if (captionKey) keys.add(captionKey);
+  return Array.from(keys);
+}
+
+function bestInstagramVideoDedupeKey(video: { shortcode?: string | null; sourceUrl?: string | null; caption?: string | null }) {
+  const keys = instagramVideoDedupeKeys(video);
+  return keys.find((key) => key.startsWith("shortcode:")) || keys.find((key) => key.startsWith("url:")) || keys[0] || null;
+}
+
+function isReusableInstagramVideoStatus(status?: string | null) {
+  return status === "NEW" || status === "DISCOVERED";
+}
+
+function isBlockedInstagramVideoStatus(status?: string | null) {
+  return !["FAILED", "CANCELED", "DUPLICATE"].includes(String(status || ""));
+}
+
 function countVideoStats(
   videos: Array<{
     sourceId: string;
@@ -415,39 +469,57 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
   let newCount = 0;
   let duplicateCount = 0;
 
-  for (const video of videos) {
-    const existing = await db(() =>
-      prisma.factoryInstagramAutoSourceVideo.findFirst({
-        where: {
-          OR: [
-            { sourceId: source.id, sourceUrl: video.sourceUrl },
-            ...(video.shortcode ? [{ sourceId: source.id, shortcode: video.shortcode }] : []),
-          ],
-        },
-        select: { id: true },
-      }),
-    );
+  const existingVideos = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.findMany({
+      where: { sourceId: source.id },
+      select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  );
 
-    if (existing) {
+  const keyToExisting = new Map<string, (typeof existingVideos)[number]>();
+  for (const existing of existingVideos) {
+    for (const key of instagramVideoDedupeKeys(existing)) {
+      if (!keyToExisting.has(key)) keyToExisting.set(key, existing);
+    }
+  }
+
+  const seenThisScan = new Set<string>();
+
+  for (const video of videos) {
+    const keys = instagramVideoDedupeKeys(video);
+    const primaryKey = keys[0] || video.sourceUrl;
+    const alreadyInThisScan = keys.some((key) => seenThisScan.has(key));
+    const existing = keys.map((key) => keyToExisting.get(key)).find(Boolean);
+
+    for (const key of keys) seenThisScan.add(key);
+
+    if (alreadyInThisScan || existing) {
       duplicateCount += 1;
-      await db(() =>
-        prisma.factoryInstagramAutoSourceVideo.update({
-          where: { id: existing.id },
-          data: {
-            seenAt: new Date(),
-            caption: video.caption || undefined,
-            thumbnailUrl: video.thumbnailUrl || undefined,
-            durationSec: video.durationSeconds || undefined,
-            width: video.width || undefined,
-            height: video.height || undefined,
-            sourcePublishedAt: video.publishedAt || undefined,
-          },
-        }),
-      );
+      if (existing) {
+        await db(() =>
+          prisma.factoryInstagramAutoSourceVideo.update({
+            where: { id: existing.id },
+            data: {
+              seenAt: new Date(),
+              caption: video.caption || undefined,
+              thumbnailUrl: video.thumbnailUrl || undefined,
+              durationSec: video.durationSeconds || undefined,
+              width: video.width || undefined,
+              height: video.height || undefined,
+              sourcePublishedAt: video.publishedAt || undefined,
+            },
+          }),
+        );
+      }
+      console.info("[INSTAGRAM] duplicate reel skipped", {
+        source: source.username ? `@${source.username}` : source.sourceUrl,
+        key: primaryKey,
+      });
       continue;
     }
 
-    await db(() =>
+    const created = await db(() =>
       prisma.factoryInstagramAutoSourceVideo.create({
         data: {
           sourceId: source.id,
@@ -463,8 +535,13 @@ async function saveDiscoveredVideos(source: FactoryInstagramAutoSource, videos: 
           seenAt: new Date(),
           status: "NEW",
         },
+        select: { id: true, sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
       }),
     );
+
+    for (const key of instagramVideoDedupeKeys(created)) {
+      if (!keyToExisting.has(key)) keyToExisting.set(key, created);
+    }
     newCount += 1;
   }
 
@@ -556,6 +633,146 @@ function roundRobinPick<T extends { sourceId: string }>(items: T[], limit: numbe
     }
   }
   return picked;
+}
+
+
+async function markDuplicateUnusedInstagramVideos(sourceIds: string[]) {
+  if (sourceIds.length === 0) return 0;
+
+  const videos = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.findMany({
+      where: {
+        sourceId: { in: sourceIds },
+        status: { in: ["NEW", "DISCOVERED"] },
+        factoryJobId: null,
+      },
+      select: { id: true, sourceId: true, sourceUrl: true, shortcode: true, caption: true, createdAt: true },
+      orderBy: { createdAt: "asc" },
+    }),
+  );
+
+  const seen = new Map<string, string>();
+  const duplicateIds = new Set<string>();
+
+  for (const video of videos) {
+    const keys = instagramVideoDedupeKeys(video);
+    const existingId = keys.map((key) => seen.get(key)).find(Boolean);
+    if (existingId) {
+      duplicateIds.add(video.id);
+      continue;
+    }
+    for (const key of keys) seen.set(key, video.id);
+  }
+
+  if (duplicateIds.size === 0) return 0;
+
+  await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.updateMany({
+      where: { id: { in: Array.from(duplicateIds) } },
+      data: { status: "DUPLICATE", error: "Duplicate reel/caption skipped before queue creation" },
+    }),
+  );
+
+  console.info("[INSTAGRAM] duplicate unused videos marked", { count: duplicateIds.size });
+  return duplicateIds.size;
+}
+
+async function getBlockedInstagramVideoKeys(sourceIds: string[]) {
+  const blocked = new Set<string>();
+  if (sourceIds.length === 0) return blocked;
+
+  const videos = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.findMany({
+      where: {
+        sourceId: { in: sourceIds },
+        OR: [
+          { factoryJobId: { not: null } },
+          { status: { in: ["DOWNLOADING", "DOWNLOADED", "JOB_CREATED", "QUEUED", "RENDERED", "UPLOADING", "PUBLISHED", "RATE_LIMIT"] } },
+          { publishedAtChannel: { not: null } },
+          { queuedAt: { not: null } },
+        ],
+      },
+      select: { sourceUrl: true, shortcode: true, caption: true, status: true, factoryJobId: true },
+    }),
+  );
+
+  for (const video of videos) {
+    if (!isBlockedInstagramVideoStatus(video.status)) continue;
+    for (const key of instagramVideoDedupeKeys(video)) blocked.add(key);
+  }
+
+  return blocked;
+}
+
+function filterUniqueReadyInstagramCandidates<T extends { sourceId: string; sourceUrl: string | null; shortcode?: string | null; caption?: string | null }>(
+  candidates: T[],
+  blockedKeys: Set<string>,
+) {
+  const seen = new Set<string>();
+  const result: T[] = [];
+
+  for (const candidate of candidates) {
+    const keys = instagramVideoDedupeKeys(candidate);
+    const primary = bestInstagramVideoDedupeKey(candidate);
+    const isBlocked = keys.some((key) => blockedKeys.has(key));
+    const isSeen = keys.some((key) => seen.has(key));
+    if (isBlocked || isSeen) {
+      console.info("[INSTAGRAM] candidate skipped as duplicate", { key: primary, sourceId: candidate.sourceId });
+      continue;
+    }
+    for (const key of keys) seen.add(key);
+    result.push(candidate);
+  }
+
+  return result;
+}
+
+async function acquireInstagramVideoForQueue(videoId: string) {
+  const result = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.updateMany({
+      where: {
+        id: videoId,
+        status: { in: ["NEW", "DISCOVERED"] },
+        factoryJobId: null,
+        queuedAt: null,
+      },
+      data: { status: "DOWNLOADING", pickedAt: new Date(), failedAt: null, failReason: null, error: null },
+    }),
+  );
+
+  return result.count === 1;
+}
+
+
+async function findAlreadyQueuedInstagramDuplicate(video: {
+  id: string;
+  sourceId: string;
+  sourceUrl: string | null;
+  shortcode?: string | null;
+  caption?: string | null;
+}) {
+  const sameShortcodeOrUrlOrCaption = await db(() =>
+    prisma.factoryInstagramAutoSourceVideo.findMany({
+      where: {
+        sourceId: video.sourceId,
+        NOT: { id: video.id },
+        status: { notIn: ["FAILED", "CANCELED", "DUPLICATE"] },
+        OR: [
+          ...(video.sourceUrl ? [{ sourceUrl: video.sourceUrl }] : []),
+          ...(video.shortcode ? [{ shortcode: video.shortcode }] : []),
+          ...(normalizeCaptionKey(video.caption) ? [{ caption: video.caption }] : []),
+          { factoryJobId: { not: null } },
+        ],
+      },
+      select: { id: true, sourceUrl: true, shortcode: true, caption: true, factoryJobId: true, status: true },
+      take: 200,
+    }),
+  );
+
+  const keys = new Set(instagramVideoDedupeKeys(video));
+  return sameShortcodeOrUrlOrCaption.find((other) =>
+    other.factoryJobId && isBlockedInstagramVideoStatus(other.status) && instagramVideoDedupeKeys(other).some((key) => keys.has(key)),
+  ) || null;
 }
 
 async function ensureDiscoveredForSources(sources: FactoryInstagramAutoSource[]) {
@@ -799,21 +1016,25 @@ export async function runInstagramAutoSourcesDaily(input?: {
   const limitedSources = runnableSources.slice(0, INSTAGRAM_AUTO_SOURCE_CONFIG.maxSourcesPerRun);
 
   const scan = await ensureDiscoveredForSources(limitedSources);
+  const limitedSourceIds = limitedSources.map((source) => source.id);
+  const markedDuplicateCount = await markDuplicateUnusedInstagramVideos(limitedSourceIds);
+  const blockedKeys = await getBlockedInstagramVideoKeys(limitedSourceIds);
 
   const unused = await db(() =>
     prisma.factoryInstagramAutoSourceVideo.findMany({
       where: {
-        sourceId: { in: limitedSources.map((source) => source.id) },
+        sourceId: { in: limitedSourceIds },
         status: { in: ["NEW", "DISCOVERED"] },
         factoryJobId: null,
+        queuedAt: null,
       },
       include: { source: true },
-      orderBy: [{ createdAt: "desc" }],
-      take: Math.max(limit * 5, limit),
+      orderBy: [{ createdAt: "asc" }],
+      take: Math.max(limit * 10, limit),
     }),
   );
 
-  const candidates = unused.filter(shouldUseVideo);
+  const candidates = filterUniqueReadyInstagramCandidates(unused.filter(shouldUseVideo), blockedKeys);
   const picked = roundRobinPick(candidates, limit);
   const slots = scheduledSlots({
     count: picked.length,
@@ -840,12 +1061,26 @@ export async function runInstagramAutoSourcesDaily(input?: {
     try {
       if (index > 0) await delay(INSTAGRAM_AUTO_SOURCE_CONFIG.reelDelaySeconds * 1000);
 
-      await db(() =>
-        prisma.factoryInstagramAutoSourceVideo.update({
-          where: { id: video.id },
-          data: { status: "DOWNLOADING", pickedAt: new Date(), failedAt: null, failReason: null, error: null },
-        }),
-      );
+      const acquired = await acquireInstagramVideoForQueue(video.id);
+      if (!acquired) {
+        console.info("[INSTAGRAM] candidate skipped because it was already queued", { videoId: video.id });
+        continue;
+      }
+
+      const alreadyQueuedDuplicate = await findAlreadyQueuedInstagramDuplicate(video);
+      if (alreadyQueuedDuplicate) {
+        await db(() =>
+          prisma.factoryInstagramAutoSourceVideo.update({
+            where: { id: video.id },
+            data: { status: "DUPLICATE", error: `Duplicate of already queued video ${alreadyQueuedDuplicate.id}` },
+          }),
+        );
+        console.info("[INSTAGRAM] candidate skipped because duplicate is already queued", {
+          videoId: video.id,
+          duplicateId: alreadyQueuedDuplicate.id,
+        });
+        continue;
+      }
 
       const dir = path.join(FACTORY_SOURCE_DIR, "instagram", video.sourceId, runDate, safeFileName(video.shortcode || video.id));
       const downloaded = await downloadInstagramPublicVideo({ sourceUrl: video.sourceUrl, outputDir: dir });
@@ -956,7 +1191,7 @@ export async function runInstagramAutoSourcesDaily(input?: {
   return {
     foundCount: scan.foundCount,
     newCount: scan.newCount,
-    duplicateCount: scan.duplicateCount,
+    duplicateCount: scan.duplicateCount + markedDuplicateCount,
     downloadedCount,
     createdJobsCount,
     skippedCount: Math.max(0, candidates.length - picked.length) + scan.skippedCount,
