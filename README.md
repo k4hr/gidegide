@@ -37,3 +37,13 @@ npx prisma validate
 npx prisma generate
 npm run build
 ```
+
+## Instagram worker download guard
+
+После обновления Instagram auto source обязательно перезапусти именно worker-сервис (`gidegide-worker`), не только web-сервис. В логах нового worker должно появиться:
+
+```txt
+Factory worker started · instagram download guard v3
+```
+
+Если в старой задаче уже лежит битый локальный файл `592k` или временная CDN-ссылка Instagram, worker удалит невалидный локальный файл и попробует взять оригинальную ссылку Reel из `FactoryInstagramAutoSourceVideo`. Direct-curl больше не используется для Instagram/CDN/fbcdn/scontent ссылок.

@@ -7,6 +7,7 @@ import { FACTORY_LANA_DIR, FACTORY_SOURCE_DIR } from "../lib/factory/paths";
 import {
   downloadSourceFromUrl,
   getSourceDuration,
+  isInstagramPageUrl,
   renderCenteredMovieClip,
   renderFactoryClip,
   renderInstagramReadyShortClip,
@@ -385,13 +386,42 @@ async function markJobFailed(jobId: string, error: unknown) {
   );
 }
 
+async function isUsableVideoFile(filePath: string, label: string) {
+  if (!fs.existsSync(filePath)) return false;
+
+  try {
+    await getSourceDuration(filePath);
+    return true;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn("[FACTORY] invalid local source file, removing", {
+      label,
+      filePath,
+      reason: reason.slice(0, 500),
+    });
+    await fs.promises.rm(filePath, { force: true }).catch(() => undefined);
+    return false;
+  }
+}
+
+async function getInstagramOriginalSourceUrlForJob(jobId: string) {
+  const video = await safeDb(() =>
+    prisma.factoryInstagramAutoSourceVideo.findFirst({
+      where: { factoryJobId: jobId },
+      select: { sourceUrl: true },
+    }),
+  );
+
+  return video?.sourceUrl || null;
+}
+
 async function ensureLocalSourceFile(job: {
   id: string;
   sourceUrl: string | null;
   sourceFilePath: string | null;
   sourceStorageKey: string | null;
 }) {
-  if (job.sourceFilePath && fs.existsSync(job.sourceFilePath)) {
+  if (job.sourceFilePath && await isUsableVideoFile(job.sourceFilePath, `job:${job.id}:sourceFilePath`)) {
     await updateJobProgress(job.id, 5, "Использую загруженный MP4");
     return job.sourceFilePath;
   }
@@ -406,15 +436,33 @@ async function ensureLocalSourceFile(job: {
       filePath: localPath,
     });
 
+    if (!(await isUsableVideoFile(localPath, `job:${job.id}:sourceStorageKey`))) {
+      throw new Error("Исходник из R2 скачался, но это невалидное видео");
+    }
+
     await updateJobProgress(job.id, 30, "Исходный MP4 готов");
 
     return localPath;
   }
 
-  if (job.sourceUrl) {
+  const instagramOriginalSourceUrl = await getInstagramOriginalSourceUrlForJob(job.id);
+  const sourceUrl = instagramOriginalSourceUrl || job.sourceUrl;
+
+  if (instagramOriginalSourceUrl && job.sourceUrl !== instagramOriginalSourceUrl) {
+    console.info("[FACTORY] using original Instagram Reel URL instead of job sourceUrl", {
+      jobId: job.id,
+      sourceUrl: instagramOriginalSourceUrl,
+    });
+  }
+
+  if (sourceUrl) {
+    if (instagramOriginalSourceUrl && !isInstagramPageUrl(sourceUrl)) {
+      throw new Error(`У Instagram-задачи нет оригинальной ссылки Reel/Post: ${sourceUrl}`);
+    }
+
     return downloadSourceFromUrl({
       jobId: job.id,
-      sourceUrl: job.sourceUrl,
+      sourceUrl,
       isCanceled: () => isJobCanceled(job.id),
       onProgress: (progress, label) =>
         updateJobProgress(job.id, progress, label),
@@ -1168,7 +1216,7 @@ async function resetInterruptedJobs() {
 }
 
 async function main() {
-  console.log("Factory worker started");
+  console.log("Factory worker started · instagram download guard v3");
 
   await mkdir(FACTORY_SOURCE_DIR, { recursive: true });
   await resetInterruptedJobs();

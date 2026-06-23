@@ -28,7 +28,7 @@ import {
 type ProgressCallback = (progress: number, label: string) => Promise<void>;
 type CancelCheck = () => Promise<boolean>;
 
-function isInstagramPageUrl(value: string) {
+export function isInstagramPageUrl(value: string) {
   try {
     const url = new URL(value);
     const host = url.hostname.toLowerCase().replace(/^m\./, "www.");
@@ -104,6 +104,25 @@ async function downloadInstagramSource(input: {
   await input.onProgress?.(30, "Instagram Reel скачан и проверен");
 
   return downloaded.filePath;
+}
+
+
+export function isInstagramRelatedUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const host = url.hostname.toLowerCase();
+    return (
+      host === "instagram.com" ||
+      host === "www.instagram.com" ||
+      host === "m.instagram.com" ||
+      host.endsWith(".instagram.com") ||
+      host.includes("cdninstagram.com") ||
+      host.includes("fbcdn.net") ||
+      host.startsWith("scontent")
+    );
+  } catch {
+    return /(instagram\.com|cdninstagram\.com|fbcdn\.net|scontent[^\s/]*\.)/i.test(value);
+  }
 }
 
 export type FactoryRenderTemplate = {
@@ -270,6 +289,12 @@ export async function downloadSourceFromUrl(input: {
 
   if (isInstagramPageUrl(input.sourceUrl)) {
     return downloadInstagramSource(input);
+  }
+
+  if (isInstagramRelatedUrl(input.sourceUrl)) {
+    throw new Error(
+      "Instagram вернул временную CDN/media ссылку вместо оригинального Reel URL. Не скачиваю её через direct-curl: это обычно HTML/login/rate-limit страница. Пересоздай задачу через Instagram source или используй оригинальную ссылку вида https://www.instagram.com/reel/...",
+    );
   }
 
   if (!isYoutubeUrl(input.sourceUrl)) {
